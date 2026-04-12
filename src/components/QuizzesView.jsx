@@ -17,9 +17,6 @@ export default function QuizzesView() {
   const [isImporting, setIsImporting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [aiLoading, setAiLoading] = useState(null);
-  const [testApiStatus, setTestApiStatus] = useState(null);
-  const [testApiMessage, setTestApiMessage] = useState('');
-  const [availableModels, setAvailableModels] = useState([]);
 
   const activeQuiz = quizzes.find(q => q.id === activeQuizId);
 
@@ -300,53 +297,6 @@ D. ${questionObj.options.D}`;
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
   };
 
-  const handleTestApi = async () => {
-    const activeApiKey = aiProvider === 'gemini' ? apiKey : openaiKey;
-    if (!activeApiKey) {
-      alert(`Vui lòng nhập API Key cho ${aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} trước khi test.`);
-      return;
-    }
-    setTestApiStatus('loading');
-    setTestApiMessage('Đang đồng bộ Models...');
-    try {
-      if (aiProvider === 'gemini') {
-        const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-        const modelData = await modelRes.json();
-        if (modelData.error) throw new Error(modelData.error.message);
-        
-        const validModels = modelData.models
-          .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
-          .map(m => m.name.replace('models/', ''));
-        
-        setAvailableModels(validModels);
-        
-        if (!validModels.includes(apiModel) && validModels.length > 0) {
-          setApiModel(validModels[0]);
-        }
-      } else {
-        const res = await fetch('https://api.openai.com/v1/models', {
-          headers: { 'Authorization': `Bearer ${openaiKey}` }
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message);
-        
-        const validModels = data.data.map(m => m.id).filter(id => id.includes('gpt'));
-        setAvailableModels(validModels);
-        
-        if (!validModels.includes(openaiModel) && validModels.length > 0) {
-           setOpenaiModel(validModels.includes('gpt-4o-mini') ? 'gpt-4o-mini' : validModels[0]);
-        }
-      }
-      
-      setTestApiStatus('success');
-      setTestApiMessage('Thành công! Chọn Model ở bên cạnh.');
-    } catch (err) {
-      setTestApiStatus('error');
-      setTestApiMessage(`Lỗi: ${err.message}`);
-    }
-  };
-
-
   return (
     <div className="split-view">
       <div className="list-pane">
@@ -387,86 +337,7 @@ D. ${questionObj.options.D}`;
       </div>
 
       <div className="editor-pane">
-        {/* Top bar for API Key */}
-        <div style={{ padding: '8px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <Key size={16} color="var(--accent-orange)" />
-          
-          <select 
-            value={aiProvider} 
-            onChange={e => { setAiProvider(e.target.value); setTestApiStatus(null); setTestApiMessage(''); setAvailableModels([]); }}
-            style={{ title: 'Chọn AI Provider', background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold' }}
-          >
-            <option value="gemini">Google Gemini</option>
-            <option value="openai">OpenAI (ChatGPT)</option>
-          </select>
 
-          {aiProvider === 'gemini' ? (
-            <>
-              <input 
-                type="password" 
-                placeholder="Nhập Google Gemini API Key..." 
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                style={{ flex: 1, background: 'transparent', border: 'none', padding: 0, minWidth: '150px' }}
-              />
-              <select 
-                value={apiModel} 
-                onChange={e => setApiModel(e.target.value)}
-                style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px 10px', fontSize: '13px', maxWidth: '150px' }}
-              >
-                {availableModels.length > 0 ? (
-                  availableModels.map(m => <option key={m} value={m}>{m}</option>)
-                ) : (
-                  <>
-                    <option value="gemini-2.0-flash">2.0 Flash</option>
-                    <option value="gemini-2.5-flash">2.5 Flash</option>
-                    <option value="gemini-1.5-flash-latest">1.5 Flash</option>
-                    <option value="gemini-1.5-pro-latest">1.5 Pro</option>
-                  </>
-                )}
-              </select>
-            </>
-          ) : (
-            <>
-              <input 
-                type="password" 
-                placeholder="Nhập OpenAI API Key (sk-...)" 
-                value={openaiKey}
-                onChange={(e) => setOpenaiKey(e.target.value)}
-                style={{ flex: 1, background: 'transparent', border: 'none', padding: 0, minWidth: '150px' }}
-              />
-              <select 
-                value={openaiModel} 
-                onChange={e => setOpenaiModel(e.target.value)}
-                style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px 10px', fontSize: '13px', maxWidth: '150px' }}
-              >
-                {availableModels.length > 0 ? (
-                  availableModels.map(m => <option key={m} value={m}>{m}</option>)
-                ) : (
-                  <>
-                    <option value="gpt-4o-mini">GPT-4o Mini ⭐</option>
-                    <option value="gpt-4o">GPT-4o</option>
-                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                  </>
-                )}
-              </select>
-            </>
-          )}
-
-          <button 
-            className="btn" 
-            onClick={handleTestApi}
-            disabled={testApiStatus === 'loading'}
-            style={{ padding: '6px 12px', fontSize: '13px' }}
-          >
-            {testApiStatus === 'loading' ? 'Đang tải...' : 'Tải danh sách Model'}
-          </button>
-          {testApiStatus && (
-            <span style={{ fontSize: '13px', color: testApiStatus === 'success' ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 'bold' }}>
-              {testApiMessage}
-            </span>
-          )}
-        </div>
 
         {isImporting ? (
           <div className="glass-panel" style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}>

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import NotesView from './components/NotesView';
 import DecksView from './components/DecksView';
 import QuizzesView from './components/QuizzesView';
+import SettingsView from './components/SettingsView';
 
 function LoginScreen() {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
@@ -84,9 +85,9 @@ function LoginScreen() {
             background: 'linear-gradient(135deg, #a78bfa, #22d3ee)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
             marginBottom: '8px'
-          }}>NeuroStudy</h1>
+          }}>QBStudy</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
-            Nền tảng học tập thông minh với AI
+            Học thông minh, hiệu quả
           </p>
         </div>
 
@@ -233,7 +234,7 @@ function AppContent() {
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="mb-6 px-3 mt-3 flex items-center justify-between">
-          <span className="text-xl font-extrabold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-cyan-400">NeuroStudy</span>
+          <span className="text-xl font-extrabold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-cyan-400">QBStudy</span>
           <button
             className="lg:hidden text-slate-400 hover:text-white p-1"
             onClick={() => setSidebarOpen(false)}
@@ -264,6 +265,14 @@ function AppContent() {
           >
             <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'quizzes' ? "'FILL' 1" : undefined }}>quiz</span>
             <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Trắc nghiệm</span>
+          </button>
+          
+          <button
+            onClick={() => handleTabChange('settings')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'settings' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+          >
+            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'settings' ? "'FILL' 1" : undefined }}>settings</span>
+            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Cài đặt</span>
           </button>
         </div>
 
@@ -302,11 +311,6 @@ function AppContent() {
             >
               <span className="material-symbols-outlined">menu</span>
             </button>
-            <div className="flex items-center gap-2 px-3 py-1.5 glass-card rounded-full cursor-pointer hover:bg-white/10 transition-all">
-              <span className="text-xs font-bold uppercase tracking-widest text-secondary hidden sm:inline">AI Model</span>
-              <span className="text-sm font-medium text-white">Ollama / Gemini</span>
-              <span className="material-symbols-outlined text-sm">expand_more</span>
-            </div>
           </div>
           <div className="flex items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-1.5 glass-card px-3 py-1 rounded-full">
@@ -336,6 +340,7 @@ function AppContent() {
           {activeTab === 'notes' && <NotesView />}
           {activeTab === 'flashcards' && <DecksView />}
           {activeTab === 'quizzes' && <QuizzesView />}
+          {activeTab === 'settings' && <SettingsView />}
         </main>
       </div>
     </div>
