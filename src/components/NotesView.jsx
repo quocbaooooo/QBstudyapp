@@ -67,7 +67,7 @@ export default function NotesView() {
   return (
     <div className="split-view">
       <div className="list-pane">
-        <div className="list-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="list-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid rgba(var(--glass-rgb),0.05)' }}>
           <button 
             className="w-full py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
             style={{ backgroundColor: 'var(--primary)', color: 'var(--on-primary)', boxShadow: '0 0 16px rgba(197,154,255,0.35)' }}
@@ -85,14 +85,14 @@ export default function NotesView() {
                   placeholder="Tìm kiếm..." 
                   value={searchTerm} 
                   onChange={e => setSearchTerm(e.target.value)} 
-                  style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 10px 6px 30px', borderRadius: '6px', fontSize: '13px', color: 'white', outline: 'none' }} 
+                  style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '6px 10px 6px 30px', borderRadius: '6px', fontSize: '13px', color: 'white', outline: 'none' }} 
                 />
              </div>
              <div style={{ position: 'relative' }}>
                 <select 
                   value={selectedTag} 
                   onChange={e => setSelectedTag(e.target.value)} 
-                  style={{ width: '90px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: '6px', fontSize: '13px', color: 'white', outline: 'none', appearance: 'none' }}
+                  style={{ width: '90px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '6px 10px', borderRadius: '6px', fontSize: '13px', color: 'white', outline: 'none', appearance: 'none' }}
                 >
                     {allTags.map(t => <option key={t} value={t}>{t === 'All' ? 'Tất cả' : t}</option>)}
                 </select>
@@ -143,7 +143,7 @@ export default function NotesView() {
           <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px 48px' }}>
              
              {/* Title & Metadata Settings */}
-             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '24px', paddingBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '20px', flexWrap: 'wrap' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '24px', paddingBottom: '20px', borderBottom: '1px solid rgba(var(--glass-rgb),0.05)', marginBottom: '20px', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
                   value={activeNote.title} 
@@ -153,7 +153,7 @@ export default function NotesView() {
                 />
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px', color: '#a3aac4' }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: '8px' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(var(--glass-rgb),0.03)', padding: '6px 12px', borderRadius: '8px' }}>
                       <Folder size={14} />
                       <input 
                         type="text" 
@@ -163,10 +163,10 @@ export default function NotesView() {
                         style={{ background: 'transparent', border: 'none', color: 'var(--secondary)', fontWeight: 600, padding: 0, width: '100px', outline: 'none' }} 
                       />
                    </div>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', background: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: '8px' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', background: 'rgba(var(--glass-rgb),0.03)', padding: '6px 12px', borderRadius: '8px' }}>
                       <Tag size={14} />
                       {(activeNote.tags || []).map(t => (
-                          <span key={t} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '100px', display: 'flex', alignItems: 'center', gap: '4px', color: 'white' }}>
+                          <span key={t} style={{ background: 'rgba(var(--glass-rgb),0.05)', border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '2px 8px', borderRadius: '100px', display: 'flex', alignItems: 'center', gap: '4px', color: 'white' }}>
                              {t} 
                              <button onClick={() => handleRemoveTag(t)} style={{ background: 'transparent', border: 'none', color: '#ff6e84', cursor: 'pointer', display: 'flex', padding: 0 }}>
                                 <Minus size={12} />
@@ -196,7 +196,7 @@ export default function NotesView() {
         ) : (
           <div className="blank-slate" style={{ padding: '0 1.5rem' }}>
             <div className="relative z-10 w-full flex flex-col items-center">
-              <div className="mb-5 inline-flex items-center justify-center w-14 h-14 rounded-2xl border shadow-xl" style={{ backgroundColor: 'var(--surface-container-highest)', borderColor: 'rgba(255,255,255,0.1)' }}>
+              <div className="mb-5 inline-flex items-center justify-center w-14 h-14 rounded-2xl border shadow-xl" style={{ backgroundColor: 'var(--surface-container-highest)', borderColor: 'rgba(var(--glass-rgb),0.1)' }}>
                 <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--primary)', fontVariationSettings: "'FILL' 1" }}>edit_document</span>
               </div>
               <h1 className="text-2xl font-extrabold tracking-tight mb-2 text-white">Sổ tay thông minh bằng AI</h1>

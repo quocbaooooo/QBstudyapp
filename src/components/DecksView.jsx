@@ -158,7 +158,7 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="rounded-xl border border-white/10 overflow-hidden" style={{ background: 'rgba(15, 25, 48, 0.5)', flexShrink: 0 }}>
+    <div className="rounded-xl border border-white/10 overflow-hidden" style={{ background: 'rgba(var(--glass-rgb), 0.05)', flexShrink: 0 }}>
       {/* Main row */}
       <div className="flex items-start gap-4 p-4">
         {/* Index number */}
@@ -175,7 +175,7 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
               value={card.front}
               onChange={e => onUpdate(card.id, 'front', e.target.value)}
               placeholder="Nhập thuật ngữ"
-              className="w-full px-3 py-2 rounded-lg text-sm text-white placeholder-slate-500 outline-none border border-white/5 focus:border-primary/40 transition-colors"
+              className="w-full px-3 py-2 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/40 transition-colors"
               style={{ background: 'rgba(0,0,0,0.25)' }}
             />
           </div>
@@ -186,7 +186,7 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
               value={card.back}
               onChange={e => onUpdate(card.id, 'back', e.target.value)}
               placeholder="Nhập định nghĩa"
-              className="w-full px-3 py-2 rounded-lg text-sm text-white placeholder-slate-500 outline-none border border-white/5 focus:border-primary/40 transition-colors"
+              className="w-full px-3 py-2 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/40 transition-colors"
               style={{ background: 'rgba(0,0,0,0.25)' }}
             />
           </div>
@@ -214,7 +214,7 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
 
       {/* Expandable extra fields */}
       {expanded && (
-        <div className="px-4 pb-4 pt-0 ml-11 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-white/5 mt-0 pt-3">
+        <div className="px-4 pb-4 pt-0 ml-11 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-[color:var(--border-color)] mt-0 pt-3">
           <div>
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">Cách phát âm <span className="text-slate-600 normal-case">(Tùy chọn)</span></label>
             <input
@@ -222,7 +222,7 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
               value={card.pronunciation || ''}
               onChange={e => onUpdate(card.id, 'pronunciation', e.target.value)}
               placeholder="VD: /həˈloʊ/"
-              className="w-full px-3 py-1.5 rounded-lg text-sm text-white placeholder-slate-600 outline-none border border-white/5 focus:border-primary/30 transition-colors"
+              className="w-full px-3 py-1.5 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/30 transition-colors"
               style={{ background: 'rgba(0,0,0,0.2)' }}
             />
           </div>
@@ -233,7 +233,7 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
               value={card.wordType || ''}
               onChange={e => onUpdate(card.id, 'wordType', e.target.value)}
               placeholder="VD: noun, verb..."
-              className="w-full px-3 py-1.5 rounded-lg text-sm text-white placeholder-slate-600 outline-none border border-white/5 focus:border-primary/30 transition-colors"
+              className="w-full px-3 py-1.5 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/30 transition-colors"
               style={{ background: 'rgba(0,0,0,0.2)' }}
             />
           </div>
@@ -244,7 +244,7 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
               value={card.example || ''}
               onChange={e => onUpdate(card.id, 'example', e.target.value)}
               placeholder="Nhập câu ví dụ"
-              className="w-full px-3 py-1.5 rounded-lg text-sm text-white placeholder-slate-600 outline-none border border-white/5 focus:border-primary/30 transition-colors"
+              className="w-full px-3 py-1.5 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/30 transition-colors"
               style={{ background: 'rgba(0,0,0,0.2)' }}
             />
           </div>
@@ -254,8 +254,8 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
               type="text"
               value={card.synonyms || ''}
               onChange={e => onUpdate(card.id, 'synonyms', e.target.value)}
-              placeholder="Nhập các từ đồng nghĩa, cách nhau bằng dấu chấm phẩy (;)"
-              className="w-full px-3 py-1.5 rounded-lg text-sm text-white placeholder-slate-600 outline-none border border-white/5 focus:border-primary/30 transition-colors"
+              placeholder="Nhập các từ đồng nghĩa (bằng dấu chấm phẩy ;)"
+              className="w-full px-3 py-1.5 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/30 transition-colors"
               style={{ background: 'rgba(0,0,0,0.2)' }}
             />
           </div>
@@ -403,7 +403,7 @@ export default function DecksView() {
                 type="text"
                 value={activeDeck.title}
                 onChange={e => handleUpdateDeckTitle(e.target.value)}
-                className="text-xl font-bold bg-transparent border-none outline-none text-white p-0 w-full sm:w-auto sm:flex-1"
+                className="text-xl font-bold bg-transparent border-none outline-none text-[color:var(--text-main)] p-0 w-full sm:w-auto sm:flex-1"
                 style={{ borderBottom: '1px solid var(--border-color)', borderRadius: 0, boxShadow: 'none' }}
               />
               <div className="flex gap-2 shrink-0">
@@ -472,7 +472,7 @@ export default function DecksView() {
         ) : (
           <div className="blank-slate" style={{ padding: '0 1.5rem' }}>
             <div className="relative z-10 w-full flex flex-col items-center">
-              <div className="mb-5 inline-flex items-center justify-center w-14 h-14 rounded-2xl border shadow-xl" style={{ backgroundColor: 'var(--surface-container-highest)', borderColor: 'rgba(255,255,255,0.1)' }}>
+              <div className="mb-5 inline-flex items-center justify-center w-14 h-14 rounded-2xl border shadow-xl" style={{ backgroundColor: 'var(--surface-container-highest)', borderColor: 'rgba(var(--glass-rgb),0.1)' }}>
                 <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--primary)', fontVariationSettings: "'FILL' 1" }}>style</span>
               </div>
               <h1 className="text-2xl font-extrabold tracking-tight mb-2 text-white">Quản lý thẻ nhớ</h1>

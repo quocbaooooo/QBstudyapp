@@ -1,10 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 
 export default function StudyMode({ deck, onClose }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [isShuffled, setIsShuffled] = useState(false);
   const [cardOrder, setCardOrder] = useState([]);
+  
+  const [studyType, setStudyType] = useState('flip'); // 'flip' or 'mcq'
+  const [mcqOptions, setMcqOptions] = useState([]);
+  const [mcqSelected, setMcqSelected] = useState(null);
+  const [appSoundEnabled] = useLocalStorage('app_sound_enabled', true);
 
   // Initialize card order
   useEffect(() => {
@@ -12,7 +18,8 @@ export default function StudyMode({ deck, onClose }) {
     setCardOrder(isShuffled ? shuffleArray([...order]) : order);
     setCurrentIndex(0);
     setIsFlipped(false);
-  }, [deck.cards.length, isShuffled]);
+    setMcqSelected(null);
+  }, [deck.cards.length, isShuffled, studyType]);
 
   function shuffleArray(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -30,6 +37,7 @@ export default function StudyMode({ deck, onClose }) {
   const handleNext = useCallback(() => {
     if (currentIndex < totalCards - 1) {
       setIsFlipped(false);
+      setMcqSelected(null);
       setTimeout(() => setCurrentIndex(prev => prev + 1), 100);
     }
   }, [currentIndex, totalCards]);
@@ -37,13 +45,16 @@ export default function StudyMode({ deck, onClose }) {
   const handlePrev = useCallback(() => {
     if (currentIndex > 0) {
       setIsFlipped(false);
+      setMcqSelected(null);
       setTimeout(() => setCurrentIndex(prev => prev - 1), 100);
     }
   }, [currentIndex]);
 
   const handleFlip = useCallback(() => {
-    setIsFlipped(prev => !prev);
-  }, []);
+    if (studyType === 'flip') {
+      setIsFlipped(prev => !prev);
+    }
+  }, [studyType]);
 
   const toggleShuffle = () => {
     setIsShuffled(prev => !prev);
@@ -52,13 +63,68 @@ export default function StudyMode({ deck, onClose }) {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Allow navigation key events if not currently interacting with an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
       if (e.key === 'ArrowLeft') handlePrev();
       else if (e.key === 'ArrowRight') handleNext();
-      else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); handleFlip(); }
+      else if ((e.key === ' ' || e.key === 'Enter') && studyType === 'flip') { e.preventDefault(); handleFlip(); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleNext, handlePrev, handleFlip]);
+  }, [handleNext, handlePrev, handleFlip, studyType]);
+
+  const playFeedbackSound = useCallback((isCorrect) => {
+    if (!appSoundEnabled) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      const now = ctx.currentTime;
+      if (isCorrect) {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.1);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.start(now);
+        osc.stop(now + 0.3);
+      } else {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(100, now + 0.2);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      }
+    } catch (e) { console.log('Audio error'); }
+  }, [appSoundEnabled]);
+
+  const handleMcqSelect = (cardId) => {
+    if (mcqSelected) return; // Prevent multiple selects
+    setMcqSelected(cardId);
+    const isCorrect = cardId === currentCard.id;
+    playFeedbackSound(isCorrect);
+  };
+
+  // Generate MCQ options
+  useEffect(() => {
+    if (studyType === 'mcq' && currentCard) {
+      // We want up to 4 options including the correct one
+      const others = cards.filter(c => c.id !== currentCard.id);
+      const shuffledOthers = shuffleArray([...others]);
+      const randomDistractors = shuffledOthers.slice(0, 3);
+      
+      const finalOptions = shuffleArray([currentCard, ...randomDistractors]);
+      setMcqOptions(finalOptions);
+    }
+  }, [currentIndex, currentCard, studyType, cards]);
 
   // Text-to-speech
   const speak = (text) => {
@@ -121,8 +187,8 @@ export default function StudyMode({ deck, onClose }) {
                     ? 'var(--secondary)'
                     : isActive
                     ? 'var(--primary)'
-                    : 'rgba(255,255,255,0.15)',
-                  boxShadow: isCurrent ? '0 0 8px rgba(0,227,253,0.5)' : 'none',
+                    : 'rgba(var(--glass-rgb),0.15)',
+                  boxShadow: isCurrent ? '0 0 8px rgba(var(--glass-rgb),0.5)' : 'none',
                 }}
               />
             );
@@ -130,35 +196,110 @@ export default function StudyMode({ deck, onClose }) {
         </div>
       </div>
 
-      {/* Flip Card Area */}
-      <div className="flex-1 flex items-center justify-center px-4 py-2">
-        <div
-          className={`flip-card ${isFlipped ? 'flipped' : ''}`}
-          onClick={handleFlip}
-          style={{ cursor: 'pointer', maxWidth: '600px', width: '100%', height: 'min(400px, 55vh)' }}
-        >
-          <div className="flip-card-inner">
-            {/* FRONT */}
-            <div
-              className="flip-card-front"
-              style={{
-                background: 'linear-gradient(145deg, rgba(20,31,56,0.95), rgba(15,25,48,0.95))',
-                border: '1.5px solid rgba(64, 72, 93, 0.4)',
-                borderRadius: '20px',
-                padding: '32px',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              {/* Settings icon */}
-              <div className="absolute top-4 left-4">
-                <span className="material-symbols-outlined text-slate-600 text-[20px]">tune</span>
+      {/* Study Area */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-2 w-full">
+        {/* Toggle Mode */}
+        <div className="flex gap-2 mb-6 p-1 border border-white/10 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)' }}>
+          <button 
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${studyType === 'flip' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            onClick={() => { setStudyType('flip'); setMcqSelected(null); }}
+          >Lật thẻ</button>
+          <button 
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${studyType === 'mcq' ? 'bg-primary text-on-primary' : 'text-slate-400 hover:text-slate-200'}`}
+            onClick={() => { setStudyType('mcq'); setIsFlipped(false); }}
+          >Trắc nghiệm</button>
+        </div>
+
+        {studyType === 'flip' ? (
+          <div
+            className={`flip-card ${isFlipped ? 'flipped' : ''}`}
+            onClick={handleFlip}
+            style={{ cursor: 'pointer', maxWidth: '600px', width: '100%', height: 'min(400px, 55vh)' }}
+          >
+            <div className="flip-card-inner">
+              {/* FRONT */}
+              <div
+                className="flip-card-front"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(20,31,56,0.95), rgba(15,25,48,0.95))',
+                  border: '1.5px solid rgba(64, 72, 93, 0.4)',
+                  borderRadius: '20px',
+                  padding: '32px',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                {/* Settings icon */}
+                <div className="absolute top-4 left-4">
+                  <span className="material-symbols-outlined text-slate-600 text-[20px]">tune</span>
+                </div>
+
+                <div className="text-2xl sm:text-3xl font-bold text-white mb-3" style={{ whiteSpace: 'pre-wrap', textAlign: 'center' }}>
+                  {currentCard.front}
+                </div>
+                {(currentCard.wordType || currentCard.pronunciation) && (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm italic">
+                    {currentCard.wordType && <span>{currentCard.wordType}</span>}
+                    {currentCard.wordType && currentCard.pronunciation && <span>-</span>}
+                    {currentCard.pronunciation && <span>{currentCard.pronunciation}</span>}
+                  </div>
+                )}
               </div>
 
-              <div className="text-2xl sm:text-3xl font-bold text-white mb-3" style={{ whiteSpace: 'pre-wrap', textAlign: 'center' }}>
-                {currentCard.front}
+              {/* BACK */}
+              <div
+                className="flip-card-back"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(20,31,56,0.98), rgba(12,20,40,0.98))',
+                  border: '1.5px solid rgba(64, 72, 93, 0.4)',
+                  borderRadius: '20px',
+                  padding: '32px',
+                  transform: 'rotateY(180deg)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px',
+                }}
+              >
+                <div className="absolute top-4 left-4">
+                  <span className="material-symbols-outlined text-slate-600 text-[20px]">tune</span>
+                </div>
+
+                {/* Definition */}
+                <div className="text-2xl sm:text-3xl font-bold text-white" style={{ textAlign: 'center' }}>
+                  {currentCard.back}
+                </div>
+
+                {/* Synonyms */}
+                {currentCard.synonyms && (
+                  <div className="text-sm text-slate-400 text-center">{currentCard.synonyms}</div>
+                )}
+
+                {/* Example */}
+                {currentCard.example && (
+                  <div className="text-sm italic text-secondary/80 text-center mt-1">
+                    {currentCard.example}
+                  </div>
+                )}
               </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ maxWidth: '600px' }} className="w-full">
+            {/* Question Card */}
+            <div 
+              style={{ background: 'linear-gradient(145deg, rgba(20,31,56,0.95), rgba(15,25,48,0.95))', border: '1.5px solid rgba(var(--glass-rgb), 0.15)' }}
+              className="rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center text-center shadow-xl mb-6 relative"
+            >
+              <div className="absolute top-4 right-4">
+                <button
+                  className="p-1 rounded-full text-slate-400 hover:text-white"
+                  onClick={(e) => { e.stopPropagation(); speak(currentCard.front); }}
+                  title="Phát âm"
+                >
+                  <span className="material-symbols-outlined text-[18px]">volume_up</span>
+                </button>
+              </div>
+
+              <div className="text-2xl sm:text-3xl font-bold text-white mt-4 mb-2">{currentCard.front}</div>
               {(currentCard.wordType || currentCard.pronunciation) && (
-                <div className="flex items-center gap-2 text-slate-400 text-sm italic">
+                <div className="flex items-center justify-center gap-2 text-slate-400 text-sm italic">
                   {currentCard.wordType && <span>{currentCard.wordType}</span>}
                   {currentCard.wordType && currentCard.pronunciation && <span>-</span>}
                   {currentCard.pronunciation && <span>{currentCard.pronunciation}</span>}
@@ -166,41 +307,63 @@ export default function StudyMode({ deck, onClose }) {
               )}
             </div>
 
-            {/* BACK */}
-            <div
-              className="flip-card-back"
-              style={{
-                background: 'linear-gradient(145deg, rgba(20,31,56,0.98), rgba(12,20,40,0.98))',
-                border: '1.5px solid rgba(64, 72, 93, 0.4)',
-                borderRadius: '20px',
-                padding: '32px',
-                transform: 'rotateY(180deg)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px',
-              }}
-            >
-              <div className="absolute top-4 left-4">
-                <span className="material-symbols-outlined text-slate-600 text-[20px]">tune</span>
-              </div>
+            {/* MCQ Options */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+              {mcqOptions.map((opt, i) => {
+                const label = ['A', 'B', 'C', 'D'][i];
+                let isCorrectOption = opt.id === currentCard.id;
+                
+                let stateClass = 'border-[rgba(var(--glass-rgb),0.1)] bg-[rgba(var(--glass-rgb),0.04)] text-slate-200 hover:bg-[rgba(var(--glass-rgb),0.08)]';
+                
+                if (mcqSelected) {
+                  if (isCorrectOption) {
+                    stateClass = 'border-emerald-500 bg-emerald-500/10 text-emerald-400';
+                  } else if (mcqSelected === opt.id) {
+                    stateClass = 'border-red-500 bg-red-500/10 text-red-400';
+                  } else {
+                    stateClass = 'border-[rgba(var(--glass-rgb),0.05)] bg-transparent text-slate-500 opacity-50';
+                  }
+                }
 
-              {/* Definition */}
-              <div className="text-2xl sm:text-3xl font-bold text-white" style={{ textAlign: 'center' }}>
-                {currentCard.back}
-              </div>
-
-              {/* Synonyms */}
-              {currentCard.synonyms && (
-                <div className="text-sm text-slate-400 text-center">{currentCard.synonyms}</div>
-              )}
-
-              {/* Example */}
-              {currentCard.example && (
-                <div className="text-sm italic text-secondary/80 text-center mt-1">
-                  {currentCard.example}
-                </div>
-              )}
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => handleMcqSelect(opt.id)}
+                    disabled={mcqSelected !== null}
+                    className={`flex items-start gap-3 p-4 rounded-xl border text-left transition-all ${stateClass}`}
+                  >
+                    <div className={`shrink-0 w-6 h-6 rounded flex items-center justify-center text-xs font-bold mt-0.5 border ${
+                      mcqSelected && (isCorrectOption || mcqSelected === opt.id) 
+                        ? 'border-current' 
+                        : 'border-slate-600 bg-slate-800'
+                    }`}>
+                      {label}
+                    </div>
+                    <div className="font-semibold text-[15px] leading-tight flex-1" style={{ whiteSpace: 'pre-wrap' }}>
+                      {opt.back}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+
+            {/* Answer feedback tip */}
+            {mcqSelected && (
+              <div className={`p-4 rounded-xl text-sm border flex gap-3 items-start
+                ${mcqSelected === currentCard.id ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-100' : 'bg-red-500/10 border-red-500/20 text-red-100'}
+              `}>
+                <span className="material-symbols-outlined mt-0.5">
+                  {mcqSelected === currentCard.id ? 'check_circle' : 'cancel'}
+                </span>
+                <div>
+                  <div className="font-bold mb-1">{mcqSelected === currentCard.id ? 'Chính xác!' : 'Chưa chính xác! Đáp án đúng là: ' + currentCard.back}</div>
+                  {currentCard.synonyms && <div className="mt-1"><b>Đồng nghĩa:</b> {currentCard.synonyms}</div>}
+                  {currentCard.example && <div className="mt-1"><b>Ví dụ:</b> <i>{currentCard.example}</i></div>}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* Controls area */}
@@ -258,11 +421,14 @@ export default function StudyMode({ deck, onClose }) {
 
           <button
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-30"
-            style={{ backgroundColor: currentIndex < totalCards - 1 ? 'var(--primary)' : 'var(--secondary)', color: currentIndex < totalCards - 1 ? 'var(--on-primary)' : 'var(--on-secondary)' }}
-            onClick={handleNext}
-            disabled={currentIndex >= totalCards - 1}
+            style={{ 
+              backgroundColor: (studyType === 'mcq' && mcqSelected === null) ? 'rgba(var(--glass-rgb), 0.1)' : (currentIndex < totalCards - 1 ? 'var(--primary)' : 'var(--secondary)'), 
+              color: (studyType === 'mcq' && mcqSelected === null) ? 'var(--text-muted)' : (currentIndex < totalCards - 1 ? 'var(--on-primary)' : 'var(--on-secondary)') 
+            }}
+            onClick={studyType === 'mcq' && mcqSelected === null ? undefined : handleNext}
+            disabled={(studyType === 'mcq' && mcqSelected === null)}
           >
-            Sau
+            {currentIndex >= totalCards - 1 ? 'Hoàn thành' : 'Tiếp theo'}
             <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
           </button>
         </div>

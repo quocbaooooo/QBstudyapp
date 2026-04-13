@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Key } from 'lucide-react';
+import { Key, Volume2, VolumeX, Moon, Sun } from 'lucide-react';
 
 export default function SettingsView() {
   const [apiKey, setApiKey] = useLocalStorage('gemini_api_key', '');
@@ -9,6 +9,8 @@ export default function SettingsView() {
   const [aiProvider, setAiProvider] = useLocalStorage('ai_provider', 'gemini');
   const [openaiKey, setOpenaiKey] = useLocalStorage('openai_api_key', '');
   const [openaiModel, setOpenaiModel] = useLocalStorage('openai_api_model', 'gpt-4o-mini');
+
+  const [appSoundEnabled, setAppSoundEnabled] = useLocalStorage('app_sound_enabled', true);
 
   const [testApiStatus, setTestApiStatus] = useState(null);
   const [testApiMessage, setTestApiMessage] = useState('');
@@ -84,7 +86,7 @@ export default function SettingsView() {
                 </div>
               </div>
 
-              <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ padding: '12px 16px', background: 'rgba(var(--glass-rgb),0.2)', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <Key size={16} color="var(--accent-orange)" />
                 
                 <select 
@@ -103,7 +105,7 @@ export default function SettingsView() {
                       placeholder="Nhập Google Gemini API Key..." 
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px 12px', minWidth: '200px', color: 'white', fontSize: '13px' }}
+                      style={{ flex: 1, background: 'transparent', border: '1px solid rgba(var(--glass-rgb),0.1)', borderRadius: '6px', padding: '8px 12px', minWidth: '200px', color: 'white', fontSize: '13px' }}
                     />
                     <select 
                       value={apiModel} 
@@ -129,7 +131,7 @@ export default function SettingsView() {
                       placeholder="Nhập OpenAI API Key (sk-...)" 
                       value={openaiKey}
                       onChange={(e) => setOpenaiKey(e.target.value)}
-                      style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px 12px', minWidth: '200px', color: 'white', fontSize: '13px' }}
+                      style={{ flex: 1, background: 'transparent', border: '1px solid rgba(var(--glass-rgb),0.1)', borderRadius: '6px', padding: '8px 12px', minWidth: '200px', color: 'white', fontSize: '13px' }}
                     />
                     <select 
                       value={openaiModel} 
@@ -164,6 +166,37 @@ export default function SettingsView() {
                   {testApiMessage}
                 </div>
               )}
+            </div>
+          </section>
+
+          {/* Appearance & Sound Settings */}
+          <section>
+            <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-secondary mb-4 flex items-center gap-2">
+              <Sun className="w-4 h-4" />
+              Giao diện & Âm thanh
+            </h3>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all duration-300">
+              {/* Sound Toggle */}
+              <div className="flex items-center justify-between py-3 mt-2">
+                <div className="flex items-center gap-3">
+                  {appSoundEnabled ? <Volume2 size={20} color="var(--accent-green)" /> : <VolumeX size={20} color="var(--text-muted)" />}
+                  <div>
+                    <div className="font-semibold text-white text-[14px]">Âm thanh phản hồi</div>
+                    <div className="text-[12px] text-slate-400">Phát âm thanh khi trả lời đúng/sai</div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setAppSoundEnabled(!appSoundEnabled)}
+                  style={{
+                    padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer',
+                    background: appSoundEnabled ? 'var(--accent-green)' : 'rgba(var(--glass-rgb),0.1)',
+                    color: appSoundEnabled ? 'white' : 'var(--text-main)'
+                  }}
+                >
+                  {appSoundEnabled ? 'Đang bật' : 'Đã tắt'}
+                </button>
+              </div>
+
             </div>
           </section>
 

@@ -27,7 +27,7 @@ const FixedToolbar = ({ editor, onGenerateOutline, onSuggestContent, isAILoading
   return (
     <div className="editor-fixed-toolbar" style={{
       display: 'flex', alignItems: 'center', flexWrap: 'nowrap', overflowX: 'auto', gap: '2px',
-      background: 'rgba(25, 28, 36, 0.95)', border: '1px solid rgba(255,255,255,0.08)',
+      background: 'rgba(25, 28, 36, 0.95)', border: '1px solid rgba(var(--glass-rgb),0.08)',
       borderRadius: '8px', padding: '6px 12px', marginBottom: '16px', position: 'sticky', top: 0, zIndex: 10,
       boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
     }}>
@@ -268,28 +268,28 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
         .ProseMirror li p { margin-bottom: 0.25rem; }
         .ProseMirror blockquote { border-left: 3px solid var(--primary); padding-left: 1rem; color: #a3aac4; margin: 1rem 0; font-style: italic; background: rgba(197, 154, 255, 0.05); border-radius: 4px; padding: 10px 14px; }
         .ProseMirror blockquote strong { color: var(--primary); font-style: normal; }
-        .ProseMirror code { background: rgba(255,255,255,0.08); padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; font-size: 0.9em; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1); }
-        .ProseMirror pre { background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; color: #e2e8f0; overflow-x: auto; font-family: monospace; margin: 1rem 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); }
+        .ProseMirror code { background: rgba(var(--glass-rgb),0.08); padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; font-size: 0.9em; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.1); }
+        .ProseMirror pre { background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; color: #e2e8f0; overflow-x: auto; font-family: monospace; margin: 1rem 0; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.05); }
         .ProseMirror mark, .tiptap-highlight { background-color: rgba(197, 154, 255, 0.4); color: white; padding: 0.1em 0.2em; border-radius: 3px; }
-        .ProseMirror hr { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 2rem 0; }
+        .ProseMirror hr { border: none; border-top: 1px solid rgba(var(--glass-rgb),0.1); margin: 2rem 0; }
         .ProseMirror a { color: var(--primary); text-decoration: underline; cursor: pointer; }
         .ProseMirror img { max-width: 100%; height: auto; border-radius: 8px; margin: 1rem 0; }
         .ProseMirror-focused { outline: none; }
         
         .toolbar-btn { padding: 6px; border-radius: 6px; color: #a3aac4; transition: all 0.2s; background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .toolbar-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .toolbar-btn:not(:disabled):hover { background: rgba(255,255,255,0.1); color: white; }
+        .toolbar-btn:not(:disabled):hover { background: rgba(var(--glass-rgb),0.1); color: white; }
         .toolbar-btn.is-active { background: rgba(197, 154, 255, 0.2); color: var(--primary); }
-        .toolbar-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 4px; }
+        .toolbar-divider { width: 1px; height: 18px; background: rgba(var(--glass-rgb),0.1); margin: 0 4px; }
         .toolbar-select { background: transparent; color: #e2e8f0; border: none; font-size: 13px; font-weight: 500; padding: 4px 8px; border-radius: 6px; outline: none; appearance: auto; cursor: pointer; }
-        .toolbar-select:hover { background: rgba(255,255,255,0.1); }
+        .toolbar-select:hover { background: rgba(var(--glass-rgb),0.1); }
 
-        .bubble-menu-ai-btn { padding: 6px 12px; border-radius: 6px; color: white; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; transition: all 0.2s; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; }
+        .bubble-menu-ai-btn { padding: 6px 12px; border-radius: 6px; color: white; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; transition: all 0.2s; background: rgba(var(--glass-rgb),0.1); border: 1px solid rgba(var(--glass-rgb),0.1); cursor: pointer; }
         .bubble-menu-ai-btn:hover { background: rgba(197, 154, 255, 0.2); border-color: rgba(197, 154, 255, 0.5); }
         
         .floating-menu-btn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; width: 100%; border-radius: 6px; color: #e2e8f0; transition: all 0.2s; background: transparent; border: none; cursor: pointer; text-align: left; font-size: 13.5px; }
-        .floating-menu-btn:hover { background: rgba(255,255,255,0.08); }
-        .floating-menu-icon { width: 32px; height: 32px; border-radius: 6px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.05); }
+        .floating-menu-btn:hover { background: rgba(var(--glass-rgb),0.08); }
+        .floating-menu-icon { width: 32px; height: 32px; border-radius: 6px; background: rgba(var(--glass-rgb),0.05); display: flex; align-items: center; justify-content: center; border: 1px solid rgba(var(--glass-rgb),0.05); }
 
         .editor-fixed-toolbar::-webkit-scrollbar { display: none; }
         .editor-fixed-toolbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -304,7 +304,7 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
       />
 
       {/* AI Bubble Menu - pops up only when text is selected */}
-      {editor && <BubbleMenu editor={editor} tippyOptions={{ duration: 100, placement: 'top' }} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(15, 25, 48, 0.85)', backdropFilter: 'blur(20px)', padding: '6px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 50 }}>
+      {editor && <BubbleMenu editor={editor} tippyOptions={{ duration: 100, placement: 'top' }} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(15, 25, 48, 0.85)', backdropFilter: 'blur(20px)', padding: '6px', borderRadius: '12px', border: '1px solid rgba(var(--glass-rgb),0.15)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 50 }}>
           <div style={{ padding: '0 4px', fontSize: '12px', fontWeight: 'bold', color: 'var(--primary)' }}>✨ Trợ lý AI:</div>
           <button className="bubble-menu-ai-btn" onClick={() => requestAITextAction('explain')} disabled={isAILoading}>
             <Info size={14} color="var(--primary)"/> {isAILoading ? '...' : 'Giải thích'}
