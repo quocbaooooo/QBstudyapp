@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
-import { Plus, Trash2, Search, Filter, Folder, Tag, Minus } from 'lucide-react';
+import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import TiptapEditor from './TiptapEditor';
 
@@ -28,8 +28,10 @@ export default function NotesView() {
 
   const handleDelete = (e, id) => {
     e.stopPropagation();
-    setNotes(notes.filter(n => n.id !== id));
-    if (activeNoteId === id) setActiveNoteId(null);
+    if(window.confirm('Bạn có chắc chắn muốn xóa ghi chú này không?')) {
+      setNotes(notes.filter(n => n.id !== id));
+      if (activeNoteId === id) setActiveNoteId(null);
+    }
   };
 
   const handleUpdateActiveNote = (field, value) => {
@@ -64,158 +66,291 @@ export default function NotesView() {
      return matchesSearch && matchesTag;
   });
 
+  // Helper: relative time
+  const getRelativeTime = (timestamp) => {
+    if (!timestamp) return '';
+    const diff = Date.now() - timestamp;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Vừa xong';
+    if (mins < 60) return `${mins} phút trước`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} giờ trước`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days} ngày trước`;
+    return new Date(timestamp).toLocaleDateString('vi-VN');
+  };
+
+  // Plain text preview from HTML content
+  const getContentPreview = (html) => {
+    if (!html) return 'Chưa có nội dung...';
+    const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return text.length > 100 ? text.substring(0, 100) + '...' : text;
+  };
+
+  // Color gradient palette for cards
+  const cardGradients = [
+    'linear-gradient(135deg, rgba(124,77,255,0.18), rgba(83,109,254,0.10))',
+    'linear-gradient(135deg, rgba(0,227,253,0.15), rgba(59,130,246,0.10))',
+    'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(52,211,153,0.10))',
+    'linear-gradient(135deg, rgba(251,191,36,0.15), rgba(245,158,11,0.10))',
+    'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(244,114,182,0.10))',
+    'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(139,92,246,0.10))',
+  ];
+
+  const cardAccentColors = [
+    '#7c4dff', '#00e3fd', '#10b981', '#fbbf24', '#f472b6', '#a855f7'
+  ];
+
+  const showGrid = !activeNoteId;
+
   return (
-    <div className="split-view">
-      <div className="list-pane">
-        <div className="list-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px', paddingBottom: '16px', borderBottom: '1px solid rgba(var(--glass-rgb),0.05)' }}>
-          <button 
-            className="w-full py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
-            style={{ backgroundColor: 'var(--primary)', color: 'var(--on-primary)', boxShadow: '0 0 16px rgba(197,154,255,0.35)' }}
-            onClick={handleAddNote}
-          >
-            <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>note_add</span>
-            Tạo ghi chú mới
-          </button>
-          
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-             <div style={{ flex: 1, position: 'relative' }}>
-                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#6d758c' }} />
-                <input 
-                  type="text" 
-                  placeholder="Tìm kiếm..." 
-                  value={searchTerm} 
-                  onChange={e => setSearchTerm(e.target.value)} 
-                  style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '6px 10px 6px 30px', borderRadius: '6px', fontSize: '13px', color: 'white', outline: 'none' }} 
-                />
-             </div>
-             <div style={{ position: 'relative' }}>
-                <select 
-                  value={selectedTag} 
-                  onChange={e => setSelectedTag(e.target.value)} 
-                  style={{ width: '90px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '6px 10px', borderRadius: '6px', fontSize: '13px', color: 'white', outline: 'none', appearance: 'none' }}
-                >
-                    {allTags.map(t => <option key={t} value={t}>{t === 'All' ? 'Tất cả' : t}</option>)}
-                </select>
-                <Filter size={12} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#6d758c', pointerEvents: 'none' }} />
-             </div>
-          </div>
-        </div>
-
-        <div className="list-items" style={{ paddingTop: '8px' }}>
-          {filteredNotes.length === 0 ? (
-            <div style={{ padding: '20px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '13px' }}>Chưa có ghi chú nào phù hợp.</div>
-          ) : (
-            filteredNotes.map(note => (
-              <div 
-                key={note.id} 
-                className={`list-item ${activeNoteId === note.id ? 'selected' : ''}`}
-                onClick={() => setActiveNoteId(note.id)}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div className="list-item-title" style={{ flex: 1 }}>{note.title || 'Không có tiêu đề'}</div>
-                  <button className="btn-icon" onClick={(e) => handleDelete(e, note.id)} style={{ padding: '2px', marginLeft: '5px' }}>
-                    <Trash2 size={14} />
-                  </button>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {showGrid ? (
+        /* ========== GRID VIEW ========== */
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+          {/* Grid Header */}
+          <div style={{ 
+            padding: '0 0 20px 0', 
+            display: 'flex', 
+            flexDirection: 'column',
+            gap: '16px',
+            flexShrink: 0 
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ 
+                  fontSize: '24px', 
+                  fontWeight: 800, 
+                  margin: 0,
+                  background: 'linear-gradient(135deg, #c59aff, #00e3fd)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}>
+                  Sổ tay ghi chú
+                </h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+                  {notes.length} ghi chú · Chọn một ghi chú để chỉnh sửa
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                {/* Search */}
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input 
+                    type="text" 
+                    placeholder="Tìm kiếm..." 
+                    value={searchTerm} 
+                    onChange={e => setSearchTerm(e.target.value)} 
+                    style={{ 
+                      width: '180px', background: 'rgba(var(--glass-rgb),0.04)', 
+                      border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '9px 12px 9px 32px', 
+                      borderRadius: '10px', fontSize: '13px', color: 'var(--text-main)', outline: 'none' 
+                    }} 
+                  />
                 </div>
-                {note.tags && note.tags.length > 0 && (
-                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px', marginBottom: '6px' }}>
-                      {note.tags.map(t => (
-                        <span key={t} style={{ fontSize: '10px', background: 'rgba(197,154,255,0.15)', color: 'var(--primary)', padding: '2px 6px', borderRadius: '4px' }}>
-                          #{t}
-                        </span>
-                      ))}
-                   </div>
+                {/* Tag filter */}
+                {allTags.length > 1 && (
+                  <div style={{ position: 'relative' }}>
+                    <select 
+                      value={selectedTag} 
+                      onChange={e => setSelectedTag(e.target.value)} 
+                      style={{ 
+                        width: '110px', background: 'rgba(var(--glass-rgb),0.04)', 
+                        border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '9px 28px 9px 12px', 
+                        borderRadius: '10px', fontSize: '13px', color: 'var(--text-main)', outline: 'none', appearance: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {allTags.map(t => <option key={t} value={t}>{t === 'All' ? '🏷️ Tất cả' : `#${t}`}</option>)}
+                    </select>
+                    <Filter size={12} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  </div>
                 )}
-                <div className="list-item-desc" style={{ display: 'flex', justifyContent: 'space-between', marginTop: note.tags && note.tags.length > 0 ? 0 : '6px' }}>
-                  <span>{new Date(note.updatedAt).toLocaleDateString()}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Folder size={10} /> {note.category || 'Mặc định'}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="editor-pane">
-        {activeNote ? (
-          <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px 48px' }}>
-             
-             {/* Title & Metadata Settings */}
-             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '24px', paddingBottom: '20px', borderBottom: '1px solid rgba(var(--glass-rgb),0.05)', marginBottom: '20px', flexWrap: 'wrap' }}>
-                <input 
-                  type="text" 
-                  value={activeNote.title} 
-                  onChange={e => handleUpdateActiveNote('title', e.target.value)}
-                  style={{ flex: 1, minWidth: '300px', fontSize: '32px', fontWeight: '800', letterSpacing: '-0.03em', border: 'none', background: 'transparent', outline: 'none', color: 'white', padding: 0 }}
-                  placeholder="Tiêu đề quyển sổ..."
-                />
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px', color: '#a3aac4' }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(var(--glass-rgb),0.03)', padding: '6px 12px', borderRadius: '8px' }}>
-                      <Folder size={14} />
-                      <input 
-                        type="text" 
-                        placeholder="Tên danh mục..." 
-                        value={activeNote.category || ''} 
-                        onChange={e => handleUpdateActiveNote('category', e.target.value)} 
-                        style={{ background: 'transparent', border: 'none', color: 'var(--secondary)', fontWeight: 600, padding: 0, width: '100px', outline: 'none' }} 
-                      />
-                   </div>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', background: 'rgba(var(--glass-rgb),0.03)', padding: '6px 12px', borderRadius: '8px' }}>
-                      <Tag size={14} />
-                      {(activeNote.tags || []).map(t => (
-                          <span key={t} style={{ background: 'rgba(var(--glass-rgb),0.05)', border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '2px 8px', borderRadius: '100px', display: 'flex', alignItems: 'center', gap: '4px', color: 'white' }}>
-                             {t} 
-                             <button onClick={() => handleRemoveTag(t)} style={{ background: 'transparent', border: 'none', color: '#ff6e84', cursor: 'pointer', display: 'flex', padding: 0 }}>
-                                <Minus size={12} />
-                             </button>
-                          </span>
-                      ))}
-                      <input 
-                        type="text" 
-                        placeholder="Thêm tag (nhấn Enter)..." 
-                        onKeyDown={handleAddTag} 
-                        style={{ background: 'transparent', border: 'none', color: '#dee5ff', padding: 0, minWidth: '120px', outline: 'none' }} 
-                      />
-                   </div>
-                </div>
-             </div>
-
-            {/* Main Tiptap Editor */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <TiptapEditor 
-                 title={activeNote.title}
-                 content={activeNote.content || ''}
-                 onChange={(html) => handleUpdateActiveNote('content', html)}
-              />
-            </div>
-
-          </div>
-        ) : (
-          <div className="blank-slate" style={{ padding: '0 1.5rem' }}>
-            <div className="relative z-10 w-full flex flex-col items-center">
-              <div className="mb-5 inline-flex items-center justify-center w-14 h-14 rounded-2xl border shadow-xl" style={{ backgroundColor: 'var(--surface-container-highest)', borderColor: 'rgba(var(--glass-rgb),0.1)' }}>
-                <span className="material-symbols-outlined text-3xl" style={{ color: 'var(--primary)', fontVariationSettings: "'FILL' 1" }}>edit_document</span>
-              </div>
-              <h1 className="text-2xl font-extrabold tracking-tight mb-2 text-white">Sổ tay thông minh bằng AI</h1>
-              <p className="text-sm text-slate-400 mb-6 max-w-sm mx-auto leading-relaxed text-center">Tạo ghi chú mới. Chọn bôi đen đoạn văn cần AI giải thích, hoặc gõ dấu `/` (khi dòng trống) để kích hoạt tự tạo dàn ý AI.</p>
-              
-              <div className="flex items-center justify-center gap-3 w-full">
-                <button 
-                  className="px-6 py-2.5 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
-                  style={{ backgroundColor: 'var(--secondary)', color: 'var(--on-secondary)', boxShadow: '0 0 16px rgba(0,227,253,0.35)' }}
+                {/* Create button */}
+                <button
                   onClick={handleAddNote}
+                  style={{
+                    padding: '9px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
+                    border: 'none', cursor: 'pointer',
+                    background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white',
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    transition: 'all 0.2s',
+                    boxShadow: '0 4px 20px rgba(124,77,255,0.35)'
+                  }}
                 >
-                  <span className="material-symbols-outlined text-[18px]">note_add</span>
-                  Tạo ghi chú mới
+                  <Plus size={15} /> Tạo ghi chú
                 </button>
               </div>
             </div>
           </div>
-        )}
-      </div>
+
+          {/* Grid Body */}
+          <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '20px' }}>
+            {filteredNotes.length === 0 ? (
+              <div style={{ 
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                height: '100%', textAlign: 'center', color: 'var(--text-muted)', gap: '16px', padding: '40px'
+              }}>
+                <div style={{
+                  width: '72px', height: '72px', borderRadius: '20px',
+                  background: 'linear-gradient(135deg, rgba(124,77,255,0.12), rgba(0,227,253,0.08))',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '1px solid rgba(124,77,255,0.2)'
+                }}>
+                  <StickyNote size={32} color="var(--primary)" style={{ opacity: 0.7 }} />
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-main)' }}>
+                  {notes.length === 0 ? 'Chưa có ghi chú nào' : 'Không tìm thấy'}
+                </h3>
+                <p style={{ fontSize: '14px', maxWidth: '360px', lineHeight: '1.6' }}>
+                  {notes.length === 0 
+                    ? 'Tạo ghi chú mới để bắt đầu ghi lại kiến thức.' 
+                    : 'Thử tìm kiếm với từ khóa khác hoặc đổi bộ lọc tag.'}
+                </p>
+              </div>
+            ) : (
+              <div className="quiz-grid">
+                {filteredNotes.map((note, index) => {
+                  const gradientIdx = index % cardGradients.length;
+                  const preview = getContentPreview(note.content);
+                  
+                  return (
+                    <div
+                      key={note.id}
+                      className="quiz-card"
+                      onClick={() => setActiveNoteId(note.id)}
+                      style={{ background: cardGradients[gradientIdx] }}
+                    >
+                      <div className="quiz-card-accent" style={{ background: cardAccentColors[gradientIdx] }} />
+                      <button
+                        className="quiz-card-delete"
+                        onClick={(e) => handleDelete(e, note.id)}
+                        title="Xóa ghi chú"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <h3 className="quiz-card-title">{note.title || 'Không có tiêu đề'}</h3>
+                        <p style={{ 
+                          fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5',
+                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden', margin: 0
+                        }}>
+                          {preview}
+                        </p>
+                        {/* Tags */}
+                        {note.tags && note.tags.length > 0 && (
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                            {note.tags.slice(0, 3).map(t => (
+                              <span key={t} style={{ 
+                                fontSize: '10px', background: 'rgba(197,154,255,0.15)', 
+                                color: '#c59aff', padding: '2px 7px', borderRadius: '4px', fontWeight: 600 
+                              }}>
+                                #{t}
+                              </span>
+                            ))}
+                            {note.tags.length > 3 && (
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>+{note.tags.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="quiz-card-footer">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                          <Clock size={11} />
+                          {getRelativeTime(note.updatedAt)}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                          <Folder size={11} />
+                          {note.category || 'Mặc định'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ========== EDITOR VIEW ========== */
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+          {/* Back button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexShrink: 0 }}>
+            <button
+              onClick={() => setActiveNoteId(null)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '8px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                background: 'rgba(var(--glass-rgb),0.05)', border: '1px solid rgba(var(--glass-rgb),0.1)',
+                color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s'
+              }}
+            >
+              <ArrowLeft size={16} />
+              Sổ tay ghi chú
+            </button>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {activeNote ? (
+              <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px 48px' }}>
+               
+               {/* Title & Metadata Settings */}
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '24px', paddingBottom: '20px', borderBottom: '1px solid rgba(var(--glass-rgb),0.05)', marginBottom: '20px', flexWrap: 'wrap' }}>
+                  <input 
+                    type="text" 
+                    value={activeNote.title} 
+                    onChange={e => handleUpdateActiveNote('title', e.target.value)}
+                    style={{ flex: 1, minWidth: '300px', fontSize: '32px', fontWeight: '800', letterSpacing: '-0.03em', border: 'none', background: 'transparent', outline: 'none', color: 'white', padding: 0 }}
+                    placeholder="Tiêu đề quyển sổ..."
+                  />
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px', color: '#a3aac4' }}>
+                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(var(--glass-rgb),0.03)', padding: '6px 12px', borderRadius: '8px' }}>
+                        <Folder size={14} />
+                        <input 
+                          type="text" 
+                          placeholder="Tên danh mục..." 
+                          value={activeNote.category || ''} 
+                          onChange={e => handleUpdateActiveNote('category', e.target.value)} 
+                          style={{ background: 'transparent', border: 'none', color: 'var(--secondary)', fontWeight: 600, padding: 0, width: '100px', outline: 'none' }} 
+                        />
+                     </div>
+                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', background: 'rgba(var(--glass-rgb),0.03)', padding: '6px 12px', borderRadius: '8px' }}>
+                        <Tag size={14} />
+                        {(activeNote.tags || []).map(t => (
+                            <span key={t} style={{ background: 'rgba(var(--glass-rgb),0.05)', border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '2px 8px', borderRadius: '100px', display: 'flex', alignItems: 'center', gap: '4px', color: 'white' }}>
+                               {t} 
+                               <button onClick={() => handleRemoveTag(t)} style={{ background: 'transparent', border: 'none', color: '#ff6e84', cursor: 'pointer', display: 'flex', padding: 0 }}>
+                                  <Minus size={12} />
+                               </button>
+                            </span>
+                        ))}
+                        <input 
+                          type="text" 
+                          placeholder="Thêm tag (nhấn Enter)..." 
+                          onKeyDown={handleAddTag} 
+                          style={{ background: 'transparent', border: 'none', color: '#dee5ff', padding: 0, minWidth: '120px', outline: 'none' }} 
+                        />
+                     </div>
+                  </div>
+               </div>
+
+              {/* Main Tiptap Editor */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <TiptapEditor 
+                   title={activeNote.title}
+                   content={activeNote.content || ''}
+                   onChange={(html) => handleUpdateActiveNote('content', html)}
+                />
+              </div>
+
+            </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

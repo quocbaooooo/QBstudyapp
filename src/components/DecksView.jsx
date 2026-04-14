@@ -1,8 +1,326 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
-import { Trash2, Play } from 'lucide-react';
+import { useLocalStorage } from '../hooks/useLocalStorage';
+import { Trash2, Play, Sparkles, Loader, Wand2, CheckCircle, AlertCircle, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import StudyMode from './StudyMode';
+
+function AiCardModal({ onGenerate, onClose }) {
+  const [inputWords, setInputWords] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0, word: '' });
+  const [results, setResults] = useState([]); // { word, status: 'pending'|'done'|'error', card? }
+  const [error, setError] = useState('');
+
+  const [apiKey] = useLocalStorage('gemini_api_key', '');
+  const [apiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
+  const [aiProvider] = useLocalStorage('ai_provider', 'gemini');
+  const [openaiKey] = useLocalStorage('openai_api_key', '');
+  const [openaiModel] = useLocalStorage('openai_api_model', 'gpt-4o-mini');
+
+  const parseWords = () => {
+    return inputWords
+      .split(/[,\n;]+/)
+      .map(w => w.trim())
+      .filter(w => w.length > 0);
+  };
+
+  const wordCount = parseWords().length;
+
+  const callAI = async (words) => {
+    const activeApiKey = aiProvider === 'gemini' ? apiKey : openaiKey;
+    if (!activeApiKey) {
+      throw new Error(`Vui lòng nhập API Key cho ${aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} trong phần Cài đặt.`);
+    }
+
+    const prompt = `Bạn là từ điển Anh-Việt chuyên nghiệp. Phân tích ${words.length > 1 ? 'các từ/cụm từ' : 'từ/cụm từ'} tiếng Anh sau và trả về JSON.
+
+Từ cần phân tích: ${words.map((w, i) => `${i + 1}. ${w}`).join('\n')}
+
+TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON ARRAY sau (không markdown, không backtick):
+[
+  {
+    "word": "từ tiếng Anh gốc",
+    "definition": "nghĩa tiếng Việt (ngắn gọn, chính xác)",
+    "pronunciation": "phiên âm IPA, ví dụ: /həˈloʊ/",
+    "wordType": "loại từ viết tắt: n. (danh từ), v. (động từ), adj. (tính từ), adv. (trạng từ), prep. (giới từ), conj. (liên từ), phr. (cụm từ)",
+    "example": "1 câu ví dụ tiếng Anh sử dụng từ này (tự nhiên, dễ hiểu)",
+    "synonyms": "2-3 từ đồng nghĩa tiếng Anh, cách nhau bởi dấu phẩy (nếu có)"
+  }
+]
+
+QUY TẮC:
+- Trả về ĐÚNG JSON array, KHÔNG bọc trong markdown block.
+- Nếu từ có nhiều nghĩa, chọn nghĩa phổ biến nhất.
+- Phiên âm viết theo chuẩn IPA.
+- Ví dụ phải tự nhiên, dễ hiểu cho người Việt.
+- Nếu là cụm từ (phrasal verb, idiom), wordType ghi "phr."`;
+
+    if (aiProvider === 'gemini') {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${apiModel}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.2 },
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      return data.candidates[0].content.parts[0].text;
+    } else {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`
+        },
+        body: JSON.stringify({
+          model: openaiModel,
+          max_tokens: 2048,
+          temperature: 0.2,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      return data.choices[0].message.content;
+    }
+  };
+
+  const handleGenerate = async () => {
+    const words = parseWords();
+    if (words.length === 0) return;
+
+    setIsGenerating(true);
+    setError('');
+    setResults(words.map(w => ({ word: w, status: 'pending' })));
+
+    try {
+      // Process in batches of up to 10 words
+      const batchSize = 10;
+      const allCards = [];
+
+      for (let i = 0; i < words.length; i += batchSize) {
+        const batch = words.slice(i, i + batchSize);
+        setProgress({ current: i, total: words.length, word: batch.join(', ') });
+
+        const rawText = await callAI(batch);
+        // Cleanup and parse JSON
+        const cleaned = rawText.replace(/```json\n?/gi, '').replace(/```/g, '').trim();
+        let parsed;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          // Try to extract JSON array from response
+          const jsonMatch = cleaned.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          if (jsonMatch) {
+            parsed = JSON.parse(jsonMatch[0]);
+          } else {
+            throw new Error('AI trả về định dạng không hợp lệ.');
+          }
+        }
+
+        // Map results to cards
+        for (const item of parsed) {
+          const card = {
+            id: uuidv4(),
+            front: item.word || '',
+            back: item.definition || '',
+            pronunciation: item.pronunciation || '',
+            wordType: item.wordType || '',
+            example: item.example || '',
+            synonyms: item.synonyms || '',
+          };
+          allCards.push(card);
+        }
+
+        // Update results status
+        setResults(prev => prev.map((r, idx) => {
+          if (idx >= i && idx < i + batchSize) {
+            const matchedItem = parsed.find(p => p.word?.toLowerCase() === r.word.toLowerCase());
+            return { ...r, status: matchedItem ? 'done' : 'done', card: matchedItem };
+          }
+          return r;
+        }));
+      }
+
+      setProgress({ current: words.length, total: words.length, word: '' });
+
+      if (allCards.length > 0) {
+        onGenerate(allCards);
+      } else {
+        setError('AI không trả về được thẻ nào. Hãy thử lại.');
+        setIsGenerating(false);
+      }
+    } catch (err) {
+      setError(err.message);
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-xl rounded-2xl border border-white/10 shadow-2xl flex flex-col max-h-[85vh]"
+        style={{ background: 'linear-gradient(135deg, #0f1930 0%, #131d38 100%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #7c4dff, #536dfe)' }}>
+              <Wand2 size={20} color="white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
+                Tạo thẻ bằng AI
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white' }}>AI</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">Nhập từ tiếng Anh, AI sẽ tự phân tích đầy đủ</p>
+            </div>
+          </div>
+          <button className="text-slate-400 hover:text-white transition-colors p-1" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-3 flex-1 overflow-auto">
+          {!isGenerating ? (
+            <>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 block">
+                Nhập từ vựng tiếng Anh
+                <span className="text-slate-500 normal-case font-normal ml-1">(cách nhau bởi dấu phẩy, chấm phẩy, hoặc xuống dòng)</span>
+              </label>
+              <textarea
+                value={inputWords}
+                onChange={e => setInputWords(e.target.value)}
+                placeholder={`Ví dụ:\nabundant, resilient, elaborate\n\nHoặc mỗi từ 1 dòng:\nserendipity\nephemeral\nubiquitous`}
+                className="w-full rounded-xl border-2 border-white/10 focus:border-[#7c4dff]/50 transition-colors resize-none"
+                style={{
+                  minHeight: '160px', background: 'rgba(0,0,0,0.3)', color: 'var(--text-main)',
+                  padding: '16px', fontSize: '14px', fontFamily: 'monospace', outline: 'none',
+                }}
+                autoFocus
+              />
+
+              {/* Word count & tips */}
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-xs text-slate-400">
+                  {wordCount > 0 ? (
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles size={12} className="text-[#7c4dff]" />
+                      <span><strong className="text-white">{wordCount}</strong> từ sẽ được AI phân tích</span>
+                    </span>
+                  ) : (
+                    'Nhập ít nhất 1 từ để bắt đầu'
+                  )}
+                </span>
+              </div>
+
+              {/* Info box */}
+              <div className="mt-4 rounded-xl p-3.5 border border-[#7c4dff]/20" style={{ background: 'rgba(124,77,255,0.06)' }}>
+                <p className="text-xs text-slate-300 leading-relaxed flex items-start gap-2">
+                  <Sparkles size={14} className="text-[#7c4dff] shrink-0 mt-0.5" />
+                  <span>
+                    AI sẽ tự động điền: <strong className="text-white">nghĩa tiếng Việt</strong>, <strong className="text-white">phiên âm IPA</strong>,
+                    <strong className="text-white"> loại từ</strong>, <strong className="text-white">câu ví dụ</strong>, và <strong className="text-white">từ đồng nghĩa</strong> cho mỗi từ.
+                  </span>
+                </p>
+              </div>
+
+              {error && (
+                <div className="mt-3 rounded-lg p-3 border border-red-500/30 flex items-start gap-2" style={{ background: 'rgba(239,68,68,0.08)' }}>
+                  <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                  <span className="text-xs text-red-300">{error}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Generating state */
+            <div className="flex flex-col items-center justify-center py-8 gap-5">
+              <div className="relative">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(124,77,255,0.2), rgba(83,109,254,0.1))' }}>
+                  <Sparkles size={28} className="text-[#7c4dff] animate-pulse" />
+                </div>
+                <div
+                  className="absolute -inset-3 rounded-3xl border-2 border-[#7c4dff]/20"
+                  style={{ animation: 'spin 3s linear infinite' }}
+                />
+              </div>
+
+              <div className="text-center">
+                <p className="text-sm font-bold text-white mb-1">Đang phân tích từ vựng...</p>
+                <p className="text-xs text-slate-400">
+                  {progress.word && <>Đang xử lý: <span className="text-[#7c4dff] font-semibold">{progress.word}</span></>}
+                </p>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full max-w-xs">
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%`,
+                      background: 'linear-gradient(90deg, #7c4dff, #536dfe, #00e3fd)',
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 text-center mt-1.5">
+                  {progress.current} / {progress.total} từ
+                </p>
+              </div>
+
+              {/* Results preview */}
+              {results.length > 0 && (
+                <div className="w-full max-w-xs flex flex-col gap-1 mt-2">
+                  {results.map((r, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-xs">
+                      {r.status === 'done' ? (
+                        <CheckCircle size={12} className="text-emerald-400" />
+                      ) : r.status === 'error' ? (
+                        <AlertCircle size={12} className="text-red-400" />
+                      ) : (
+                        <Loader size={12} className="text-slate-500 animate-spin" />
+                      )}
+                      <span className={r.status === 'done' ? 'text-emerald-300' : r.status === 'error' ? 'text-red-300' : 'text-slate-500'}>
+                        {r.word}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {!isGenerating && (
+          <div className="flex items-center justify-end px-6 py-4 border-t border-white/5 gap-3">
+            <button
+              className="px-5 py-2 rounded-lg text-sm font-semibold text-slate-300 hover:text-white hover:bg-white/5 transition-all"
+              onClick={onClose}
+            >
+              Huỷ
+            </button>
+            <button
+              className="px-5 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+              style={{ background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white', boxShadow: '0 4px 20px rgba(124,77,255,0.35)' }}
+              onClick={handleGenerate}
+              disabled={wordCount === 0}
+            >
+              <Sparkles size={15} />
+              Tạo {wordCount > 0 ? `${wordCount} thẻ` : 'thẻ'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ImportModal({ onImport, onClose }) {
   const [importText, setImportText] = useState('');
@@ -280,6 +598,7 @@ export default function DecksView() {
   const [activeDeckId, setActiveDeckId] = useState(null);
   const [isStudying, setIsStudying] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showAiModal, setShowAiModal] = useState(false);
 
   const activeDeck = decks.find(d => d.id === activeDeckId);
 
@@ -359,6 +678,19 @@ export default function DecksView() {
       {/* Import Modal */}
       {showImport && <ImportModal onImport={handleImport} onClose={() => setShowImport(false)} />}
 
+      {/* AI Card Generation Modal */}
+      {showAiModal && (
+        <AiCardModal
+          onGenerate={(newCards) => {
+            setDecks(decks.map(d =>
+              d.id === activeDeckId ? { ...d, cards: [...d.cards, ...newCards] } : d
+            ));
+            setShowAiModal(false);
+          }}
+          onClose={() => setShowAiModal(false)}
+        />
+      )}
+
       <div className="list-pane">
         <div className="list-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px' }}>
           <button
@@ -407,6 +739,14 @@ export default function DecksView() {
                 style={{ borderBottom: '1px solid var(--border-color)', borderRadius: 0, boxShadow: 'none' }}
               />
               <div className="flex gap-2 shrink-0">
+                <button
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white', boxShadow: '0 2px 12px rgba(124,77,255,0.3)' }}
+                  onClick={() => setShowAiModal(true)}
+                >
+                  <Sparkles size={14} />
+                  AI tạo thẻ
+                </button>
                 <button
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all border border-white/10"
                   onClick={() => setShowImport(true)}

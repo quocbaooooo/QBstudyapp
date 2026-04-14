@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical } from 'lucide-react';
+import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportQuizToWord } from '../utils/exportWord';
 
@@ -33,7 +33,169 @@ export default function QuizzesView() {
   const [aiProgress, setAiProgress] = useState('');
   const fileInputRef = useRef(null);
 
+  // Translation popup state
+  const [translationPopup, setTranslationPopup] = useState(null); // { x, y, text, questionId, field, selStart, selEnd }
+  const [translatedText, setTranslatedText] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const translationTimeoutRef = useRef(null);
+
   const activeQuiz = quizzes.find(q => q.id === activeQuizId);
+
+  // ===== HELPERS: Render text with / separator and () hiding =====
+
+  // Renders text: hides content after / and content in () during test mode
+  // showHidden = true means show everything (answer revealed or edit mode)
+  const renderQuizText = (text, showHidden = false) => {
+    if (!text) return text;
+
+    // Split by / — first part is visible, rest is explanation
+    const slashIdx = text.indexOf('/');
+    let visiblePart = slashIdx !== -1 ? text.substring(0, slashIdx).trimEnd() : text;
+    const hiddenPart = slashIdx !== -1 ? text.substring(slashIdx + 1).trimStart() : '';
+
+    // In visible part, hide content in () unless showHidden
+    const renderWithParens = (str) => {
+      if (showHidden) return str;
+      // Remove (translation text) patterns — but keep content that was there originally
+      return str.replace(/\s*\([^)]*\)/g, '');
+    };
+
+    const cleanVisible = renderWithParens(visiblePart);
+
+    if (showHidden && hiddenPart) {
+      return (
+        <>
+          {visiblePart}
+          <span style={{ color: 'var(--accent-orange)', fontStyle: 'italic', opacity: 0.85 }}> / {hiddenPart}</span>
+        </>
+      );
+    }
+
+    return cleanVisible;
+  };
+
+  // Translation handler — works for both regular text (test mode) and input/textarea (edit mode)
+  const handleTextSelection = useCallback((e, questionId, field) => {
+    if (translationTimeoutRef.current) clearTimeout(translationTimeoutRef.current);
+    translationTimeoutRef.current = setTimeout(() => {
+      let selectedText = '';
+      let popupX = 0, popupY = 0;
+
+      const target = e.target;
+      const isFormElement = target.tagName === 'TEXTAREA' || target.tagName === 'INPUT';
+
+      if (isFormElement) {
+        // For textarea/input: use selectionStart/selectionEnd
+        const start = target.selectionStart;
+        const end = target.selectionEnd;
+        if (start !== end) {
+          selectedText = target.value.substring(start, end).trim();
+          const rect = target.getBoundingClientRect();
+          // Approximate popup position near the input
+          popupX = rect.left + rect.width / 2;
+          popupY = rect.top - 4;
+        }
+      } else {
+        // For regular text: use window.getSelection()
+        const selection = window.getSelection();
+        selectedText = selection?.toString()?.trim() || '';
+        if (selectedText && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          const rect = range.getBoundingClientRect();
+          popupX = rect.left + rect.width / 2;
+          popupY = rect.top - 10;
+        }
+      }
+
+      if (selectedText && selectedText.length > 0 && selectedText.length < 200) {
+        setTranslationPopup({
+          x: popupX,
+          y: popupY,
+          text: selectedText,
+          questionId,
+          field,
+        });
+        setTranslatedText('');
+      }
+    }, 250);
+  }, []);
+
+  // Handle delete question
+  const handleDeleteQuestion = (qId) => {
+    if (!activeQuiz) return;
+    const newQuestions = activeQuiz.questions.filter(q => q.id !== qId);
+    setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions, updatedAt: Date.now() } : q));
+  };
+
+  // Close translation popup on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (translationPopup && !e.target.closest('.translation-popup')) {
+        setTranslationPopup(null);
+        setTranslatedText('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [translationPopup]);
+
+  // Translate text using free MyMemory API (no API key needed, 0 cost)
+  const translateText = async (text) => {
+    setIsTranslating(true);
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|vi`);
+      const data = await res.json();
+      if (data.responseStatus !== 200) throw new Error(data.responseDetails || 'Lỗi dịch');
+      let translated = data.responseData.translatedText || '';
+      // MyMemory sometimes returns ALL CAPS — fix that
+      if (translated === translated.toUpperCase() && translated.length > 3) {
+        translated = translated.charAt(0).toUpperCase() + translated.slice(1).toLowerCase();
+      }
+      setTranslatedText(translated);
+    } catch (err) {
+      setTranslatedText('Lỗi dịch: ' + err.message);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  // Insert translation as (text) into the question/option
+  const handleInsertTranslation = () => {
+    if (!translationPopup || !translatedText) return;
+    const { questionId, field, text } = translationPopup;
+
+    // Find the question
+    const q = activeQuiz?.questions.find(x => x.id === questionId);
+    if (!q) return;
+
+    // Determine which field to modify
+    let originalText = '';
+    if (field === 'question') {
+      originalText = q.question;
+    } else if (field.startsWith('option_')) {
+      const optKey = field.replace('option_', '');
+      originalText = q.options[optKey];
+    } else {
+      return;
+    }
+
+    // Find the selected text and insert (translation) after it
+    const insertionIdx = originalText.indexOf(text);
+    if (insertionIdx === -1) return;
+
+    const afterIdx = insertionIdx + text.length;
+    const newText = originalText.substring(0, afterIdx) + ` (${translatedText})` + originalText.substring(afterIdx);
+
+    if (field === 'question') {
+      handleUpdateQuestionProp(questionId, 'question', newText);
+    } else if (field.startsWith('option_')) {
+      const optKey = field.replace('option_', '');
+      handleUpdateOptionProp(questionId, optKey, newText);
+    }
+
+    setTranslationPopup(null);
+    setTranslatedText('');
+  };
 
   const handleCreateEmptyQuiz = () => {
     const newQuiz = { id: uuidv4(), title: 'Đề trắc nghiệm mới', questions: [], updatedAt: Date.now() };
@@ -1141,7 +1303,108 @@ ${questionsText}`;
                     </div>
                   )}
 
-                  {questionsToRender.map((q, i) => (
+                  {/* Translation Popup */}
+                  {translationPopup && (
+                    <div
+                      className="translation-popup"
+                      style={{
+                        position: 'fixed',
+                        left: `${translationPopup.x}px`,
+                        top: `${translationPopup.y}px`,
+                        transform: 'translate(-50%, -100%)',
+                        zIndex: 9999,
+                        background: 'linear-gradient(135deg, #1a1e3a, #1e2140)',
+                        borderRadius: '14px',
+                        padding: '14px 18px',
+                        border: '1px solid rgba(124,77,255,0.3)',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(124,77,255,0.15)',
+                        minWidth: '200px',
+                        maxWidth: '360px',
+                        animation: 'fadeInUp 0.2s ease-out',
+                      }}
+                    >
+                      {/* Arrow */}
+                      <div style={{
+                        position: 'absolute', bottom: '-6px', left: '50%', transform: 'translateX(-50%) rotate(45deg)',
+                        width: '12px', height: '12px', background: '#1e2140',
+                        borderRight: '1px solid rgba(124,77,255,0.3)',
+                        borderBottom: '1px solid rgba(124,77,255,0.3)',
+                      }} />
+
+                      {/* Selected text */}
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                        <Languages size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                        Dịch từ
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: 'white', marginBottom: '10px', lineHeight: '1.4' }}>
+                        "{translationPopup.text}"
+                      </div>
+
+                      {/* Translation result */}
+                      {(isTranslating || translatedText) && (
+                        <div style={{
+                          background: 'rgba(124,77,255,0.08)', borderRadius: '8px', padding: '10px 12px',
+                          border: '1px solid rgba(124,77,255,0.15)', marginBottom: '10px',
+                          minHeight: '32px', display: 'flex', alignItems: 'center'
+                        }}>
+                          {isTranslating ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                              <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(124,77,255,0.3)', borderTop: '2px solid #7c4dff', animation: 'spin 0.8s linear infinite' }} />
+                              Đang dịch...
+                            </div>
+                          ) : (
+                            <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: '14px' }}>
+                              {translatedText}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Action buttons */}
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => { setTranslationPopup(null); setTranslatedText(''); }}
+                          style={{
+                            padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                            background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)',
+                            cursor: 'pointer', transition: 'all 0.15s'
+                          }}
+                        >Đóng</button>
+                        {!translatedText && !isTranslating && (
+                          <button
+                            onClick={() => translateText(translationPopup.text)}
+                            style={{
+                              padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
+                              background: 'linear-gradient(135deg, #7c4dff, #536dfe)',
+                              color: 'white', border: 'none', cursor: 'pointer',
+                              transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: '5px',
+                              boxShadow: '0 2px 12px rgba(124,77,255,0.3)'
+                            }}
+                          >
+                            <Languages size={13} /> Dịch
+                          </button>
+                        )}
+                        {translatedText && !isTranslating && (
+                          <button
+                            onClick={handleInsertTranslation}
+                            style={{
+                              padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
+                              background: 'linear-gradient(135deg, #7c4dff, #536dfe)',
+                              color: 'white', border: 'none', cursor: 'pointer',
+                              transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: '5px',
+                              boxShadow: '0 2px 12px rgba(124,77,255,0.3)'
+                            }}
+                          >
+                            <span style={{ fontSize: '13px' }}>+</span> Chèn ({translatedText})
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {questionsToRender.map((q, i) => {
+                    const answerRevealed = isTesting && q.userAnswer;
+                    return (
                     <div key={q.id} className="glass-panel" style={{ padding: '20px', marginBottom: '16px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                         <div style={{ fontWeight: '500', fontSize: '16px', flex: 1 }}>
@@ -1150,20 +1413,36 @@ ${questionsText}`;
                               <span style={{ paddingTop: '8px' }}>Câu {i + 1}:</span>
                               <textarea 
                                 value={q.question} onChange={e => handleUpdateQuestionProp(q.id, 'question', e.target.value)}
+                                onMouseUp={(e) => handleTextSelection(e, q.id, 'question')}
                                 style={{ flex: 1, background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '8px', fontSize: '15px', resize: 'vertical', minHeight: '60px' }}
                               />
                             </div>
                           ) : (
-                            <>Câu {i + 1}: {q.question}</>
+                            <span onMouseUp={(e) => handleTextSelection(e, q.id, 'question')}>
+                              Câu {i + 1}: {renderQuizText(q.question, answerRevealed)}
+                            </span>
                           )}
                         </div>
-                        <button 
-                          onClick={() => handleToggleBookmark(q.id)}
-                          title={q.isStarred ? "Bỏ đánh dấu" : "Đánh dấu câu hỏi này"}
-                          style={{ padding: '8px', background: q.isStarred ? 'rgba(251, 191, 36, 0.1)' : 'transparent', border: 'none', cursor: 'pointer', color: q.isStarred ? '#fbbf24' : 'var(--text-muted)', borderRadius: '8px', marginLeft: '16px', transition: 'all 0.2s', display: 'flex' }}
-                        >
-                          <Star size={20} fill={q.isStarred ? '#fbbf24' : 'none'} color={q.isStarred ? '#fbbf24' : 'currentColor'} />
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
+                          <button 
+                            onClick={() => handleToggleBookmark(q.id)}
+                            title={q.isStarred ? "Bỏ đánh dấu" : "Đánh dấu câu hỏi này"}
+                            style={{ padding: '8px', background: q.isStarred ? 'rgba(251, 191, 36, 0.1)' : 'transparent', border: 'none', cursor: 'pointer', color: q.isStarred ? '#fbbf24' : 'var(--text-muted)', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }}
+                          >
+                            <Star size={20} fill={q.isStarred ? '#fbbf24' : 'none'} color={q.isStarred ? '#fbbf24' : 'currentColor'} />
+                          </button>
+                          {!isTesting && (
+                            <button 
+                              onClick={() => handleDeleteQuestion(q.id)}
+                              title="Xóa câu hỏi này"
+                              style={{ padding: '8px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-red)'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
@@ -1181,10 +1460,13 @@ ${questionsText}`;
                             <strong>{opt}.</strong> 
                             {!isTesting ? (
                               <input type="text" value={q.options[opt]} onChange={(e) => handleUpdateOptionProp(q.id, opt, e.target.value)}
+                                onMouseUp={(e) => handleTextSelection(e, q.id, `option_${opt}`)}
                                 style={{ flex: 1, marginLeft: '4px', background: 'transparent', color: 'var(--text-main)', border: 'none', borderBottom: '1px dashed var(--border-color)', padding: '4px', fontSize: '14px', outline: 'none' }}
                               />
                             ) : (
-                              <span> {q.options[opt]}</span>
+                              <span onMouseUp={(e) => { e.stopPropagation(); handleTextSelection(e, q.id, `option_${opt}`); }}>
+                                {' '}{renderQuizText(q.options[opt], answerRevealed)}
+                              </span>
                             )}
                             {isTesting && q.answer && q.userAnswer === opt && opt === q.answer && <CheckCircle size={16} color="var(--accent-green)"/>}
                             {isTesting && q.answer && q.userAnswer === opt && opt !== q.answer && <XCircle size={16} color="var(--accent-red)"/>}
@@ -1214,7 +1496,47 @@ ${questionsText}`;
                             </div>
                           ) : (
                             <div style={{ fontSize: '14px' }}>
-                              {q.answer && <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', marginBottom: '8px', fontSize: '15px' }}>✓ Đáp án đúng: {q.answer}. {q.options[q.answer]}</div>}
+                              {q.answer && (
+                                <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', marginBottom: '8px', fontSize: '15px' }}>
+                                  ✓ Đáp án đúng: {q.answer}. {renderQuizText(q.options[q.answer], true)}
+                                </div>
+                              )}
+
+                              {/* Show the hidden /explanation parts for question & options */}
+                              {(() => {
+                                const hiddenParts = [];
+                                // Check question for / content
+                                if (q.question?.includes('/')) {
+                                  hiddenParts.push({ label: 'Câu hỏi', text: q.question.substring(q.question.indexOf('/') + 1).trim() });
+                                }
+                                // Check options for / content  
+                                ['A', 'B', 'C', 'D'].forEach(opt => {
+                                  if (q.options[opt]?.includes('/')) {
+                                    hiddenParts.push({ label: `Đáp án ${opt}`, text: q.options[opt].substring(q.options[opt].indexOf('/') + 1).trim() });
+                                  }
+                                });
+
+                                if (hiddenParts.length > 0) {
+                                  return (
+                                    <div style={{
+                                      marginBottom: '10px', padding: '10px 14px', borderRadius: '8px',
+                                      background: 'rgba(255,152,0,0.06)', border: '1px solid rgba(255,152,0,0.15)'
+                                    }}>
+                                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-orange)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        💡 Giải thích trong đề:
+                                      </div>
+                                      {hiddenParts.map((hp, idx) => (
+                                        <div key={idx} style={{ fontSize: '13px', color: 'var(--text-main)', lineHeight: '1.6', marginLeft: '4px' }}>
+                                          <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{hp.label}:</span>{' '}
+                                          <span style={{ fontStyle: 'italic' }}>{hp.text}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+
                               {q.explanation && (
                                 <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}>
                                   <strong style={{ color: 'var(--accent-orange)' }}>📝 Giải thích:</strong>{'\n'}{q.explanation}
@@ -1225,7 +1547,7 @@ ${questionsText}`;
                         </div>
                       )}
                     </div>
-                  ))}
+                  );})}
 
                   {!isTesting && (
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', padding: '10px 0 30px 0' }}>
