@@ -985,12 +985,19 @@ ${questionsText}`;
       ) : (
         /* ========== DETAIL / EDITOR VIEW ========== */
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-          {(activeQuizId || isCreatingAiQuiz || isImporting) && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexShrink: 0 }}>
+          {/* Detail View Top bar */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            marginBottom: '16px', 
+            flexShrink: 0,
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
               <button
                 onClick={() => { 
                   if (isImporting && importTargetQuizId) {
-                    // Canceling an append operation -> go back to active quiz
                     setIsImporting(false); 
                     setPreviewQuestions(null); 
                     setImportTargetQuizId(null);
@@ -1003,17 +1010,58 @@ ${questionsText}`;
                   }
                 }}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
+                  display: 'flex', alignItems: 'center', gap: '8px',
                   padding: '8px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
                   background: 'rgba(var(--glass-rgb),0.05)', border: '1px solid rgba(var(--glass-rgb),0.1)',
-                  color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s'
+                  color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s',
+                  flexShrink: 0
                 }}
               >
                 <ArrowLeft size={16} />
-                {isImporting && importTargetQuizId ? 'Quay lại Bộ đề' : 'Bộ đề trắc nghiệm'}
+                <span style={{ whiteSpace: 'nowrap' }}>{isImporting && importTargetQuizId ? 'Quay lại' : 'Bộ đề'}</span>
               </button>
+
+              {activeQuiz && (
+                <input 
+                  type="text" value={activeQuiz.title} 
+                  onChange={(e) => setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, title: e.target.value } : q))}
+                  style={{ 
+                    fontSize: '22px', fontWeight: 800, border: 'none', background: 'transparent', 
+                    padding: '0', boxShadow: 'none', color: 'var(--text-main)', width: '100%', outline: 'none',
+                    overflow: 'hidden', textOverflow: 'ellipsis'
+                  }}
+                />
+              )}
+              {isCreatingAiQuiz && <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0, whiteSpace: 'nowrap' }}>Tạo đề bằng AI</h2>}
+              {isImporting && !importTargetQuizId && <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0, whiteSpace: 'nowrap' }}>Nhập đề Word</h2>}
             </div>
-          )}
+
+            {activeQuiz && (
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                <button 
+                  className="btn" 
+                  style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }} 
+                  onClick={() => exportQuizToWord(activeQuiz)}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>download</span> Xuất Word
+                </button>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => {
+                    if (!isTesting) {
+                      const newQuestions = activeQuiz.questions.map(q => ({ ...q, userAnswer: null }));
+                      setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
+                    }
+                    setIsTesting(!isTesting);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '13px' }}
+                >
+                  {isTesting ? 'Sửa đề' : <><Play size={16}/> Tự Luyện</>}
+                </button>
+              </div>
+            )}
+          </div>
+
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {isCreatingAiQuiz ? (
@@ -1220,27 +1268,7 @@ ${questionsText}`;
               </div>
             ) : activeQuiz ? (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <input 
-                    type="text" value={activeQuiz.title} 
-                    onChange={(e) => setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, title: e.target.value } : q))}
-                    style={{ fontSize: '24px', fontWeight: 'bold', border: 'none', background: 'transparent', padding: '0', boxShadow: 'none' }}
-                  />
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="btn" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => exportQuizToWord(activeQuiz)}>
-                      <span className="material-symbols-outlined text-[18px]">download</span> Xuất Word
-                    </button>
-                    <button className="btn btn-primary" onClick={() => {
-                      if (!isTesting) {
-                        const newQuestions = activeQuiz.questions.map(q => ({ ...q, userAnswer: null }));
-                        setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
-                      }
-                      setIsTesting(!isTesting);
-                    }}>
-                      {isTesting ? 'Quay về sửa đề' : <><Play size={16}/> Chế độ Tự Luyện</>}
-                    </button>
-                  </div>
-                </div>
+
 
                 <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                   <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '24px', position: 'relative', overflow: 'hidden' }}>
