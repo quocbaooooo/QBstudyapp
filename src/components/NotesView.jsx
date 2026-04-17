@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
 import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
@@ -10,6 +10,7 @@ export default function NotesView() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState('All');
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   
   const activeNote = notes.find(n => n.id === activeNoteId);
 
@@ -66,10 +67,18 @@ export default function NotesView() {
      return matchesSearch && matchesTag;
   });
 
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 60000);
+
+    return () => window.clearInterval(id);
+  }, []);
+
   // Helper: relative time
   const getRelativeTime = (timestamp) => {
     if (!timestamp) return '';
-    const diff = Date.now() - timestamp;
+    const diff = currentTime - timestamp;
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'Vừa xong';
     if (mins < 60) return `${mins} phút trước`;

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthProvider } from './contexts/AuthContext';
+import { useAuth } from './contexts/useAuth';
 import NotesView from './components/NotesView';
 import DecksView from './components/DecksView';
 import QuizzesView from './components/QuizzesView';
 import SettingsView from './components/SettingsView';
-import { useLocalStorage } from './hooks/useLocalStorage';
 
 function LoginScreen() {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
@@ -20,7 +20,7 @@ function LoginScreen() {
     setError('');
     try {
       await signInWithGoogle();
-    } catch (err) {
+    } catch {
       setError('Đăng nhập Google thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);

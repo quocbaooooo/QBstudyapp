@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Trash2, Play, Sparkles, Loader, Wand2, CheckCircle, AlertCircle, X } from 'lucide-react';
@@ -433,7 +433,7 @@ function ImportModal({ onImport, onClose }) {
                   { value: 'newline', label: 'Dòng mới' },
                   { value: 'semicolon', label: 'Chấm phẩy' },
                 ].map(opt => (
-                  <label key={opt.value} className="flex items-center gap-2.5 cursor-pointer text-sm text-slate-300 hover:text-white transition-colors">
+                  <label key={opt.value} className="flex items-center gap-2.5 cursor-pointer text-sm text-slate-300 hover:text-white transition-colors" onClick={() => setCardSeparator(opt.value)}>
                     <div className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all ${cardSeparator === opt.value ? 'border-secondary bg-secondary/20' : 'border-slate-500'}`}>
                       {cardSeparator === opt.value && <div className="w-2 h-2 rounded-full bg-secondary" />}
                     </div>

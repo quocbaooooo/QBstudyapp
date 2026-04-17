@@ -2,15 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   collection, 
   doc,
-  onSnapshot, 
-  setDoc,
-  deleteDoc,
-  writeBatch,
-  query,
-  orderBy
+  onSnapshot,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 
 /**
  * Hook that syncs a Firestore collection with local state.
@@ -46,7 +42,6 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
   // Listen to Firestore changes (real-time sync)
   useEffect(() => {
     if (!user) {
-      setFirestoreReady(false);
       return;
     }
 

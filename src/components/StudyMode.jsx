@@ -1,37 +1,33 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
+const shuffleArray = (source = []) => {
+  const arr = [...source];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
 export default function StudyMode({ deck, onClose }) {
+  const cards = deck.cards;
+  const totalCards = cards.length;
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [isShuffled, setIsShuffled] = useState(false);
-  const [cardOrder, setCardOrder] = useState([]);
-  
+
   const [studyType, setStudyType] = useState('flip'); // 'flip' or 'mcq'
-  const [mcqOptions, setMcqOptions] = useState([]);
   const [mcqSelected, setMcqSelected] = useState(null);
   const [appSoundEnabled] = useLocalStorage('app_sound_enabled', true);
 
-  // Initialize card order
-  useEffect(() => {
-    const order = deck.cards.map((_, i) => i);
-    setCardOrder(isShuffled ? shuffleArray([...order]) : order);
-    setCurrentIndex(0);
-    setIsFlipped(false);
-    setMcqSelected(null);
-  }, [deck.cards.length, isShuffled, studyType]);
+  const cardOrder = useMemo(() => {
+    const order = cards.map((_, i) => i);
+    return isShuffled ? shuffleArray(order) : order;
+  }, [cards, isShuffled]);
 
-  function shuffleArray(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
-
-  const cards = deck.cards;
-  const totalCards = cards.length;
-  const actualIndex = cardOrder[currentIndex] ?? 0;
+  const actualIndex = Math.min(cardOrder[currentIndex] ?? 0, Math.max(totalCards - 1, 0));
   const currentCard = cards[actualIndex];
 
   const handleNext = useCallback(() => {
@@ -58,6 +54,9 @@ export default function StudyMode({ deck, onClose }) {
 
   const toggleShuffle = () => {
     setIsShuffled(prev => !prev);
+    setCurrentIndex(0);
+    setIsFlipped(false);
+    setMcqSelected(null);
   };
 
   // Keyboard shortcuts
@@ -103,7 +102,9 @@ export default function StudyMode({ deck, onClose }) {
         osc.start(now);
         osc.stop(now + 0.2);
       }
-    } catch (e) { console.log('Audio error'); }
+    } catch {
+      console.log('Audio error');
+    }
   }, [appSoundEnabled]);
 
   const handleMcqSelect = (cardId) => {
@@ -113,18 +114,15 @@ export default function StudyMode({ deck, onClose }) {
     playFeedbackSound(isCorrect);
   };
 
-  // Generate MCQ options
-  useEffect(() => {
-    if (studyType === 'mcq' && currentCard) {
-      // We want up to 4 options including the correct one
-      const others = cards.filter(c => c.id !== currentCard.id);
-      const shuffledOthers = shuffleArray([...others]);
-      const randomDistractors = shuffledOthers.slice(0, 3);
-      
-      const finalOptions = shuffleArray([currentCard, ...randomDistractors]);
-      setMcqOptions(finalOptions);
-    }
-  }, [currentIndex, currentCard, studyType, cards]);
+  const mcqOptions = useMemo(() => {
+    if (studyType !== 'mcq' || !currentCard) return [];
+
+    const others = cards.filter(c => c.id !== currentCard.id);
+    const shuffledOthers = shuffleArray(others);
+    const randomDistractors = shuffledOthers.slice(0, 3);
+
+    return shuffleArray([currentCard, ...randomDistractors]);
+  }, [studyType, currentCard, cards]);
 
   // Text-to-speech
   const speak = (text) => {

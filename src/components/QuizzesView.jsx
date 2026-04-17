@@ -6,21 +6,24 @@ import { exportQuizToWord } from '../utils/exportWord';
 
 export default function QuizzesView() {
   const [quizzes, setQuizzes] = useLocalStorage('study_quizzes', []);
-  const [apiKey, setApiKey] = useLocalStorage('gemini_api_key', '');
-  const [apiModel, setApiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
+  const [apiKey] = useLocalStorage('gemini_api_key', '');
+  const [apiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
   
-  const [aiProvider, setAiProvider] = useLocalStorage('ai_provider', 'gemini');
-  const [openaiKey, setOpenaiKey] = useLocalStorage('openai_api_key', '');
-  const [openaiModel, setOpenaiModel] = useLocalStorage('openai_api_model', 'gpt-4o-mini');
+  const [aiProvider] = useLocalStorage('ai_provider', 'gemini');
+  const [openaiKey] = useLocalStorage('openai_api_key', '');
+  const [openaiModel] = useLocalStorage('openai_api_model', 'gpt-4o-mini');
   const [appSoundEnabled] = useLocalStorage('app_sound_enabled', true);
 
   const [activeQuizId, setActiveQuizId] = useState(null);
   const [importText, setImportText] = useState('');
+  const [importMode, setImportMode] = useState('normal'); // 'normal' | 'reading'
   const [isImporting, setIsImporting] = useState(false);
   const [previewQuestions, setPreviewQuestions] = useState(null);
+  const [previewReadingPassage, setPreviewReadingPassage] = useState(null); // { id, title, content, blankNumbers }
   const [importTargetQuizId, setImportTargetQuizId] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
   const [testMode, setTestMode] = useState('all'); // 'all' or 'starred'
+  const [selectedReadingQuestionId, setSelectedReadingQuestionId] = useState(null);
   const [aiLoading, setAiLoading] = useState(null);
   const [isTakeawaysCollapsed, setIsTakeawaysCollapsed] = useState(false);
   const [isGeneratingTakeaways, setIsGeneratingTakeaways] = useState(false);
@@ -123,8 +126,31 @@ export default function QuizzesView() {
   // Handle delete question
   const handleDeleteQuestion = (qId) => {
     if (!activeQuiz) return;
+
+    const questionToDelete = activeQuiz.questions.find(q => q.id === qId);
+    const deletedReadingGroupId = questionToDelete?.readingGroupId || null;
+
     const newQuestions = activeQuiz.questions.filter(q => q.id !== qId);
-    setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions, updatedAt: Date.now() } : q));
+
+    let newReadingPassages = activeQuiz.readingPassages || [];
+    if (deletedReadingGroupId) {
+      const groupStillHasQuestion = newQuestions.some(q => q.readingGroupId === deletedReadingGroupId);
+      if (!groupStillHasQuestion) {
+        // User approved rule 2.B: auto-remove passage block if its questions become empty.
+        newReadingPassages = newReadingPassages.filter(p => p.id !== deletedReadingGroupId);
+      }
+    }
+
+    setQuizzes(
+      quizzes.map(q => q.id === activeQuizId
+        ? { ...q, questions: newQuestions, readingPassages: newReadingPassages, updatedAt: Date.now() }
+        : q
+      )
+    );
+
+    if (selectedReadingQuestionId === qId) {
+      setSelectedReadingQuestionId(null);
+    }
   };
 
   // Close translation popup on click outside
@@ -216,10 +242,21 @@ export default function QuizzesView() {
   };
 
   const handleParseImport = () => {
-    const questions = parseQuizText(importText);
+    if (importMode === 'reading') {
+      const parsedReading = parseReadingQuizText(importText);
+      if (parsedReading && parsedReading.questions.length > 0) {
+        setPreviewQuestions(parsedReading.questions);
+        setPreviewReadingPassage(parsedReading.passage);
+      } else {
+        alert('Không tìm thấy dữ liệu READING hợp lệ. Hãy nhập 1 block passage và các câu hỏi có đủ A/B/C/D.');
+      }
+      return;
+    }
 
+    const questions = parseQuizText(importText);
     if (questions.length > 0) {
       setPreviewQuestions(questions);
+      setPreviewReadingPassage(null);
     } else {
       alert('Không tìm thấy câu trắc nghiệm hợp lệ. Đảm bảo mỗi câu có đủ 4 đáp án A. B. C. D.');
     }
@@ -228,28 +265,163 @@ export default function QuizzesView() {
   const handleConfirmImport = () => {
     if (!previewQuestions || previewQuestions.length === 0) return;
 
+    const isReadingImport = importMode === 'reading';
+
     if (importTargetQuizId) {
-      // Append to existing quiz
+      // Import into currently opened quiz
       const newQuizzes = quizzes.map(q => {
-        if (q.id === importTargetQuizId) {
-          return { ...q, questions: [...q.questions, ...previewQuestions], updatedAt: Date.now() };
+        if (q.id !== importTargetQuizId) return q;
+
+        if (isReadingImport) {
+          // User approved rule 1: always create a NEW reading block for each reading import
+          return {
+            ...q,
+            questions: [...q.questions, ...previewQuestions],
+            readingPassages: [...(q.readingPassages || []), ...(previewReadingPassage ? [previewReadingPassage] : [])],
+            updatedAt: Date.now(),
+          };
         }
-        return q;
+
+        return {
+          ...q,
+          questions: [...q.questions, ...previewQuestions],
+          updatedAt: Date.now(),
+        };
       });
+
       setQuizzes(newQuizzes);
       setActiveQuizId(importTargetQuizId);
+      if (isReadingImport && previewQuestions[0]?.id) {
+        setSelectedReadingQuestionId(previewQuestions[0].id);
+      }
     } else {
-      // Create new quiz
-      const newQuiz = { id: uuidv4(), title: `Đề import (${previewQuestions.length} câu)`, questions: previewQuestions, updatedAt: Date.now() };
+      // Import from grid: create new quiz
+      const quizTitle = isReadingImport
+        ? `Đề READING (${previewQuestions.length} câu)`
+        : `Đề import (${previewQuestions.length} câu)`;
+
+      const newQuiz = {
+        id: uuidv4(),
+        title: quizTitle,
+        questions: previewQuestions,
+        readingPassages: isReadingImport && previewReadingPassage ? [previewReadingPassage] : [],
+        updatedAt: Date.now(),
+      };
       setQuizzes([newQuiz, ...quizzes]);
       setActiveQuizId(newQuiz.id);
+      if (isReadingImport && previewQuestions[0]?.id) {
+        setSelectedReadingQuestionId(previewQuestions[0].id);
+      }
     }
     
     // Reset import states
     setIsImporting(false);
     setPreviewQuestions(null);
+    setPreviewReadingPassage(null);
     setImportTargetQuizId(null);
     setImportText('');
+    setImportMode('normal');
+  };
+
+  const getBlankNumbersFromPassage = (text = '') => {
+    if (!text) return [];
+    const numberSet = new Set();
+
+    const inParens = text.match(/\((\d{3})\)/g) || [];
+    inParens.forEach(token => {
+      const m = token.match(/\d{3}/);
+      if (m) numberSet.add(m[0]);
+    });
+
+    const standalone = text.match(/\b\d{3}\b/g) || [];
+    standalone.forEach(num => numberSet.add(num));
+
+    return Array.from(numberSet);
+  };
+
+  const renderPassageWithBlankHighlights = (passage = '', activeBlankNumber = null) => {
+    if (!passage) return null;
+    const parts = passage.split(/(\(\d{3}\)|\b\d{3}\b)/g);
+
+    return parts.map((part, idx) => {
+      const numberMatch = part.match(/^\((\d{3})\)$/) || part.match(/^(\d{3})$/);
+      if (!numberMatch) return <span key={`p-${idx}`}>{part}</span>;
+
+      const blankNumber = numberMatch[1];
+      const isActive = !!activeBlankNumber && String(activeBlankNumber) === String(blankNumber);
+
+      return (
+        <span
+          key={`p-${idx}`}
+          style={{
+            display: 'inline-block',
+            padding: '0 4px',
+            margin: '0 1px',
+            borderRadius: '6px',
+            fontWeight: 700,
+            color: isActive ? '#001018' : '#8eefff',
+            background: isActive ? 'linear-gradient(135deg, #67e8f9, #22d3ee)' : 'rgba(6,182,212,0.22)',
+            boxShadow: isActive ? '0 0 0 1px rgba(103,232,249,0.45), 0 6px 18px rgba(34,211,238,0.25)' : 'none',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          {part}
+        </span>
+      );
+    });
+  };
+
+  const getReadingPreviewData = (questions = [], quiz = null) => {
+    if (!questions.length) return { isReading: false, passage: '', questions: [], groupId: null };
+
+    const allHaveGroup = questions.every(q => !!q.readingGroupId);
+    if (allHaveGroup && quiz?.readingPassages?.length) {
+      const groupId = questions[0].readingGroupId;
+      const sameGroup = questions.every(q => q.readingGroupId === groupId);
+      const passageObj = quiz.readingPassages.find(p => p.id === groupId);
+      if (sameGroup && passageObj) {
+        return {
+          isReading: true,
+          passage: passageObj.content || '',
+          questions,
+          groupId,
+          passageTitle: passageObj.title || '',
+          blankNumbers: passageObj.blankNumbers || getBlankNumbersFromPassage(passageObj.content || ''),
+        };
+      }
+    }
+
+    // Backward compatibility: old format embeds passage in question string
+    const readingPrefix = '[READING]\n';
+    const allReading = questions.every(q => typeof q.question === 'string' && q.question.startsWith(readingPrefix));
+    if (!allReading) return { isReading: false, passage: '', questions, groupId: null };
+
+    const transformed = questions.map(q => {
+      const raw = q.question.slice(readingPrefix.length);
+      const splitIdx = raw.indexOf('\n\n');
+      if (splitIdx === -1) {
+        return { ...q, _passage: '', _questionOnly: raw.trim(), blankNumber: q.blankNumber || '' };
+      }
+      const passage = raw.slice(0, splitIdx).trim();
+      const questionOnly = raw.slice(splitIdx + 2).trim();
+      const blankMatch = questionOnly.match(/^\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[):.]?/i);
+      return {
+        ...q,
+        _passage: passage,
+        _questionOnly: questionOnly,
+        blankNumber: q.blankNumber || (blankMatch ? blankMatch[1] : ''),
+      };
+    });
+
+    const passage = transformed[0]?._passage || '';
+    return {
+      isReading: true,
+      passage,
+      questions: transformed,
+      groupId: null,
+      passageTitle: '',
+      blankNumbers: getBlankNumbersFromPassage(passage),
+    };
   };
 
   /**
@@ -380,6 +552,78 @@ export default function QuizzesView() {
     }
 
     return questions;
+  }
+
+  /**
+   * READING parser: 1 passage block + many mapped questions.
+   * Output:
+   * {
+   *   passage: { id, title, content, blankNumbers[] },
+   *   questions: [{...mcq, blankNumber, readingGroupId }]
+   * }
+   */
+  function parseReadingQuizText(text) {
+    if (!text || !text.trim()) return null;
+
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    const questionStartRe = /^\s*(?:Câu|Question|Q)?\s*\d+\s*[):.]/i;
+
+    let firstQuestionLineIdx = lines.findIndex(line => questionStartRe.test(line.trim()));
+    if (firstQuestionLineIdx === -1) return null;
+
+    const passageRaw = lines.slice(0, firstQuestionLineIdx).join('\n').trim();
+    const questionsRaw = lines.slice(firstQuestionLineIdx).join('\n').trim();
+    if (!passageRaw || !questionsRaw) return null;
+
+    const cleanedPassage = passageRaw
+      .replace(/^\s*(?:READING|PASSAGE|ĐOẠN\s*VĂN)\s*[:-]?\s*/i, '')
+      .trim();
+
+    const passageLines = cleanedPassage.split('\n').map(s => s.trim()).filter(Boolean);
+    const passageTitle = passageLines[0] || 'Reading Passage';
+
+    // Flexible mapping rule (B): capture both (135) and standalone 135-like numbers.
+    const passageBlankNumbers = getBlankNumbersFromPassage(cleanedPassage);
+
+    // Capture question header numbers in order.
+    const questionHeaderNumbers = [];
+    const qHeaderRegex = /^\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[):.]/gmi;
+    let m;
+    while ((m = qHeaderRegex.exec(questionsRaw)) !== null) {
+      questionHeaderNumbers.push(m[1]);
+    }
+
+    const parsedQuestions = parseQuizText(questionsRaw);
+    if (parsedQuestions.length === 0) return null;
+
+    const readingGroupId = uuidv4();
+    const mappedQuestions = parsedQuestions.map((item, idx) => {
+      const questionNumber = questionHeaderNumbers[idx] || '';
+      const blankFromQuestionText = item.question.match(/^\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[):.]?/i)?.[1] || '';
+      const blankNumber = questionNumber || blankFromQuestionText || '';
+
+      return {
+        ...item,
+        question: item.question,
+        readingGroupId,
+        blankNumber,
+      };
+    });
+
+    const effectiveBlankNumbers = passageBlankNumbers.length > 0
+      ? passageBlankNumbers
+      : Array.from(new Set(mappedQuestions.map(q => String(q.blankNumber || '')).filter(Boolean)));
+
+    return {
+      passage: {
+        id: readingGroupId,
+        title: passageTitle,
+        content: cleanedPassage,
+        blankNumbers: effectiveBlankNumbers,
+      },
+      questions: mappedQuestions,
+    };
   }
 
   const processFiles = useCallback((files) => {
@@ -697,7 +941,7 @@ D. ${questionObj.options.D}`;
         osc.start(now);
         osc.stop(now + 0.2);
       }
-    } catch (e) {
+    } catch {
       console.log('Audio disabled or interupted');
     }
   };
@@ -790,6 +1034,14 @@ ${questionsText}`;
   const questionsToRender = isTesting && testMode === 'starred' && activeQuiz 
     ? activeQuiz.questions.filter(q => q.isStarred) 
     : (activeQuiz ? activeQuiz.questions : []);
+
+  const readingTestData = activeQuiz
+    ? getReadingPreviewData(questionsToRender, activeQuiz)
+    : { isReading: false, passage: '', questions: questionsToRender, groupId: null, blankNumbers: [] };
+
+  const questionsForDisplay = readingTestData.isReading
+    ? readingTestData.questions
+    : questionsToRender;
 
   // Helper: relative time
   const getRelativeTime = (timestamp) => {
@@ -1227,40 +1479,131 @@ ${questionsText}`;
                   <>
                     <h3>Xem Trước ({previewQuestions.length} câu)</h3>
                     <div style={{ flex: 1, overflowY: 'auto', background: 'rgba(var(--glass-rgb),0.02)', borderRadius: '8px', padding: '16px', border: '1px solid rgba(var(--glass-rgb),0.06)', marginTop: '16px' }}>
-                      {previewQuestions.map((q, i) => (
-                        <div key={i} style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px dashed rgba(var(--glass-rgb),0.06)' }}>
-                          <div style={{ fontWeight: '500', marginBottom: '8px', fontSize: '15px' }}>Câu {i + 1}: {q.question}</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                            <div>A. {q.options.A}</div><div>B. {q.options.B}</div>
-                            <div>C. {q.options.C}</div><div>D. {q.options.D}</div>
-                          </div>
-                          {(q.answer || q.explanation) && (
-                            <div style={{ marginTop: '10px', fontSize: '13px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '8px', borderRadius: '6px' }}>
-                              {q.answer && <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>✓ Đáp án: {q.answer}</div>}
-                              {q.explanation && <div style={{ color: 'var(--text-main)' }}>📝 GT: {q.explanation}</div>}
+                      {(() => {
+                        const readingPreview = importMode === 'reading' && previewReadingPassage
+                          ? {
+                              isReading: true,
+                              passage: previewReadingPassage.content || '',
+                              questions: previewQuestions,
+                              blankNumbers: previewReadingPassage.blankNumbers || [],
+                              passageTitle: previewReadingPassage.title || '',
+                            }
+                          : getReadingPreviewData(previewQuestions, activeQuiz);
+                        if (readingPreview.isReading) {
+                          return (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(420px, 1.2fr)', gap: '16px', alignItems: 'start' }}>
+                              <div style={{ position: 'sticky', top: 0 }}>
+                                <div style={{
+                                  fontSize: '12px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase',
+                                  color: '#8eefff', marginBottom: '8px'
+                                }}>
+                                  Passage / Đoạn văn
+                                </div>
+                                <div style={{
+                                  whiteSpace: 'pre-wrap', lineHeight: '1.7', fontSize: '14px', color: 'var(--text-main)',
+                                  background: 'linear-gradient(180deg, rgba(6,182,212,0.09), rgba(6,182,212,0.03))',
+                                  border: '1px solid rgba(6,182,212,0.2)', borderRadius: '12px', padding: '14px'
+                                }}>
+                                  {renderPassageWithBlankHighlights(readingPreview.passage, null)}
+                                </div>
+                              </div>
+
+                              <div>
+                                <div style={{
+                                  fontSize: '12px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase',
+                                  color: '#d8ccff', marginBottom: '8px'
+                                }}>
+                                  Questions / Câu hỏi
+                                </div>
+                                {readingPreview.questions.map((q, i) => (
+                                  <div key={i} style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px dashed rgba(var(--glass-rgb),0.06)' }}>
+                                    <div style={{ fontWeight: '500', marginBottom: '8px', fontSize: '15px' }}>
+                                      Câu {i + 1}{q.blankNumber ? ` (${q.blankNumber})` : ''}: {q._questionOnly || q.question}
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                                      <div>A. {q.options.A}</div><div>B. {q.options.B}</div>
+                                      <div>C. {q.options.C}</div><div>D. {q.options.D}</div>
+                                    </div>
+                                    {(q.answer || q.explanation) && (
+                                      <div style={{ marginTop: '10px', fontSize: '13px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '8px', borderRadius: '6px' }}>
+                                        {q.answer && <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>✓ Đáp án: {q.answer}</div>}
+                                        {q.explanation && <div style={{ color: 'var(--text-main)' }}>📝 GT: {q.explanation}</div>}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      ))}
+                          );
+                        }
+
+                        return previewQuestions.map((q, i) => (
+                          <div key={i} style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px dashed rgba(var(--glass-rgb),0.06)' }}>
+                            <div style={{ fontWeight: '500', marginBottom: '8px', fontSize: '15px' }}>Câu {i + 1}: {q.question}</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                              <div>A. {q.options.A}</div><div>B. {q.options.B}</div>
+                              <div>C. {q.options.C}</div><div>D. {q.options.D}</div>
+                            </div>
+                            {(q.answer || q.explanation) && (
+                              <div style={{ marginTop: '10px', fontSize: '13px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '8px', borderRadius: '6px' }}>
+                                {q.answer && <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>✓ Đáp án: {q.answer}</div>}
+                                {q.explanation && <div style={{ color: 'var(--text-main)' }}>📝 GT: {q.explanation}</div>}
+                              </div>
+                            )}
+                          </div>
+                        ));
+                      })()}
                     </div>
                     <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                       <button className="btn" onClick={() => setPreviewQuestions(null)}>Quay lại chỉnh sửa</button>
-                      <button className="btn btn-primary" onClick={handleConfirmImport}>Xác nhận {importTargetQuizId ? 'Thêm' : 'Khởi tạo Đề'}</button>
+                      <button className="btn btn-primary" onClick={handleConfirmImport}>
+                        Xác nhận {(importTargetQuizId && importMode !== 'reading') ? 'Thêm' : 'Khởi tạo Đề'}
+                      </button>
                     </div>
                   </>
                 ) : (
                   <>
                     <h3>{importTargetQuizId ? 'Thêm Câu Hỏi Từ Word' : 'Nhập Câu Hỏi Trắc Nghiệm'}</h3>
+
+                    <div style={{ display: 'flex', gap: '8px', margin: '8px 0 14px 0', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => setImportMode('normal')}
+                        style={{
+                          padding: '7px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700,
+                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                          background: importMode === 'normal' ? 'rgba(124,77,255,0.25)' : 'rgba(var(--glass-rgb),0.04)',
+                          color: importMode === 'normal' ? '#d8ccff' : 'var(--text-muted)'
+                        }}
+                      >
+                        Trắc nghiệm thường
+                      </button>
+                      <button
+                        onClick={() => setImportMode('reading')}
+                        style={{
+                          padding: '7px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700,
+                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                          background: importMode === 'reading' ? 'rgba(0,227,253,0.18)' : 'rgba(var(--glass-rgb),0.04)',
+                          color: importMode === 'reading' ? '#8eefff' : 'var(--text-muted)'
+                        }}
+                      >
+                        READING (1 đoạn + nhiều câu)
+                      </button>
+                    </div>
+
                     <p style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '14px' }}>
-                      Copy và Paste trực tiếp từ Word. Định dạng yêu cầu: <strong>"Câu 1: [đề] A. [đáp án] B. [đáp án] C. [đáp án] D. [đáp án]"</strong>. (Tùy chọn ghi thêm "Đáp án: A", "Giải thích: ...")
+                      {importMode === 'reading'
+                        ? <>Dán theo mẫu: <strong>READING: [tiêu đề + passage có blank number như (135), 136...]\n\n135. [câu hỏi] A...B...C...D...</strong>. Passage được lưu 1 block và câu hỏi map theo số.</>
+                        : <>Copy và Paste trực tiếp từ Word. Định dạng yêu cầu: <strong>"Câu 1: [đề] A. [đáp án] B. [đáp án] C. [đáp án] D. [đáp án]"</strong>. (Tùy chọn ghi thêm "Đáp án: A", "Giải thích: ...")</>}
                     </p>
                     <textarea 
                       style={{ flex: 1, resize: 'none', fontFamily: 'monospace' }} 
                       value={importText} onChange={e => setImportText(e.target.value)}
-                      placeholder={"Câu 1: 1 + 1 bằng mấy?\nA. 1\nB. 2\nC. 3\nD. 4"}
+                      placeholder={importMode === 'reading'
+                        ? "READING:\nBiggs, CEO and founder of BiggsGraphics...\n\nCâu 1: Từ (131) phù hợp nhất là gì?\nA. seek\nB. to seek\nC. seeking\nD. are seeking"
+                        : "Câu 1: 1 + 1 bằng mấy?\nA. 1\nB. 2\nC. 3\nD. 4"}
                     />
                     <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                      <button className="btn" onClick={() => { setIsImporting(false); setImportTargetQuizId(null); setPreviewQuestions(null); }}>Hủy</button>
+                      <button className="btn" onClick={() => { setIsImporting(false); setImportTargetQuizId(null); setPreviewQuestions(null); setPreviewReadingPassage(null); setImportMode('normal'); }}>Hủy</button>
                       <button className="btn btn-primary" onClick={handleParseImport}>Xem trước</button>
                     </div>
                   </>
@@ -1430,158 +1773,249 @@ ${questionsText}`;
                     </div>
                   )}
 
-                  {questionsToRender.map((q, i) => {
-                    const answerRevealed = isTesting && q.userAnswer;
-                    return (
-                    <div key={q.id} className="glass-panel" style={{ padding: '20px', marginBottom: '16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                        <div style={{ fontWeight: '500', fontSize: '16px', flex: 1 }}>
-                          {!isTesting ? (
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                              <span style={{ paddingTop: '8px' }}>Câu {i + 1}:</span>
-                              <textarea 
-                                value={q.question} onChange={e => handleUpdateQuestionProp(q.id, 'question', e.target.value)}
-                                onMouseUp={(e) => handleTextSelection(e, q.id, 'question')}
-                                style={{ flex: 1, background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '8px', fontSize: '15px', resize: 'vertical', minHeight: '60px' }}
-                              />
-                            </div>
-                          ) : (
-                            <span onMouseUp={(e) => handleTextSelection(e, q.id, 'question')}>
-                              Câu {i + 1}: {renderQuizText(q.question, answerRevealed)}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
-                          <button 
-                            onClick={() => handleToggleBookmark(q.id)}
-                            title={q.isStarred ? "Bỏ đánh dấu" : "Đánh dấu câu hỏi này"}
-                            style={{ padding: '8px', background: q.isStarred ? 'rgba(251, 191, 36, 0.1)' : 'transparent', border: 'none', cursor: 'pointer', color: q.isStarred ? '#fbbf24' : 'var(--text-muted)', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }}
-                          >
-                            <Star size={20} fill={q.isStarred ? '#fbbf24' : 'none'} color={q.isStarred ? '#fbbf24' : 'currentColor'} />
-                          </button>
-                          {!isTesting && (
-                            <button 
-                              onClick={() => handleDeleteQuestion(q.id)}
-                              title="Xóa câu hỏi này"
-                              style={{ padding: '8px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }}
-                              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-red)'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                        {['A', 'B', 'C', 'D'].map(opt => (
-                          <div 
-                            key={opt} onClick={() => isTesting && handleSelectAnswer(q.id, opt)}
-                            style={{ 
-                              padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)',
-                              background: isTesting 
-                                ? (q.userAnswer === opt ? (q.answer && q.userAnswer !== q.answer ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)') : 'transparent')
-                                : (q.answer === opt ? 'rgba(16, 185, 129, 0.2)' : 'transparent'),
-                              cursor: isTesting ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '8px'
-                            }}
-                          >
-                            <strong>{opt}.</strong> 
-                            {!isTesting ? (
-                              <input type="text" value={q.options[opt]} onChange={(e) => handleUpdateOptionProp(q.id, opt, e.target.value)}
-                                onMouseUp={(e) => handleTextSelection(e, q.id, `option_${opt}`)}
-                                style={{ flex: 1, marginLeft: '4px', background: 'transparent', color: 'var(--text-main)', border: 'none', borderBottom: '1px dashed var(--border-color)', padding: '4px', fontSize: '14px', outline: 'none' }}
-                              />
-                            ) : (
-                              <span onMouseUp={(e) => { e.stopPropagation(); handleTextSelection(e, q.id, `option_${opt}`); }}>
-                                {' '}{renderQuizText(q.options[opt], answerRevealed)}
-                              </span>
-                            )}
-                            {isTesting && q.answer && q.userAnswer === opt && opt === q.answer && <CheckCircle size={16} color="var(--accent-green)"/>}
-                            {isTesting && q.answer && q.userAnswer === opt && opt !== q.answer && <XCircle size={16} color="var(--accent-red)"/>}
+                  {(() => {
+                    const readingPassageMap = new Map((activeQuiz?.readingPassages || []).map(p => [p.id, p]));
+                    const firstNormalQuestionIndex = questionsForDisplay.findIndex(item => !item.readingGroupId);
+                    const selectedReadingQuestion = questionsForDisplay.find(item => item.id === selectedReadingQuestionId);
+                    const activeReadingBlankNumber = selectedReadingQuestion?.blankNumber || null;
+
+                    const questionCards = questionsForDisplay.map((q, i) => {
+                      const answerRevealed = isTesting && q.userAnswer;
+                      const displayQuestionText = isTesting && q.readingGroupId
+                        ? (q._questionOnly || q.question)
+                        : q.question;
+                      const blankNotFoundInPassage = q.readingGroupId
+                        && q.blankNumber
+                        && !(readingPassageMap.get(q.readingGroupId)?.blankNumbers || []).some(n => String(n) === String(q.blankNumber));
+
+                      const firstQuestionInGroupIndex = q.readingGroupId
+                        ? questionsForDisplay.findIndex(item => item.readingGroupId === q.readingGroupId)
+                        : -1;
+                      const showReadingGroupHeader = !!q.readingGroupId && firstQuestionInGroupIndex === i;
+                      const showNormalHeader = !q.readingGroupId && firstNormalQuestionIndex === i;
+
+                      const passageObj = q.readingGroupId ? readingPassageMap.get(q.readingGroupId) : null;
+                      const isSameSelectedGroup = !!selectedReadingQuestion?.readingGroupId
+                        && selectedReadingQuestion.readingGroupId === q.readingGroupId;
+
+                      return (
+                      <div key={`section-item-${q.id}`}>
+                      {showReadingGroupHeader && passageObj && (
+                        <div
+                          key={`reading-block-${passageObj.id}`}
+                          className="glass-panel"
+                          style={{ padding: '16px', marginBottom: '12px', border: '1px solid rgba(6,182,212,0.35)' }}
+                        >
+                          <div style={{ fontSize: '12px', fontWeight: 800, color: '#8eefff', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Reading Block
                           </div>
-                        ))}
-                      </div>
-
-                      {(!isTesting || q.userAnswer) && (
-                        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--border-color)' }}>
-                          {!isTesting ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                <select value={q.answer || ''} onChange={e => handleUpdateQuestionProp(q.id, 'answer', e.target.value)}
-                                  style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px' }}>
-                                  <option value="">-- Đáp án đúng --</option>
-                                  <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
-                                </select>
-                                <button className="btn" style={{ color: 'var(--accent-orange)', padding: '6px 12px' }} onClick={() => handleCallAI(q.id, q)} disabled={aiLoading === q.id}>
-                                  {aiLoading === q.id ? 'Đang hỏi AI...' : <><Sparkles size={16}/> {q.answer ? 'Hỏi lại AI' : 'Hỏi AI Đáp Án & Giải Thích'}</>}
-                                </button>
-                              </div>
-                              <textarea 
-                                value={q.explanation || ''} onChange={e => handleUpdateQuestionProp(q.id, 'explanation', e.target.value)}
-                                placeholder="Nhập giải thích thủ công hoặc để AI trợ giúp điền..."
-                                style={{ width: '100%', minHeight: '120px', background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', fontSize: '13px', resize: 'vertical', lineHeight: '1.6' }}
-                              />
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: '14px' }}>
-                              {q.answer && (
-                                <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', marginBottom: '8px', fontSize: '15px' }}>
-                                  ✓ Đáp án đúng: {q.answer}. {renderQuizText(q.options[q.answer], true)}
-                                </div>
-                              )}
-
-                              {/* Show the hidden /explanation parts for question & options */}
-                              {(() => {
-                                const hiddenParts = [];
-                                // Check question for / content
-                                if (q.question?.includes('/')) {
-                                  hiddenParts.push({ label: 'Câu hỏi', text: q.question.substring(q.question.indexOf('/') + 1).trim() });
-                                }
-                                // Check options for / content  
-                                ['A', 'B', 'C', 'D'].forEach(opt => {
-                                  if (q.options[opt]?.includes('/')) {
-                                    hiddenParts.push({ label: `Đáp án ${opt}`, text: q.options[opt].substring(q.options[opt].indexOf('/') + 1).trim() });
-                                  }
-                                });
-
-                                if (hiddenParts.length > 0) {
-                                  return (
-                                    <div style={{
-                                      marginBottom: '10px', padding: '10px 14px', borderRadius: '8px',
-                                      background: 'rgba(255,152,0,0.06)', border: '1px solid rgba(255,152,0,0.15)'
-                                    }}>
-                                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-orange)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                        💡 Giải thích trong đề:
-                                      </div>
-                                      {hiddenParts.map((hp, idx) => (
-                                        <div key={idx} style={{ fontSize: '13px', color: 'var(--text-main)', lineHeight: '1.6', marginLeft: '4px' }}>
-                                          <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{hp.label}:</span>{' '}
-                                          <span style={{ fontStyle: 'italic' }}>{hp.text}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })()}
-
-                              {q.explanation && (
-                                <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}>
-                                  <strong style={{ color: 'var(--accent-orange)' }}>📝 Giải thích:</strong>{'\n'}{q.explanation}
-                                </div>
-                              )}
-                            </div>
-                          )}
+                          <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', fontSize: '14px' }}>
+                            {renderPassageWithBlankHighlights(passageObj.content || '', isSameSelectedGroup ? activeReadingBlankNumber : null)}
+                          </div>
                         </div>
                       )}
+                      {showNormalHeader && (
+                        <div key="normal-block-header" className="glass-panel" style={{ padding: '12px 16px', marginBottom: '12px', border: '1px dashed rgba(124,77,255,0.35)' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 800, color: '#d8ccff', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Câu trắc nghiệm thường
+                          </div>
+                        </div>
+                      )}
+                      <div key={q.id} className="glass-panel" style={{ padding: '20px', marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                          <div style={{ fontWeight: '500', fontSize: '16px', flex: 1 }}>
+                            {!isTesting ? (
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                <span style={{ paddingTop: '8px' }}>Câu {i + 1}:</span>
+                                <textarea 
+                                  value={q.question} onChange={e => handleUpdateQuestionProp(q.id, 'question', e.target.value)}
+                                  onMouseUp={(e) => handleTextSelection(e, q.id, 'question')}
+                                  style={{ flex: 1, background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '8px', fontSize: '15px', resize: 'vertical', minHeight: '60px' }}
+                                />
+                              </div>
+                            ) : (
+                              <span onMouseUp={(e) => handleTextSelection(e, q.id, 'question')}>
+                                Câu {i + 1}{q.readingGroupId && q.blankNumber ? ` (${q.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
+                            {q.readingGroupId && (
+                              <button
+                                onClick={() => setSelectedReadingQuestionId(q.id)}
+                                title="Highlight ô trống trong passage"
+                                style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid rgba(6,182,212,0.35)', background: selectedReadingQuestionId === q.id ? 'rgba(6,182,212,0.22)' : 'transparent', color: '#8eefff', cursor: 'pointer' }}
+                              >
+                                🔎
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => handleToggleBookmark(q.id)}
+                              title={q.isStarred ? "Bỏ đánh dấu" : "Đánh dấu câu hỏi này"}
+                              style={{ padding: '8px', background: q.isStarred ? 'rgba(251, 191, 36, 0.1)' : 'transparent', border: 'none', cursor: 'pointer', color: q.isStarred ? '#fbbf24' : 'var(--text-muted)', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }}
+                            >
+                              <Star size={20} fill={q.isStarred ? '#fbbf24' : 'none'} color={q.isStarred ? '#fbbf24' : 'currentColor'} />
+                            </button>
+                            {!isTesting && (
+                              <button 
+                                onClick={() => handleDeleteQuestion(q.id)}
+                                title="Xóa câu hỏi này"
+                                style={{ padding: '8px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-red)'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {blankNotFoundInPassage && (
+                          <div style={{
+                            marginBottom: '10px',
+                            fontSize: '12px',
+                            color: '#facc15',
+                            background: 'rgba(250,204,21,0.12)',
+                            border: '1px solid rgba(250,204,21,0.35)',
+                            borderRadius: '8px',
+                            padding: '6px 10px',
+                          }}>
+                            ⚠ Blank {q.blankNumber} chưa có trong passage (vẫn được lưu theo chế độ cảnh báo).
+                          </div>
+                        )}
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                          {['A', 'B', 'C', 'D'].map(opt => (
+                            <div 
+                              key={opt} onClick={() => isTesting && handleSelectAnswer(q.id, opt)}
+                              style={{ 
+                                padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)',
+                                background: isTesting 
+                                  ? (q.userAnswer === opt ? (q.answer && q.userAnswer !== q.answer ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)') : 'transparent')
+                                  : (q.answer === opt ? 'rgba(16, 185, 129, 0.2)' : 'transparent'),
+                                cursor: isTesting ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '8px'
+                              }}
+                            >
+                              <strong>{opt}.</strong> 
+                              {!isTesting ? (
+                                <input type="text" value={q.options[opt]} onChange={(e) => handleUpdateOptionProp(q.id, opt, e.target.value)}
+                                  onMouseUp={(e) => handleTextSelection(e, q.id, `option_${opt}`)}
+                                  style={{ flex: 1, marginLeft: '4px', background: 'transparent', color: 'var(--text-main)', border: 'none', borderBottom: '1px dashed var(--border-color)', padding: '4px', fontSize: '14px', outline: 'none' }}
+                                />
+                              ) : (
+                                <span onMouseUp={(e) => { e.stopPropagation(); handleTextSelection(e, q.id, `option_${opt}`); }}>
+                                  {' '}{renderQuizText(q.options[opt], answerRevealed)}
+                                </span>
+                              )}
+                              {isTesting && q.answer && q.userAnswer === opt && opt === q.answer && <CheckCircle size={16} color="var(--accent-green)"/>}
+                              {isTesting && q.answer && q.userAnswer === opt && opt !== q.answer && <XCircle size={16} color="var(--accent-red)"/>}
+                            </div>
+                          ))}
+                        </div>
+
+                        {(!isTesting || q.userAnswer) && (
+                          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--border-color)' }}>
+                            {!isTesting ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  {q.readingGroupId && (
+                                    <input
+                                      type="text"
+                                      value={q.blankNumber || ''}
+                                      onChange={e => handleUpdateQuestionProp(q.id, 'blankNumber', e.target.value.replace(/[^\d]/g, ''))}
+                                      placeholder="Blank # (vd: 135)"
+                                      style={{ width: '150px', background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '6px 8px' }}
+                                    />
+                                  )}
+                                  <select
+                                    value={q.answer || ''}
+                                    onChange={e => handleUpdateQuestionProp(q.id, 'answer', e.target.value)}
+                                    style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px' }}
+                                  >
+                                    <option value="">-- Đáp án đúng --</option>
+                                    <option value="A">A</option>
+                                    <option value="B">B</option>
+                                    <option value="C">C</option>
+                                    <option value="D">D</option>
+                                  </select>
+                                  <button className="btn" style={{ color: 'var(--accent-orange)', padding: '6px 12px' }} onClick={() => handleCallAI(q.id, q)} disabled={aiLoading === q.id}>
+                                    {aiLoading === q.id ? 'Đang hỏi AI...' : <><Sparkles size={16}/> {q.answer ? 'Hỏi lại AI' : 'Hỏi AI Đáp Án & Giải Thích'}</>}
+                                  </button>
+                                </div>
+                                <textarea
+                                  value={q.explanation || ''}
+                                  onChange={e => handleUpdateQuestionProp(q.id, 'explanation', e.target.value)}
+                                  placeholder="Nhập giải thích thủ công hoặc để AI trợ giúp điền..."
+                                  style={{ width: '100%', minHeight: '120px', background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', fontSize: '13px', resize: 'vertical', lineHeight: '1.6' }}
+                                />
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '14px' }}>
+                                {q.answer && (
+                                  <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', marginBottom: '8px', fontSize: '15px' }}>
+                                    ✓ Đáp án đúng: {q.answer}. {renderQuizText(q.options[q.answer], true)}
+                                  </div>
+                                )}
+
+                                {/* Show the hidden /explanation parts for question & options */}
+                                {(() => {
+                                  const hiddenParts = [];
+                                  if (q.question?.includes('/')) {
+                                    hiddenParts.push({ label: 'Câu hỏi', text: q.question.substring(q.question.indexOf('/') + 1).trim() });
+                                  }
+                                  ['A', 'B', 'C', 'D'].forEach(opt => {
+                                    if (q.options[opt]?.includes('/')) {
+                                      hiddenParts.push({ label: `Đáp án ${opt}`, text: q.options[opt].substring(q.options[opt].indexOf('/') + 1).trim() });
+                                    }
+                                  });
+
+                                  if (hiddenParts.length > 0) {
+                                    return (
+                                      <div style={{ marginBottom: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,152,0,0.06)', border: '1px solid rgba(255,152,0,0.15)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-orange)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                          💡 Giải thích trong đề:
+                                        </div>
+                                        {hiddenParts.map((hp, idx) => (
+                                          <div key={idx} style={{ fontSize: '13px', color: 'var(--text-main)', lineHeight: '1.6', marginLeft: '4px' }}>
+                                            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{hp.label}:</span>{' '}
+                                            <span style={{ fontStyle: 'italic' }}>{hp.text}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+
+                                {q.explanation && (
+                                  <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}>
+                                    <strong style={{ color: 'var(--accent-orange)' }}>📝 Giải thích:</strong>{'\n'}{q.explanation}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  );})}
+                  );
+                });
+
+                    return questionCards;
+                  })()}
 
                   {!isTesting && (
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', padding: '10px 0 30px 0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', padding: '10px 0 30px 0', flexWrap: 'wrap' }}>
                       <button 
                         onClick={() => {
-                          const newQuestion = { id: uuidv4(), question: '', options: { A: '', B: '', C: '', D: '' }, answer: '', explanation: '', userAnswer: null, isStarred: false };
+                          const newQuestion = {
+                            id: uuidv4(),
+                            question: '',
+                            options: { A: '', B: '', C: '', D: '' },
+                            answer: '',
+                            explanation: '',
+                            userAnswer: null,
+                            isStarred: false,
+                          };
                           const newQuizzes = quizzes.map(q => q.id === activeQuizId ? { ...q, questions: [...q.questions, newQuestion] } : q);
                           setQuizzes(newQuizzes);
                         }}
@@ -1597,6 +2031,7 @@ ${questionsText}`;
                         onClick={() => {
                           setIsImporting(true);
                           setImportTargetQuizId(activeQuizId);
+                          setImportMode('normal');
                         }}
                         style={{
                           padding: '10px 18px', borderRadius: '10px', fontSize: '14px', fontWeight: 600,
@@ -1605,6 +2040,20 @@ ${questionsText}`;
                         }}
                       >
                         <FileText size={18} /> Nhập thêm từ Word
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setIsImporting(true);
+                          setImportTargetQuizId(activeQuizId);
+                          setImportMode('reading');
+                        }}
+                        style={{
+                          padding: '10px 18px', borderRadius: '10px', fontSize: '14px', fontWeight: 600,
+                          background: 'rgba(6,182,212,0.15)', color: '#67e8f9', border: '1px solid rgba(6,182,212,0.35)',
+                          cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px'
+                        }}
+                      >
+                        <BookOpen size={18} /> Nhập READING
                       </button>
                     </div>
                   )}
