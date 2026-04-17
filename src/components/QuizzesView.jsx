@@ -1317,7 +1317,7 @@ ${questionsText}`;
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {isCreatingAiQuiz ? (
-              <div className="glass-panel" style={{ padding: '28px', flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', position: 'relative' }}>
+              <div className="glass-panel" style={{ padding: '28px', flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', position: 'relative', minHeight: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                   <div style={{ 
                     width: '44px', height: '44px', borderRadius: '14px', 
@@ -1474,7 +1474,7 @@ ${questionsText}`;
                 </div>
               </div>
             ) : isImporting ? (
-              <div className="glass-panel" style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div className="glass-panel" style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {previewQuestions ? (
                   <>
                     <h3>Xem Trước ({previewQuestions.length} câu)</h3>
@@ -1798,6 +1798,103 @@ ${questionsText}`;
                       const isSameSelectedGroup = !!selectedReadingQuestion?.readingGroupId
                         && selectedReadingQuestion.readingGroupId === q.readingGroupId;
 
+                      if (isTesting && q.readingGroupId) {
+                        if (!showReadingGroupHeader || !passageObj) {
+                          return null;
+                        }
+
+                        const groupQuestions = questionsForDisplay.filter(item => item.readingGroupId === passageObj.id);
+
+                        return (
+                          <div key={`reading-test-group-${passageObj.id}`} className="glass-panel" style={{ padding: '14px', marginBottom: '14px', border: '1px solid rgba(6,182,212,0.35)' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 800, color: '#8eefff', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              Reading Block
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(360px, 1.2fr)', gap: '12px', alignItems: 'start' }}>
+                              <div style={{
+                                whiteSpace: 'pre-wrap',
+                                lineHeight: '1.72',
+                                fontSize: '14px',
+                                background: 'rgba(15,23,42,0.28)',
+                                border: '1px solid rgba(148,163,184,0.2)',
+                                borderRadius: '10px',
+                                padding: '12px'
+                              }}>
+                                {renderPassageWithBlankHighlights(passageObj.content || '', isSameSelectedGroup ? activeReadingBlankNumber : null)}
+                              </div>
+
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {groupQuestions.map(item => {
+                                  const itemIndex = questionsForDisplay.findIndex(x => x.id === item.id);
+                                  const answerRevealed = !!item.userAnswer;
+                                  const displayQuestionText = item._questionOnly || item.question;
+                                  const blankNotFoundInPassage = item.blankNumber
+                                    && !(readingPassageMap.get(item.readingGroupId)?.blankNumbers || []).some(n => String(n) === String(item.blankNumber));
+
+                                  return (
+                                    <div key={`reading-inline-card-${item.id}`} style={{
+                                      borderRadius: '10px',
+                                      border: '1px solid rgba(148,163,184,0.22)',
+                                      background: 'rgba(2,6,23,0.25)',
+                                      padding: '10px 12px'
+                                    }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+                                        <div style={{ fontSize: '14px', fontWeight: 600, lineHeight: '1.45' }}>
+                                          Câu {itemIndex + 1}{item.blankNumber ? ` (${item.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
+                                        </div>
+                                        <button
+                                          onClick={() => {
+                                            setSelectedReadingQuestionId(item.id);
+                                            handleToggleBookmark(item.id);
+                                          }}
+                                          title={item.isStarred ? 'Bỏ đánh dấu' : 'Đánh dấu câu hỏi này'}
+                                          style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: item.isStarred ? '#fbbf24' : 'var(--text-muted)' }}
+                                        >
+                                          <Star size={16} fill={item.isStarred ? '#fbbf24' : 'none'} color={item.isStarred ? '#fbbf24' : 'currentColor'} />
+                                        </button>
+                                      </div>
+
+                                      {blankNotFoundInPassage && (
+                                        <div style={{ marginBottom: '8px', fontSize: '11px', color: '#facc15', background: 'rgba(250,204,21,0.12)', border: '1px solid rgba(250,204,21,0.35)', borderRadius: '8px', padding: '4px 8px' }}>
+                                          ⚠ Blank {item.blankNumber} chưa có trong passage.
+                                        </div>
+                                      )}
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                        {['A', 'B', 'C', 'D'].map(opt => (
+                                          <div
+                                            key={`${item.id}-${opt}`}
+                                            onClick={() => handleSelectAnswer(item.id, opt)}
+                                            style={{
+                                              padding: '8px',
+                                              borderRadius: '8px',
+                                              border: '1px solid var(--border-color)',
+                                              background: item.userAnswer === opt
+                                                ? (item.answer && item.userAnswer !== item.answer ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)')
+                                                : 'transparent',
+                                              cursor: 'pointer',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '6px',
+                                              fontSize: '13px'
+                                            }}
+                                          >
+                                            <strong>{opt}.</strong>
+                                            <span>{renderQuizText(item.options[opt], answerRevealed)}</span>
+                                            {item.answer && item.userAnswer === opt && opt === item.answer && <CheckCircle size={14} color="var(--accent-green)"/>}
+                                            {item.answer && item.userAnswer === opt && opt !== item.answer && <XCircle size={14} color="var(--accent-red)"/>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       return (
                       <div key={`section-item-${q.id}`}>
                       {showReadingGroupHeader && passageObj && (
@@ -1834,7 +1931,11 @@ ${questionsText}`;
                                 />
                               </div>
                             ) : (
-                              <span onMouseUp={(e) => handleTextSelection(e, q.id, 'question')}>
+                              <span onMouseUp={(e) => {
+                                if (!(isTesting && q.readingGroupId)) {
+                                  handleTextSelection(e, q.id, 'question');
+                                }
+                              }}>
                                 Câu {i + 1}{q.readingGroupId && q.blankNumber ? ` (${q.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
                               </span>
                             )}
@@ -1902,7 +2003,12 @@ ${questionsText}`;
                                   style={{ flex: 1, marginLeft: '4px', background: 'transparent', color: 'var(--text-main)', border: 'none', borderBottom: '1px dashed var(--border-color)', padding: '4px', fontSize: '14px', outline: 'none' }}
                                 />
                               ) : (
-                                <span onMouseUp={(e) => { e.stopPropagation(); handleTextSelection(e, q.id, `option_${opt}`); }}>
+                                <span onMouseUp={(e) => {
+                                  e.stopPropagation();
+                                  if (!(isTesting && q.readingGroupId)) {
+                                    handleTextSelection(e, q.id, `option_${opt}`);
+                                  }
+                                }}>
                                   {' '}{renderQuizText(q.options[opt], answerRevealed)}
                                 </span>
                               )}
