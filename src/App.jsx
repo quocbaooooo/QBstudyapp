@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/useAuth';
+import HomeView from './components/HomeView';
 import NotesView from './components/NotesView';
 import DecksView from './components/DecksView';
 import QuizzesView from './components/QuizzesView';
 import SettingsView from './components/SettingsView';
-
 function LoginScreen() {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
@@ -186,7 +186,7 @@ function LoginScreen() {
 
 function AppContent() {
   const { user, loading, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('notes');
+  const [activeTab, setActiveTab] = useState('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -249,6 +249,14 @@ function AppContent() {
           </button>
         </div>
         <div className="space-y-1">
+          <button
+            onClick={() => handleTabChange('home')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'home' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+          >
+            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : undefined }}>home</span>
+            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Trang chủ</span>
+          </button>
+
           <button
             onClick={() => handleTabChange('notes')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'notes' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
@@ -342,7 +350,8 @@ function AppContent() {
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 p-3 sm:p-5 flex gap-3 sm:gap-5">
+        <main className="flex-1 min-h-0 p-3 sm:p-5 flex gap-3 sm:gap-5 overflow-y-auto">
+          {activeTab === 'home' && <HomeView />}
           {activeTab === 'notes' && <NotesView />}
           {activeTab === 'flashcards' && <DecksView />}
           {activeTab === 'quizzes' && <QuizzesView />}

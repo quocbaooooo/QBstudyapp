@@ -912,6 +912,13 @@ D. ${questionObj.options.D}`;
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
   };
 
+  const handleUpdateReadingPassageProp = (passageId, prop, value) => {
+    const newReadingPassages = activeQuiz.readingPassages.map(p => 
+      p.id === passageId ? { ...p, [prop]: value } : p
+    );
+    setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, readingPassages: newReadingPassages } : q));
+  };
+
   const playFeedbackSound = (isCorrect) => {
     if (!appSoundEnabled) return;
     try {
