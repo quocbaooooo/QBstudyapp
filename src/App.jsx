@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocalStorage } from './hooks/useLocalStorage';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/useAuth';
 import HomeView from './components/HomeView';
@@ -186,8 +187,139 @@ function LoginScreen() {
 
 function AppContent() {
   const { user, loading, signOut } = useAuth();
+  const [appSoundEnabled, setAppSoundEnabled] = useLocalStorage('app_sound_enabled', true);
+  
+  // Background Music State
+  const [bgMusicEnabled, setBgMusicEnabled] = useLocalStorage('bg_music_enabled', false);
+  const [bgMusicVolume, setBgMusicVolume] = useLocalStorage('bg_music_volume', 30);
+  const [bgMusicUrl, setBgMusicUrl] = useLocalStorage('bg_music_url', 'https://youtu.be/Ys7-6_t7OEQ');
+
   const [activeTab, setActiveTab] = useState('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [player, setPlayer] = useState(null);
+
+  // Load YouTube IFrame API
+  useEffect(() => {
+    if (window.YT) return;
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    const firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+  }, []);
+
+  // Extract Video ID and Start Time from URL (Improved)
+  const getYoutubeConfig = (url) => {
+    try {
+      if (!url) return { videoId: 'HaIjR05n1Vc', startTime: 3008 };
+      
+      // Regex to extract video ID from various YouTube URL formats
+      const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+      const match = url.match(regExp);
+      const videoId = (match && match[7].length === 11) ? match[7] : 'HaIjR05n1Vc';
+      
+      // Extract time from t=... or start=...
+      const timeMatch = url.match(/[?&](t|start)=(\d+)s?/);
+      const startTime = timeMatch ? parseInt(timeMatch[2]) : 0;
+      
+      return { videoId, startTime };
+    } catch (e) {
+      console.error("Error parsing YouTube URL:", e);
+      return { videoId: 'HaIjR05n1Vc', startTime: 3008 };
+    }
+  };
+
+  // Initialize/Update YouTube Player
+  useEffect(() => {
+    if (!window.YT || !bgMusicEnabled) {
+      if (player && typeof player.pauseVideo === 'function') player.pauseVideo();
+      return;
+    }
+
+    const { videoId, startTime } = getYoutubeConfig(bgMusicUrl);
+    const endTime = startTime + 300; // 5 minutes
+
+    if (!player) {
+      window.onYouTubeIframeAPIReady = () => {
+        const newPlayer = new window.YT.Player('bg-music-player', {
+          height: '0',
+          width: '0',
+          videoId: videoId,
+          playerVars: {
+            autoplay: 1,
+            controls: 0,
+            start: startTime,
+            end: endTime,
+            loop: 1,
+            playlist: videoId
+          },
+          events: {
+            onReady: (event) => {
+              setPlayer(event.target);
+              event.target.setVolume(0);
+              event.target.playVideo();
+            },
+            onStateChange: (event) => {
+              if (event.data === window.YT.PlayerState.ENDED) {
+                event.target.seekTo(startTime);
+                event.target.playVideo();
+              }
+            }
+          }
+        });
+      };
+      // If API already loaded but ready callback not called
+      if (window.YT && window.YT.Player) {
+        window.onYouTubeIframeAPIReady();
+      }
+    } else {
+      // Check if video needs to be changed
+      const { videoId: currentVideoId, startTime: currentStartTime } = getYoutubeConfig(bgMusicUrl);
+      try {
+        const playerUrl = player.getVideoUrl();
+        if (playerUrl && !playerUrl.includes(currentVideoId)) {
+          player.loadVideoById({
+            videoId: currentVideoId,
+            startSeconds: currentStartTime,
+            endSeconds: currentStartTime + 300
+          });
+        }
+      } catch (e) {}
+
+      if (bgMusicEnabled) {
+        player.playVideo();
+      } else {
+        player.pauseVideo();
+      }
+    }
+  }, [bgMusicEnabled, bgMusicUrl, player]);
+
+  // Dynamic Volume and Fade-in
+  useEffect(() => {
+    if (!player || typeof player.setVolume !== 'function') return;
+    
+    if (bgMusicEnabled) {
+      let currentVol = player.getVolume();
+      const targetVol = bgMusicVolume;
+      
+      if (currentVol < targetVol) {
+        const fadeInterval = setInterval(() => {
+          currentVol += 2;
+          if (currentVol >= targetVol) {
+            player.setVolume(targetVol);
+            clearInterval(fadeInterval);
+          } else {
+            player.setVolume(currentVol);
+          }
+        }, 100);
+        return () => clearInterval(fadeInterval);
+      } else {
+        player.setVolume(bgMusicVolume);
+      }
+    } else {
+      player.setVolume(0);
+      player.pauseVideo();
+    }
+  }, [player, bgMusicEnabled, bgMusicVolume]);
 
   useEffect(() => {
     // Only fetch default background
@@ -355,8 +487,18 @@ function AppContent() {
           {activeTab === 'notes' && <NotesView />}
           {activeTab === 'flashcards' && <DecksView />}
           {activeTab === 'quizzes' && <QuizzesView />}
-          {activeTab === 'settings' && <SettingsView />}
+          {activeTab === 'settings' && (
+            <SettingsView 
+              bgMusicEnabled={bgMusicEnabled} 
+              setBgMusicEnabled={setBgMusicEnabled}
+              bgMusicVolume={bgMusicVolume}
+              setBgMusicVolume={setBgMusicVolume}
+              bgMusicUrl={bgMusicUrl}
+              setBgMusicUrl={setBgMusicUrl}
+            />
+          )}
         </main>
+        <div id="bg-music-player" style={{ position: 'absolute', top: '-1000px', left: '-1000px', opacity: 0, pointerEvents: 'none' }}></div>
       </div>
     </div>
   );

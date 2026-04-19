@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Key, Volume2, VolumeX, Moon, Sun } from 'lucide-react';
 
-export default function SettingsView() {
+export default function SettingsView({ 
+  bgMusicEnabled, 
+  setBgMusicEnabled, 
+  bgMusicVolume, 
+  setBgMusicVolume, 
+  bgMusicUrl, 
+  setBgMusicUrl 
+}) {
   const [apiKey, setApiKey] = useLocalStorage('gemini_api_key', '');
   const [apiModel, setApiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
   
@@ -63,8 +70,8 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto flex flex-col gap-6">
-      <div className="glass-card rounded-2xl p-6 md:p-8 relative overflow-hidden h-full">
+    <div className="w-full max-w-4xl mx-auto flex flex-col gap-6 mb-8">
+      <div className="glass-card rounded-2xl p-6 md:p-8 relative">
         <h2 className="text-xl font-bold mb-8 text-white flex items-center gap-3">
           <span className="material-symbols-outlined text-primary text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>settings</span>
           Cài đặt hệ thống
@@ -173,28 +180,111 @@ export default function SettingsView() {
           <section>
             <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-secondary mb-4 flex items-center gap-2">
               <Sun className="w-4 h-4" />
-              Giao diện & Âm thanh
+              Âm thanh & Thư giãn
             </h3>
-            <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all duration-300">
-              {/* Sound Toggle */}
-              <div className="flex items-center justify-between py-3 mt-2">
+            <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all duration-300 space-y-6">
+              {/* Feedback Sound Toggle */}
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {appSoundEnabled ? <Volume2 size={20} color="var(--accent-green)" /> : <VolumeX size={20} color="var(--text-muted)" />}
                   <div>
                     <div className="font-semibold text-white text-[14px]">Âm thanh phản hồi</div>
-                    <div className="text-[12px] text-slate-400">Phát âm thanh khi trả lời đúng/sai</div>
+                    <div className="text-[12px] text-slate-400">Âm thanh khi trả lời đúng/sai</div>
                   </div>
                 </div>
                 <button 
                   onClick={() => setAppSoundEnabled(!appSoundEnabled)}
                   style={{
                     padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer',
-                    background: appSoundEnabled ? 'var(--accent-green)' : 'rgba(var(--glass-rgb),0.1)',
+                    background: appSoundEnabled ? 'var(--accent-green)' : 'rgba(255,255,255,0.05)',
                     color: appSoundEnabled ? 'white' : 'var(--text-main)'
                   }}
                 >
                   {appSoundEnabled ? 'Đang bật' : 'Đã tắt'}
                 </button>
+              </div>
+
+              {/* Background Music Toggle */}
+              <div className="pt-4 border-t border-white/5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${bgMusicEnabled ? 'bg-primary/20 text-primary' : 'bg-white/5 text-slate-500'}`}>
+                      <Moon size={20} />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white text-[14px]">Nhạc nền Lofi</div>
+                      <div className="text-[12px] text-slate-400">Phát nhạc nhẹ giúp tập trung học tập</div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setBgMusicEnabled(!bgMusicEnabled)}
+                    style={{
+                      padding: '6px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer',
+                      background: bgMusicEnabled ? 'var(--primary)' : 'rgba(255,255,255,0.1)',
+                      color: 'white'
+                    }}
+                  >
+                    {bgMusicEnabled ? 'Đang phát' : 'Tạm dừng'}
+                  </button>
+                </div>
+
+                {bgMusicEnabled && (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-4">
+                      <span className="text-[12px] text-slate-400 w-20">Âm lượng</span>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="100" 
+                        value={bgMusicVolume} 
+                        onChange={(e) => setBgMusicVolume(parseInt(e.target.value))}
+                        className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                      <span className="text-[12px] font-mono text-primary w-8 text-right">{bgMusicVolume}%</span>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase">Cấu hình bản nhạc</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button 
+                          onClick={() => setBgMusicUrl('https://www.youtube.com/watch?v=HaIjR05n1Vc&t=3008s')}
+                          className={`px-3 py-2 rounded-lg text-xs font-medium text-left transition-all ${bgMusicUrl.includes('HaIjR05n1Vc') ? 'bg-primary/20 border border-primary/30 text-white' : 'bg-white/5 border border-transparent text-slate-400 hover:bg-white/10'}`}
+                        >
+                          🎵 Lofi Study (Đoạn 5p yêu cầu)
+                        </button>
+                        <button 
+                          onClick={() => setBgMusicUrl('https://www.youtube.com/watch?v=jfKfPfyJRdk')}
+                          className={`px-3 py-2 rounded-lg text-xs font-medium text-left transition-all ${bgMusicUrl.includes('jfKfPfyJRdk') ? 'bg-primary/20 border border-primary/30 text-white' : 'bg-white/5 border border-transparent text-slate-400 hover:bg-white/10'}`}
+                        >
+                          🎹 Lofi Girl (Classic)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-2">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase">Dán link YouTube tùy chỉnh</span>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={bgMusicUrl}
+                          onChange={(e) => setBgMusicUrl(e.target.value)}
+                          placeholder="Dán link YouTube (VD: https://www.youtube.com/watch?v=...)"
+                          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-primary/50 transition-all"
+                        />
+                        <button 
+                          onClick={() => setBgMusicEnabled(true)}
+                          className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-primary/20 flex items-center gap-2 shrink-0"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                          Phát ngay
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-500 italic">
+                        *Lưu ý: Một số link có thể bị YouTube chặn phát trên trang web khác.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
             </div>

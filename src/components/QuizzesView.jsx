@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File } from 'lucide-react';
+import { useFirestore } from '../hooks/useFirestore';
+import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File, Volume2, Save } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportQuizToWord } from '../utils/exportWord';
 import Tesseract from 'tesseract.js';
@@ -20,7 +21,9 @@ export default function QuizzesView() {
   const [openaiModel] = useLocalStorage('openai_api_model', 'gpt-4o-mini');
   const [appSoundEnabled] = useLocalStorage('app_sound_enabled', true);
 
+  const [decks, setDecks] = useFirestore('decks', 'study_decks', []);
   const [activeQuizId, setActiveQuizId] = useState(null);
+  const [targetDeckId, setTargetDeckId] = useState('');
   const [importText, setImportText] = useState('');
   const [importMode, setImportMode] = useState('normal'); // 'normal' | 'reading'
   const [isImporting, setIsImporting] = useState(false);
@@ -48,6 +51,10 @@ export default function QuizzesView() {
   const [translationPopup, setTranslationPopup] = useState(null); // { x, y, text, questionId, field, selStart, selEnd }
   const [translatedText, setTranslatedText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
+  const [isSavingToDeck, setIsSavingToDeck] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isAiEnrichingPopup, setIsAiEnrichingPopup] = useState(false);
+  const [enrichedData, setEnrichedData] = useState(null); // { pronunciation, wordType, example, synonyms }
   const translationTimeoutRef = useRef(null);
 
   const activeQuiz = quizzes.find(q => q.id === activeQuizId);
@@ -91,16 +98,17 @@ export default function QuizzesView() {
     translationTimeoutRef.current = setTimeout(() => {
       let selectedText = '';
       let popupX = 0, popupY = 0;
+      let selStart = 0, selEnd = 0;
 
       const target = e.target;
       const isFormElement = target.tagName === 'TEXTAREA' || target.tagName === 'INPUT';
 
       if (isFormElement) {
         // For textarea/input: use selectionStart/selectionEnd
-        const start = target.selectionStart;
-        const end = target.selectionEnd;
-        if (start !== end) {
-          selectedText = target.value.substring(start, end).trim();
+        selStart = target.selectionStart;
+        selEnd = target.selectionEnd;
+        if (selStart !== selEnd) {
+          selectedText = target.value.substring(selStart, selEnd).trim();
           const rect = target.getBoundingClientRect();
           // Approximate popup position near the input
           popupX = rect.left + rect.width / 2;
@@ -125,8 +133,11 @@ export default function QuizzesView() {
           text: selectedText,
           questionId,
           field,
+          selStart,
+          selEnd
         });
         setTranslatedText('');
+        setEnrichedData(null);
       }
     }, 250);
   }, []);
@@ -196,13 +207,11 @@ export default function QuizzesView() {
   // Insert translation as (text) into the question/option
   const handleInsertTranslation = () => {
     if (!translationPopup || !translatedText) return;
-    const { questionId, field, text } = translationPopup;
+    const { questionId, field, selStart, selEnd, text } = translationPopup;
 
-    // Find the question
     const q = activeQuiz?.questions.find(x => x.id === questionId);
     if (!q) return;
 
-    // Determine which field to modify
     let originalText = '';
     if (field === 'question') {
       originalText = q.question;
@@ -213,12 +222,16 @@ export default function QuizzesView() {
       return;
     }
 
-    // Find the selected text and insert (translation) after it
-    const insertionIdx = originalText.indexOf(text);
-    if (insertionIdx === -1) return;
-
-    const afterIdx = insertionIdx + text.length;
-    const newText = originalText.substring(0, afterIdx) + ` (${translatedText})` + originalText.substring(afterIdx);
+    // Use selStart/selEnd if available, otherwise fallback to indexOf (though form elements now provide selStart/selEnd)
+    let newText = '';
+    if (selStart !== undefined && selEnd !== undefined && selStart !== selEnd) {
+      newText = originalText.substring(0, selEnd) + ` (${translatedText})` + originalText.substring(selEnd);
+    } else {
+      const insertionIdx = originalText.indexOf(text);
+      if (insertionIdx === -1) return;
+      const afterIdx = insertionIdx + text.length;
+      newText = originalText.substring(0, afterIdx) + ` (${translatedText})` + originalText.substring(afterIdx);
+    }
 
     if (field === 'question') {
       handleUpdateQuestionProp(questionId, 'question', newText);
@@ -229,6 +242,164 @@ export default function QuizzesView() {
 
     setTranslationPopup(null);
     setTranslatedText('');
+    setEnrichedData(null);
+  };
+
+  const handleAiEnrichForPopup = async () => {
+    if (!translationPopup?.text || isAiEnrichingPopup) return;
+    
+    const activeApiKey = aiProvider === 'gemini' ? apiKey : openaiKey;
+    if (!activeApiKey) {
+      alert(`Vui lòng nhập API Key cho ${aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} trong phần Cài đặt.`);
+      return;
+    }
+
+    setIsAiEnrichingPopup(true);
+    try {
+      const prompt = `Bạn là từ điển Anh-Việt chuyên nghiệp. Hãy phân tích từ/cụm từ tiếng Anh sau: "${translationPopup.text}"
+      Trả về JSON duy nhất (không markdown, không giải thích):
+      {
+        "definition": "nghĩa tiếng Việt (ngắn gọn, chính xác)",
+        "pronunciation": "phiên âm IPA",
+        "wordType": "n./v./adj./adv./phr.",
+        "example": "1 câu ví dụ tiếng Anh tự nhiên",
+        "synonyms": "2-3 từ đồng nghĩa, cách nhau bởi dấu phẩy"
+      }`;
+
+      let rawText = "";
+      if (aiProvider === 'gemini') {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${apiModel}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
+            contents: [{ parts: [{ text: prompt }] }]
+          })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+        rawText = data.candidates[0].content.parts[0].text;
+      } else {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiKey}`
+          },
+          body: JSON.stringify({
+            model: openaiModel,
+            max_tokens: 512,
+            temperature: 0.1,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+        rawText = data.choices[0].message.content;
+      }
+
+      const cleaned = rawText.replace(/```json\n?/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      if (parsed.definition) setTranslatedText(parsed.definition);
+      setEnrichedData({
+        pronunciation: parsed.pronunciation || '',
+        wordType: parsed.wordType || '',
+        example: parsed.example || '',
+        synonyms: parsed.synonyms ? parsed.synonyms.split(',').map(s => s.trim()) : []
+      });
+      
+    } catch (err) {
+      console.error(err);
+      alert('Không thể dùng AI phân tích từ này: ' + err.message);
+    } finally {
+      setIsAiEnrichingPopup(false);
+    }
+  };
+
+  const handleSpeak = (text) => {
+    if (!text) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.9;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleSaveToLibrary = async () => {
+    if (!translationPopup || !translatedText) {
+      console.warn('Cannot save: missing text or translation');
+      return;
+    }
+    
+    setIsSavingToDeck(true);
+    setSaveSuccess(false);
+
+    try {
+      const cardToAdd = {
+        id: uuidv4(),
+        front: translationPopup.text.trim(),
+        back: translatedText.trim(),
+        type: enrichedData?.wordType || '', // DecksView uses wordType
+        wordType: enrichedData?.wordType || '', // Double check which one is used
+        pronunciation: enrichedData?.pronunciation || '',
+        example: enrichedData?.example || '',
+        synonyms: enrichedData?.synonyms ? enrichedData.synonyms.join('; ') : '',
+        createdAt: new Date().toISOString(),
+        isAIGenerated: !!enrichedData
+      };
+
+      let finalTargetId = targetDeckId;
+
+      await setDecks(prevDecks => {
+        let updatedDecks = [...prevDecks];
+        let targetId = finalTargetId;
+
+        // 1. Determine or create target deck
+        if (!targetId) {
+          const existingDeck = updatedDecks.find(d => 
+            d.title.toLowerCase().includes('từ vựng đã dịch') || 
+            d.title.toLowerCase().includes('vocabulary')
+          );
+
+          if (existingDeck) {
+            targetId = existingDeck.id;
+          } else {
+            // Create a brand new "Default" deck
+            targetId = uuidv4();
+            const newDeck = {
+              id: targetId,
+              title: 'Từ vựng đã dịch',
+              description: 'Các từ vựng được lưu từ đề thi',
+              cards: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: Date.now()
+            };
+            updatedDecks = [newDeck, ...updatedDecks];
+          }
+        }
+
+        // 2. Add card to the target deck (at the END of the cards array)
+        return updatedDecks.map(deck => {
+          if (deck.id === targetId) {
+            return {
+              ...deck,
+              cards: [...(deck.cards || []), cardToAdd],
+              updatedAt: Date.now()
+            };
+          }
+          return deck;
+        });
+      });
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (error) {
+      console.error('Error saving to deck:', error);
+      alert('Có lỗi xảy ra khi lưu vào bộ thẻ.');
+    } finally {
+      setIsSavingToDeck(false);
+    }
   };
 
   const handleCreateEmptyQuiz = () => {
@@ -1830,9 +2001,17 @@ ${questionsText}`;
                       }} />
 
                       {/* Selected text */}
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
-                        <Languages size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                        Dịch từ
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Languages size={12} /> Dịch từ
+                        </div>
+                        <button 
+                          onClick={() => handleSpeak(translationPopup.text)}
+                          style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+                          title="Phát âm"
+                        >
+                          <Volume2 size={14} />
+                        </button>
                       </div>
                       <div style={{ fontSize: '14px', fontWeight: 600, color: 'white', marginBottom: '10px', lineHeight: '1.4' }}>
                         "{translationPopup.text}"
@@ -1840,61 +2019,150 @@ ${questionsText}`;
 
                       {/* Translation result */}
                       {(isTranslating || translatedText) && (
-                        <div style={{
-                          background: 'rgba(124,77,255,0.08)', borderRadius: '8px', padding: '10px 12px',
-                          border: '1px solid rgba(124,77,255,0.15)', marginBottom: '10px',
-                          minHeight: '32px', display: 'flex', alignItems: 'center'
-                        }}>
-                          {isTranslating ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                              <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(124,77,255,0.3)', borderTop: '2px solid #7c4dff', animation: 'spin 0.8s linear infinite' }} />
-                              Đang dịch...
+                        <>
+                          <div style={{
+                            background: 'rgba(124,77,255,0.08)', borderRadius: '8px', padding: '10px 12px',
+                            border: '1px solid rgba(124,77,255,0.15)', marginBottom: '10px',
+                            minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                          }}>
+                            {isTranslating ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(124,77,255,0.3)', borderTop: '2px solid #7c4dff', animation: 'spin 0.8s linear infinite' }} />
+                                Đang dịch...
+                              </div>
+                            ) : (
+                              <>
+                                <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: '14px' }}>
+                                  {translatedText}
+                                </span>
+                                <button 
+                                  onClick={() => handleSpeak(translatedText)}
+                                  style={{ background: 'none', border: 'none', color: '#a78bfa', opacity: 0.6, cursor: 'pointer' }}
+                                  title="Phát âm nghĩa"
+                                >
+                                  <Volume2 size={12} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+
+                          {translatedText && !isTranslating && (
+                            <div style={{ marginBottom: '12px' }}>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 600, textTransform: 'uppercase' }}>Chọn bộ thẻ:</div>
+                              <select 
+                                value={targetDeckId}
+                                onChange={(e) => setTargetDeckId(e.target.value)}
+                                style={{
+                                  width: '100%', background: 'rgba(255,255,255,0.05)', color: 'white',
+                                  border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px',
+                                  padding: '4px 8px', fontSize: '12px', outline: 'none'
+                                }}
+                              >
+                                <option value="">-- Mặc định (Từ vựng mới) --</option>
+                                {decks.map(deck => (
+                                  <option key={deck.id} value={deck.id}>{deck.title}</option>
+                                ))}
+                              </select>
                             </div>
-                          ) : (
-                            <span style={{ color: '#a78bfa', fontWeight: 600, fontSize: '14px' }}>
-                              {translatedText}
-                            </span>
                           )}
-                        </div>
+                        </>
                       )}
 
                       {/* Action buttons */}
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         <button
-                          onClick={() => { setTranslationPopup(null); setTranslatedText(''); }}
+                          onClick={() => { setTranslationPopup(null); setTranslatedText(''); setSaveSuccess(false); setEnrichedData(null); }}
                           style={{
-                            padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                            padding: '6px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
                             background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)',
                             cursor: 'pointer', transition: 'all 0.15s'
                           }}
                         >Đóng</button>
-                        {!translatedText && !isTranslating && (
-                          <button
-                            onClick={() => translateText(translationPopup.text)}
-                            style={{
-                              padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
-                              background: 'linear-gradient(135deg, #7c4dff, #536dfe)',
-                              color: 'white', border: 'none', cursor: 'pointer',
-                              transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: '5px',
-                              boxShadow: '0 2px 12px rgba(124,77,255,0.3)'
-                            }}
-                          >
-                            <Languages size={13} /> Dịch
+                        
+                        {!translatedText && !isTranslating && !isAiEnrichingPopup && (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              onClick={() => translateText(translationPopup.text)}
+                              style={{
+                                padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
+                                background: 'rgba(255,255,255,0.05)',
+                                color: 'white', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px'
+                              }}
+                            >
+                              <Languages size={12} /> Dịch
+                            </button>
+                            <button
+                              onClick={handleAiEnrichForPopup}
+                              style={{
+                                padding: '6px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
+                                background: 'linear-gradient(135deg, #7c4dff, #536dfe)',
+                                color: 'white', border: 'none', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px',
+                                boxShadow: '0 2px 8px rgba(124,77,255,0.3)'
+                              }}
+                            >
+                              <Sparkles size={12} /> AI Phân tích
+                            </button>
+                          </div>
+                        )}
+
+                        {isAiEnrichingPopup && (
+                          <button disabled style={{ padding: '6px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 700, background: 'rgba(124,77,255,0.2)', color: 'white', border: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid white', borderTop: '2px solid transparent', animation: 'spin 0.6s linear infinite' }} />
+                            AI đang học...
                           </button>
                         )}
-                        {translatedText && !isTranslating && (
-                          <button
-                            onClick={handleInsertTranslation}
-                            style={{
-                              padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
-                              background: 'linear-gradient(135deg, #7c4dff, #536dfe)',
-                              color: 'white', border: 'none', cursor: 'pointer',
-                              transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: '5px',
-                              boxShadow: '0 2px 12px rgba(124,77,255,0.3)'
-                            }}
-                          >
-                            <span style={{ fontSize: '13px' }}>+</span> Chèn ({translatedText})
-                          </button>
+
+                        {translatedText && !isTranslating && !isAiEnrichingPopup && (
+                          <>
+                            {!enrichedData && (
+                              <button
+                                onClick={handleAiEnrichForPopup}
+                                title="Hoàn thiện thông tin bằng AI"
+                                style={{
+                                  padding: '6px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
+                                  background: 'rgba(124,77,255,0.1)', color: '#d8ccff', border: '1px solid rgba(124,77,255,0.2)',
+                                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                                }}
+                              >
+                                <Sparkles size={12} /> Nâng cấp nội dung
+                              </button>
+                            )}
+                            
+                            <button
+                              onClick={handleSaveToLibrary}
+                              disabled={isSavingToDeck}
+                              style={{
+                                padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
+                                background: saveSuccess ? 'var(--accent-green)' : (enrichedData ? 'var(--primary)' : 'rgba(var(--glass-rgb),0.1)'),
+                                color: 'white', border: '1px solid rgba(var(--glass-rgb),0.2)', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.3s'
+                              }}
+                            >
+                              {isSavingToDeck ? (
+                                <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid white', borderTop: '2px solid transparent', animation: 'spin 0.6s linear infinite' }} />
+                              ) : saveSuccess ? (
+                                <CheckCircle size={12} />
+                              ) : (
+                                <Save size={12} />
+                              )}
+                              {saveSuccess ? 'Đã lưu' : (enrichedData ? 'Lưu thẻ đầy đủ' : 'Lưu thẻ')}
+                            </button>
+
+                            <button
+                              onClick={handleInsertTranslation}
+                              style={{
+                                padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
+                                background: 'linear-gradient(135deg, #7c4dff, #536dfe)',
+                                color: 'white', border: 'none', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px',
+                                boxShadow: '0 2px 8px rgba(124,77,255,0.3)'
+                              }}
+                            >
+                              <Sparkles size={12} /> Chèn
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

@@ -472,8 +472,90 @@ function ImportModal({ onImport, onClose }) {
   );
 }
 
-function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast }) {
+function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp, onMoveDown, isFirst, isLast }) {
   const [expanded, setExpanded] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const [apiKey] = useLocalStorage('gemini_api_key', '');
+  const [apiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
+  const [aiProvider] = useLocalStorage('ai_provider', 'gemini');
+  const [openaiKey] = useLocalStorage('openai_api_key', '');
+  const [openaiModel] = useLocalStorage('openai_api_model', 'gpt-4o-mini');
+
+  const handleAiAnalyze = async () => {
+    if (!card.front || isGenerating) return;
+    
+    const activeApiKey = aiProvider === 'gemini' ? apiKey : openaiKey;
+    if (!activeApiKey) {
+      alert(`Vui lòng nhập API Key cho ${aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} trong phần Cài đặt.`);
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const prompt = `Bạn là từ điển Anh-Việt. Hãy phân tích từ/cụm từ tiếng Anh sau: "${card.front}"
+      Trả về JSON duy nhất (không markdown, không giải thích):
+      {
+        "definition": "nghĩa tiếng Việt (ngắn gọn, chính xác)",
+        "pronunciation": "phiên âm IPA",
+        "wordType": "n./v./adj./adv./phr.",
+        "example": "1 câu ví dụ tiếng Anh tự nhiên",
+        "synonyms": "2-3 từ đồng nghĩa, cách nhau bởi dấu phẩy"
+      }`;
+
+      let rawText = "";
+      if (aiProvider === 'gemini') {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${apiModel}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
+            contents: [{ parts: [{ text: prompt }] }]
+          })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+        rawText = data.candidates[0].content.parts[0].text;
+      } else {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiKey}`
+          },
+          body: JSON.stringify({
+            model: openaiModel,
+            max_tokens: 512,
+            temperature: 0.1,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+        rawText = data.choices[0].message.content;
+      }
+
+      const cleaned = rawText.replace(/```json\n?/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      const updates = {};
+
+      if (parsed.definition) updates.back = parsed.definition;
+      if (parsed.pronunciation) updates.pronunciation = parsed.pronunciation;
+      if (parsed.wordType) updates.wordType = parsed.wordType;
+      if (parsed.example) updates.example = parsed.example;
+      if (parsed.synonyms) updates.synonyms = parsed.synonyms;
+      
+      onUpdateFields(card.id, updates);
+      
+      setExpanded(true); // Tự động mở chi tiết để thấy kết quả
+    } catch (err) {
+      console.error(err);
+      alert('Không thể phân tích từ này: ' + err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   return (
     <div className="rounded-xl border border-white/10 overflow-hidden" style={{ background: 'rgba(var(--glass-rgb), 0.05)', flexShrink: 0 }}>
@@ -488,14 +570,24 @@ function CardEditor({ card, index, onUpdate, onDelete, onMoveUp, onMoveDown, isF
         <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
           <div>
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Thuật ngữ</label>
-            <input
-              type="text"
-              value={card.front}
-              onChange={e => onUpdate(card.id, 'front', e.target.value)}
-              placeholder="Nhập thuật ngữ"
-              className="w-full px-3 py-2 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/40 transition-colors"
-              style={{ background: 'rgba(0,0,0,0.25)' }}
-            />
+            <div className="relative group/term">
+              <input
+                type="text"
+                value={card.front}
+                onChange={e => onUpdate(card.id, 'front', e.target.value)}
+                placeholder="Nhập thuật ngữ"
+                className="w-full px-3 py-2 pr-9 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/40 transition-colors"
+                style={{ background: 'rgba(0,0,0,0.25)' }}
+              />
+              <button 
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-500 hover:text-primary hover:bg-primary/10 transition-all disabled:opacity-30 flex items-center justify-center"
+                onClick={handleAiAnalyze}
+                disabled={!card.front || isGenerating}
+                title="AI phân tích từ vựng"
+              >
+                {isGenerating ? <Loader size={14} className="animate-spin text-primary" /> : <Sparkles size={14} />}
+              </button>
+            </div>
           </div>
           <div>
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Định nghĩa</label>
@@ -626,9 +718,16 @@ export default function DecksView() {
   };
 
   const handleUpdateCard = (cardId, field, value) => {
-    setDecks(decks.map(d => {
+    setDecks(prevDecks => prevDecks.map(d => {
       if (d.id !== activeDeckId) return d;
       return { ...d, cards: d.cards.map(c => c.id === cardId ? { ...c, [field]: value } : c) };
+    }));
+  };
+
+  const handleUpdateCardFields = (cardId, updates) => {
+    setDecks(prevDecks => prevDecks.map(d => {
+      if (d.id !== activeDeckId) return d;
+      return { ...d, cards: d.cards.map(c => c.id === cardId ? { ...c, ...updates } : c) };
     }));
   };
 
@@ -791,6 +890,7 @@ export default function DecksView() {
                     card={card}
                     index={index}
                     onUpdate={handleUpdateCard}
+                    onUpdateFields={handleUpdateCardFields}
                     onDelete={handleDeleteCard}
                     onMoveUp={(id) => handleMoveCard(id, 'up')}
                     onMoveDown={(id) => handleMoveCard(id, 'down')}
