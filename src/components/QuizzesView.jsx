@@ -1,8 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages } from 'lucide-react';
+import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportQuizToWord } from '../utils/exportWord';
+import Tesseract from 'tesseract.js';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
 
 export default function QuizzesView() {
   const [quizzes, setQuizzes] = useLocalStorage('study_quizzes', []);
@@ -29,12 +35,14 @@ export default function QuizzesView() {
   const [isGeneratingTakeaways, setIsGeneratingTakeaways] = useState(false);
 
   const [isCreatingAiQuiz, setIsCreatingAiQuiz] = useState(false);
-  const [aiQuizImages, setAiQuizImages] = useState([]);
+  const [aiQuizFiles, setAiQuizFiles] = useState([]); // { id, data, name, type, extractedText, isProcessing }
   const [aiQuizPrompt, setAiQuizPrompt] = useState('');
   const [numQuestions, setNumQuestions] = useState(10);
   const [isDragging, setIsDragging] = useState(false);
   const [aiProgress, setAiProgress] = useState('');
+  const [optimizeTokens, setOptimizeTokens] = useLocalStorage('ai_optimize_tokens', true);
   const fileInputRef = useRef(null);
+
 
   // Translation popup state
   const [translationPopup, setTranslationPopup] = useState(null); // { x, y, text, questionId, field, selStart, selEnd }
@@ -626,26 +634,87 @@ export default function QuizzesView() {
     };
   }
 
+  // OCR and PDF Extraction Helpers
+  const extractTextFromImage = async (dataUrl) => {
+    try {
+      const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng+vie');
+      return text;
+    } catch (err) {
+      console.error('OCR Error:', err);
+      return '';
+    }
+  };
+
+  const extractTextFromPDF = async (file) => {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += `[Trang ${i}]\n${pageText}\n\n`;
+      }
+      return fullText;
+    } catch (err) {
+      console.error('PDF Extraction Error:', err);
+      return '';
+    }
+  };
+
   const processFiles = useCallback((files) => {
-    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
-    if (imageFiles.length === 0) return;
+    const validFiles = Array.from(files).filter(f => f.type.startsWith('image/') || f.type === 'application/pdf');
+    if (validFiles.length === 0) return;
     
-    // Limit to 5 images total
-    const remaining = 5 - aiQuizImages.length;
-    const toProcess = imageFiles.slice(0, remaining);
+    // Limit to 5 files total
+    const remaining = 5 - aiQuizFiles.length;
+    const toProcess = validFiles.slice(0, remaining);
     if (toProcess.length === 0) {
-      alert('Tối đa 5 hình ảnh. Hãy xóa bớt ảnh trước khi thêm.');
+      alert('Tối đa 5 tài liệu. Hãy xóa bớt trước khi thêm.');
       return;
     }
 
-    toProcess.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAiQuizImages(prev => [...prev, { id: uuidv4(), data: reader.result, name: file.name }]);
-      };
-      reader.readAsDataURL(file);
+    toProcess.forEach(async (file) => {
+      const fileId = uuidv4();
+      const fileType = file.type.startsWith('image/') ? 'image' : 'pdf';
+      
+      // Initial state with processing flag
+      setAiQuizFiles(prev => [...prev, { 
+        id: fileId, 
+        name: file.name, 
+        type: fileType, 
+        isProcessing: true,
+        data: null,
+        extractedText: '' 
+      }]);
+
+      let extractedText = '';
+      let fileData = null;
+
+      if (fileType === 'image') {
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          fileData = reader.result;
+          if (optimizeTokens) {
+            setAiProgress(`Đang trích xuất chữ từ ${file.name}...`);
+            extractedText = await extractTextFromImage(fileData);
+          }
+          setAiQuizFiles(prev => prev.map(f => f.id === fileId ? { ...f, data: fileData, extractedText, isProcessing: false } : f));
+          setAiProgress('');
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // PDF Processing
+        if (optimizeTokens) {
+          setAiProgress(`Đang trích xuất chữ từ PDF ${file.name}...`);
+          extractedText = await extractTextFromPDF(file);
+        }
+        setAiQuizFiles(prev => prev.map(f => f.id === fileId ? { ...f, extractedText, isProcessing: false } : f));
+        setAiProgress('');
+      }
     });
-  }, [aiQuizImages.length]);
+  }, [aiQuizFiles.length, optimizeTokens]);
 
   const handleImageUpload = (e) => {
     processFiles(e.target.files);
@@ -653,9 +722,11 @@ export default function QuizzesView() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleRemoveImage = (imageId) => {
-    setAiQuizImages(prev => prev.filter(img => img.id !== imageId));
+  const handleRemoveImage = (fileId) => {
+    setAiQuizFiles(prev => prev.filter(f => f.id !== fileId));
   };
+
+
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
@@ -683,23 +754,33 @@ export default function QuizzesView() {
       return;
     }
 
-    if (aiQuizImages.length === 0 && !aiQuizPrompt.trim()) {
-      alert('Vui lòng tải lên hình ảnh hoặc nhập yêu cầu.');
+    if (aiQuizFiles.length === 0 && !aiQuizPrompt.trim()) {
+      alert('Vui lòng tải lên tài liệu hoặc nhập yêu cầu.');
       return;
     }
 
     setAiLoading('generate_quiz');
     setAiProgress('Đang chuẩn bị dữ liệu...');
     try {
-      const hasImages = aiQuizImages.length > 0;
-      const imageContext = hasImages 
-        ? `Tôi đã tải lên ${aiQuizImages.length} hình ảnh. Hãy phân tích TẤT CẢ hình ảnh.` 
-        : '';
-      const userPrompt = aiQuizPrompt.trim() || (hasImages
-        ? 'Hãy trích xuất hoặc tạo các câu hỏi trắc nghiệm từ nội dung trong các hình ảnh này.'
+      const hasFiles = aiQuizFiles.length > 0;
+      
+      // Build context from extracted text if optimizing tokens
+      let extractedTextContent = '';
+      if (optimizeTokens && hasFiles) {
+        extractedTextContent = aiQuizFiles
+          .map((f, i) => `--- Tài liệu ${i + 1} (${f.name}) ---\n${f.extractedText || '[Không có nội dung chữ được trích xuất]'}`)
+          .join('\n\n');
+      }
+
+      const fileContext = extractedTextContent 
+        ? `NỘI DUNG TRÍCH XUẤT TỪ TÀI LIỆU:\n${extractedTextContent}\n\n`
+        : (hasFiles ? `Tôi đã tải lên ${aiQuizFiles.length} tài liệu. Hãy phân tích TẤT CẢ.` : '');
+
+      const userPrompt = aiQuizPrompt.trim() || (hasFiles
+        ? 'Hãy trích xuất hoặc tạo các câu hỏi trắc nghiệm từ nội dung trong tài liệu này.'
         : 'Hãy tạo các câu hỏi trắc nghiệm.');
 
-      let promptText = `${imageContext}\n${userPrompt}\n\nYÊU CẦU: Tạo chính xác ${numQuestions} câu hỏi trắc nghiệm.
+      let promptText = `${fileContext}\n${userPrompt}\n\nYÊU CẦU: Tạo chính xác ${numQuestions} câu hỏi trắc nghiệm.
 
 BẠN BẮT BUỘC PHẢI TRẢ VỀ KẾT QUẢ THEO ĐÚNG ĐỊNH DẠNG SAU CHO MỖI CÂU HỎI:
 Câu [số]: [Nội dung câu hỏi]
@@ -711,26 +792,28 @@ D. [Đáp án D]
 Giải thích: [Giải thích ngắn gọn]
 
 LƯU Ý QUAN TRỌNG:
-- Trả về dạng văn bản thuần túy, KHÔNG bọc trong markdown block (như \`\`\` hoặc \`\`\`json).
+- Trả về dạng văn bản thuần túy, KHÔNG bọc trong markdown block.
 - Phải có đủ 4 đáp án A, B, C, D cho mỗi câu.
-- Phải có dòng "Đáp án:" và "Giải thích:".`;
+- Nếu tài liệu có dạng READING (bài đọc), hãy tạo 1 block đoạn văn rồi đến các câu hỏi.`;
 
       setAiProgress('Đang gửi yêu cầu đến AI...');
       let textRes = '';
 
+      // Check if we can use simple text prompt or need multimodal
+      const useMultimodal = !optimizeTokens && hasFiles && aiQuizFiles.some(f => f.type === 'image');
+
       if (aiProvider === 'gemini') {
         const parts = [{ text: promptText }];
         
-        if (hasImages) {
-          aiQuizImages.forEach(img => {
-            const mimeType = img.data.split(';')[0].split(':')[1];
-            const base64Data = img.data.split(',')[1];
-            parts.push({
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Data
-              }
-            });
+        if (useMultimodal) {
+          aiQuizFiles.forEach(f => {
+            if (f.type === 'image' && f.data) {
+              const mimeType = f.data.split(';')[0].split(':')[1];
+              const base64Data = f.data.split(',')[1];
+              parts.push({
+                inlineData: { mimeType, data: base64Data }
+              });
+            }
           });
         }
 
@@ -739,10 +822,7 @@ LƯU Ý QUAN TRỌNG:
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            generationConfig: {
-              maxOutputTokens: 4096,
-              temperature: 0.4
-            },
+            generationConfig: { maxOutputTokens: 4096, temperature: 0.4 },
             contents: [{ parts: parts }]
           })
         });
@@ -752,12 +832,14 @@ LƯU Ý QUAN TRỌNG:
 
       } else {
         const content = [{ type: 'text', text: promptText }];
-        if (hasImages) {
-          aiQuizImages.forEach(img => {
-            content.push({
-              type: 'image_url',
-              image_url: { url: img.data, detail: 'high' }
-            });
+        if (useMultimodal) {
+          aiQuizFiles.forEach(f => {
+            if (f.type === 'image' && f.data) {
+              content.push({
+                type: 'image_url',
+                image_url: { url: f.data, detail: 'high' }
+              });
+            }
           });
         }
 
@@ -781,21 +863,38 @@ LƯU Ý QUAN TRỌNG:
       }
 
       setAiProgress('Đang trích xuất câu hỏi...');
-      // Cleanup formatting
       textRes = textRes.replace(/```[a-z]*\n/gi, '').replace(/```/g, '').trim();
 
       const questions = parseQuizText(textRes);
 
       if (questions.length > 0) {
-        const newQuiz = { id: uuidv4(), title: `Đề AI tạo (${questions.length} câu)`, questions, updatedAt: Date.now() };
-        setQuizzes([newQuiz, ...quizzes]);
-        setActiveQuizId(newQuiz.id);
+        if (activeQuizId) {
+          // Append to existing quiz
+          const newQuizzes = quizzes.map(q => {
+            if (q.id === activeQuizId) {
+              return {
+                ...q,
+                questions: [...q.questions, ...questions],
+                updatedAt: Date.now()
+              };
+            }
+            return q;
+          });
+          setQuizzes(newQuizzes);
+        } else {
+          // Create new quiz
+          const newQuiz = { id: uuidv4(), title: `Đề AI tạo (${questions.length} câu)`, questions, updatedAt: Date.now() };
+          setQuizzes([newQuiz, ...quizzes]);
+          setActiveQuizId(newQuiz.id);
+        }
         setIsCreatingAiQuiz(false);
-        setAiQuizImages([]);
+        setAiQuizFiles([]);
         setAiQuizPrompt('');
       } else {
         alert('AI không trả về được câu hỏi định dạng đúng. Hãy thử lại.\n\nPhản hồi thô:\n' + textRes.substring(0, 500));
       }
+
+
 
     } catch (err) {
       alert('Lỗi khi gọi AI: ' + err.message);
@@ -1378,38 +1477,57 @@ ${questionsText}`;
                     style={{ 
                       border: `2px dashed ${isDragging ? 'var(--primary)' : 'rgba(var(--glass-rgb),0.12)'}`, 
                       borderRadius: '16px', 
-                      padding: aiQuizImages.length > 0 ? '16px' : '36px', 
+                      padding: aiQuizFiles.length > 0 ? '16px' : '36px', 
                       textAlign: 'center', cursor: 'pointer',
                       background: isDragging ? 'rgba(124,77,255,0.08)' : 'rgba(var(--glass-rgb),0.02)',
                       transition: 'all 0.3s ease',
                       transform: isDragging ? 'scale(1.01)' : 'scale(1)'
                     }}
                   >
-                    <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display: 'none' }} />
-                    {aiQuizImages.length > 0 ? (
+                    <input ref={fileInputRef} type="file" accept="image/*,application/pdf" multiple onChange={handleImageUpload} style={{ display: 'none' }} />
+                    {aiQuizFiles.length > 0 ? (
                       <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '12px', marginBottom: '12px' }}>
-                          {aiQuizImages.map((img, idx) => (
-                            <div key={img.id} style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(var(--glass-rgb),0.1)', aspectRatio: '4/3', background: 'rgba(0,0,0,0.3)' }}>
-                              <img src={img.data} alt={`Ảnh ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              <button onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }} style={{ position: 'absolute', top: '6px', right: '6px', width: '24px', height: '24px', borderRadius: '50%', background: 'rgba(0,0,0,0.7)', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+                          {aiQuizFiles.map((file, idx) => (
+                            <div key={file.id} style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(var(--glass-rgb),0.1)', aspectRatio: '4/3', background: 'rgba(0,0,0,0.3)' }}>
+                              {file.type === 'image' && file.data ? (
+                                <img src={file.data} alt={`File ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>
+                                  <FileText size={40} />
+                                  <span style={{ fontSize: '12px', fontWeight: 'bold', marginTop: '4px' }}>PDF</span>
+                                </div>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); handleRemoveImage(file.id); }} style={{ position: 'absolute', top: '6px', right: '6px', width: '24px', height: '24px', borderRadius: '50%', background: 'rgba(0,0,0,0.7)', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <X size={14} />
                               </button>
-                              <div style={{ position: 'absolute', bottom: '6px', left: '6px', background: 'rgba(0,0,0,0.7)', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', color: 'white', fontWeight: 600 }}>
-                                {idx + 1}/{aiQuizImages.length}
+                              <div style={{ position: 'absolute', bottom: '6px', left: '6px', right: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ background: 'rgba(0,0,0,0.7)', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', color: 'white', fontWeight: 600 }}>
+                                  {idx + 1}/{aiQuizFiles.length}
+                                </div>
+                                {file.isProcessing ? (
+                                  <div style={{ background: 'var(--primary)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'white', animation: 'pulse 1s infinite' }}>Parsing...</div>
+                                ) : (
+                                  file.extractedText && <div style={{ background: 'var(--accent-green)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'white' }}>OCR OK</div>
+                                )}
                               </div>
                             </div>
                           ))}
-                          {aiQuizImages.length < 5 && (
+                          {aiQuizFiles.length < 5 && (
                             <div style={{ borderRadius: '10px', border: '2px dashed rgba(var(--glass-rgb),0.1)', aspectRatio: '4/3', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer' }}>
                               <Upload size={18} color="var(--text-muted)" />
-                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Thêm ảnh</span>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Thêm tệp</span>
                             </div>
                           )}
                         </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          <ImageIcon size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                          {aiQuizImages.length}/5 ảnh · Bấm hoặc kéo thả để thêm
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'center', gap: '15px' }}>
+                          <span><ImageIcon size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} /> Ảnh/PDF ({aiQuizFiles.length}/5)</span>
+                          <span 
+                            onClick={(e) => { e.stopPropagation(); setOptimizeTokens(!optimizeTokens); }}
+                            style={{ color: optimizeTokens ? 'var(--accent-green)' : 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}
+                          >
+                            {optimizeTokens ? '✓ Tối ưu Token (OCR/PDF text)' : '○ Gửi tệp gốc (Tạm dừng tối ưu)'}
+                          </span>
                         </div>
                       </div>
                     ) : (
@@ -1419,16 +1537,17 @@ ${questionsText}`;
                         </div>
                         <div>
                           <strong style={{ display: 'block', marginBottom: '6px', fontSize: '15px' }}>
-                            {isDragging ? '📥 Thả ảnh vào đây!' : 'Kéo thả hoặc bấm để tải ảnh'}
+                            {isDragging ? '📥 Thả tệp vào đây!' : 'Kéo thả hoặc bấm để tải Ảnh/PDF'}
                           </strong>
                           <span style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                            Hỗ trợ JPG, PNG, WEBP · Tối đa 5 ảnh<br />
-                            <span style={{ fontSize: '12px', opacity: 0.7 }}>Ảnh sách giáo khoa, đề thi, ghi chú tay...</span>
+                            Hỗ trợ JPG, PNG, PDF · Tối đa 5 tệp<br />
+                            <span style={{ fontSize: '12px', opacity: 0.7 }}>Sử dụng Tesseract OCR & PDF Parser để tối ưu hóa tokens</span>
                           </span>
                         </div>
                       </>
                     )}
                   </div>
+
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ flex: 1, height: '1px', background: 'rgba(var(--glass-rgb),0.08)' }} />
@@ -1464,21 +1583,22 @@ ${questionsText}`;
 
                 <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', paddingTop: '20px', borderTop: '1px solid rgba(var(--glass-rgb),0.06)' }}>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    {aiQuizImages.length > 0 && `${aiQuizImages.length} ảnh đã chọn`}
-                    {aiQuizImages.length > 0 && aiQuizPrompt.trim() && ' · '}
+                    {aiQuizFiles.length > 0 && `${aiQuizFiles.length} tệp đã chọn`}
+                    {aiQuizFiles.length > 0 && aiQuizPrompt.trim() && ' · '}
                     {aiQuizPrompt.trim() && 'Có yêu cầu tùy chỉnh'}
                   </div>
                   <div style={{ display: 'flex', gap: '12px' }}>
-                    <button className="btn" onClick={() => { setIsCreatingAiQuiz(false); setAiQuizImages([]); setAiQuizPrompt(''); }}>Hủy</button>
+                    <button className="btn" onClick={() => { setIsCreatingAiQuiz(false); setAiQuizFiles([]); setAiQuizPrompt(''); }}>Hủy</button>
                     <button 
                       className="btn btn-primary" onClick={handleGenerateAiQuiz}
-                      disabled={aiLoading === 'generate_quiz' || (aiQuizImages.length === 0 && !aiQuizPrompt.trim())}
-                      style={{ opacity: (aiLoading === 'generate_quiz' || (aiQuizImages.length === 0 && !aiQuizPrompt.trim())) ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: 700, background: 'linear-gradient(135deg, #7c4dff, #536dfe)', boxShadow: '0 4px 20px rgba(124,77,255,0.4)' }}
+                      disabled={aiLoading === 'generate_quiz' || (aiQuizFiles.length === 0 && !aiQuizPrompt.trim()) || aiQuizFiles.some(f => f.isProcessing)}
+                      style={{ opacity: (aiLoading === 'generate_quiz' || (aiQuizFiles.length === 0 && !aiQuizPrompt.trim()) || aiQuizFiles.some(f => f.isProcessing)) ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 24px', fontSize: '14px', fontWeight: 700, background: 'linear-gradient(135deg, #7c4dff, #536dfe)', boxShadow: '0 4px 20px rgba(124,77,255,0.4)' }}
                     >
                       <Sparkles size={16} /> Tạo Đề Ngay
                     </button>
                   </div>
                 </div>
+
               </div>
             ) : isImporting ? (
               <div className="glass-panel" style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -2168,7 +2288,21 @@ ${questionsText}`;
                       >
                         <BookOpen size={18} /> Nhập READING
                       </button>
+                      <button 
+                        onClick={() => {
+                          setIsCreatingAiQuiz(true);
+                        }}
+                        style={{
+                          padding: '10px 18px', borderRadius: '10px', fontSize: '14px', fontWeight: 700,
+                          background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white', border: 'none',
+                          cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px',
+                          boxShadow: '0 4px 15px rgba(124,77,255,0.3)'
+                        }}
+                      >
+                        <Zap size={18} fill="white" /> Tạo câu bằng AI
+                      </button>
                     </div>
+
                   )}
                 </div>
               </div>

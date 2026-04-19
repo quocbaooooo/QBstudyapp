@@ -730,14 +730,18 @@ export default function DecksView() {
         {activeDeck ? (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
             {/* Title + Actions */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
-              <input
-                type="text"
-                value={activeDeck.title}
-                onChange={e => handleUpdateDeckTitle(e.target.value)}
-                className="text-xl font-bold bg-transparent border-none outline-none text-[color:var(--text-main)] p-0 w-full sm:w-auto sm:flex-1"
-                style={{ borderBottom: '1px solid var(--border-color)', borderRadius: 0, boxShadow: 'none' }}
-              />
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-white/5">
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '8px', height: '24px', background: 'var(--primary)', borderRadius: '4px' }} />
+                <input
+                  type="text"
+                  value={activeDeck.title}
+                  onChange={e => handleUpdateDeckTitle(e.target.value)}
+                  className="bg-transparent border-none outline-none text-[color:var(--text-main)] p-0 w-full"
+                  style={{ fontSize: '22px', fontWeight: 800, boxShadow: 'none' }}
+                  placeholder="Tên bộ thẻ..."
+                />
+              </div>
               <div className="flex gap-2 shrink-0">
                 <button
                   className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"

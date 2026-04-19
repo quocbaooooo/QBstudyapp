@@ -285,66 +285,104 @@ export default function NotesView() {
       ) : (
         /* ========== EDITOR VIEW ========== */
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-          {/* Back button */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexShrink: 0 }}>
-            <button
-              onClick={() => setActiveNoteId(null)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                padding: '8px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-                background: 'rgba(var(--glass-rgb),0.05)', border: '1px solid rgba(var(--glass-rgb),0.1)',
-                color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s'
-              }}
-            >
-              <ArrowLeft size={16} />
-              Sổ tay ghi chú
-            </button>
-          </div>
-
-          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {activeNote ? (
-              <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px 48px' }}>
-               
-               {/* Title & Metadata Settings */}
-               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '24px', paddingBottom: '20px', borderBottom: '1px solid rgba(var(--glass-rgb),0.05)', marginBottom: '20px', flexWrap: 'wrap' }}>
+          {/* Top Bar / Header */}
+          <div style={{ 
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+            gap: '20px', paddingBottom: '20px', flexShrink: 0 
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+              <button
+                onClick={() => setActiveNoteId(null)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                   padding: '6px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                  background: 'rgba(var(--glass-rgb),0.05)', border: '1px solid rgba(var(--glass-rgb),0.1)',
+                  color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s',
+                  flexShrink: 0
+                }}
+              >
+                <ArrowLeft size={16} />
+                <span className="hidden sm:inline">Thoát</span>
+              </button>
+              
+              {activeNote && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
                   <input 
                     type="text" 
                     value={activeNote.title} 
                     onChange={e => handleUpdateActiveNote('title', e.target.value)}
-                    style={{ flex: 1, minWidth: '300px', fontSize: '32px', fontWeight: '800', letterSpacing: '-0.03em', border: 'none', background: 'transparent', outline: 'none', color: 'white', padding: 0 }}
-                    placeholder="Tiêu đề quyển sổ..."
+                    style={{ 
+                      fontSize: '18px', fontWeight: 700, border: 'none', background: 'transparent', 
+                      padding: '0', boxShadow: 'none', color: 'var(--text-main)', width: 'auto', flex: '0 1 auto', outline: 'none',
+                      minWidth: '50px'
+                    }}
+                    placeholder="Tiêu đề..."
                   />
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px', color: '#a3aac4' }}>
-                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(var(--glass-rgb),0.03)', padding: '6px 12px', borderRadius: '8px' }}>
-                        <Folder size={14} />
-                        <input 
-                          type="text" 
-                          placeholder="Tên danh mục..." 
-                          value={activeNote.category || ''} 
-                          onChange={e => handleUpdateActiveNote('category', e.target.value)} 
-                          style={{ background: 'transparent', border: 'none', color: 'var(--secondary)', fontWeight: 600, padding: 0, width: '100px', outline: 'none' }} 
-                        />
-                     </div>
-                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', background: 'rgba(var(--glass-rgb),0.03)', padding: '6px 12px', borderRadius: '8px' }}>
-                        <Tag size={14} />
+
+                  <div style={{ height: '16px', width: '1px', background: 'rgba(var(--glass-rgb),0.1)', flexShrink: 0 }} />
+
+                  {/* Folder & Tag Row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <div style={{ 
+                      display: 'flex', alignItems: 'center', gap: '6px', 
+                      background: 'rgba(var(--glass-rgb),0.04)', padding: '4px 10px', 
+                      borderRadius: '8px', border: '1px solid rgba(var(--glass-rgb),0.06)' 
+                    }}>
+                      <Folder size={12} color="var(--primary)" />
+                      <input 
+                        type="text" 
+                        placeholder="Danh mục..." 
+                        value={activeNote.category || ''} 
+                        onChange={e => handleUpdateActiveNote('category', e.target.value)} 
+                        style={{ 
+                          background: 'transparent', border: 'none', color: 'var(--text-main)', 
+                          fontSize: '12px', fontWeight: 600, padding: 0, width: '80px', outline: 'none' 
+                        }} 
+                      />
+                    </div>
+
+                    <div style={{ 
+                      display: 'flex', alignItems: 'center', gap: '6px', 
+                      background: 'rgba(var(--glass-rgb),0.04)', padding: '4px 10px', 
+                      borderRadius: '8px', border: '1px solid rgba(var(--glass-rgb),0.06)',
+                      maxWidth: '400px'
+                    }}>
+                      <Tag size={12} color="#c59aff" />
+                      <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', scrollbarWidth: 'none', maxWidth: '200px' }}>
                         {(activeNote.tags || []).map(t => (
-                            <span key={t} style={{ background: 'rgba(var(--glass-rgb),0.05)', border: '1px solid rgba(var(--glass-rgb),0.1)', padding: '2px 8px', borderRadius: '100px', display: 'flex', alignItems: 'center', gap: '4px', color: 'white' }}>
-                               {t} 
-                               <button onClick={() => handleRemoveTag(t)} style={{ background: 'transparent', border: 'none', color: '#ff6e84', cursor: 'pointer', display: 'flex', padding: 0 }}>
-                                  <Minus size={12} />
-                               </button>
-                            </span>
+                          <span key={t} style={{ 
+                            background: 'rgba(197,154,255,0.1)', border: '1px solid rgba(197,154,255,0.2)', 
+                            padding: '0px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', 
+                            gap: '3px', color: '#c59aff', fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap' 
+                          }}>
+                            {t} 
+                            <button onClick={() => handleRemoveTag(t)} style={{ background: 'transparent', border: 'none', color: '#ff6e84', cursor: 'pointer', display: 'flex', padding: 0 }}>
+                              <Minus size={8} />
+                            </button>
+                          </span>
                         ))}
-                        <input 
-                          type="text" 
-                          placeholder="Thêm tag (nhấn Enter)..." 
-                          onKeyDown={handleAddTag} 
-                          style={{ background: 'transparent', border: 'none', color: '#dee5ff', padding: 0, minWidth: '120px', outline: 'none' }} 
-                        />
-                     </div>
+                      </div>
+                      <input 
+                        type="text" 
+                        placeholder="Tag..." 
+                        onKeyDown={handleAddTag} 
+                        style={{ 
+                          background: 'transparent', border: 'none', color: 'var(--text-muted)', 
+                          fontSize: '12px', padding: 0, width: '50px', outline: 'none' 
+                        }} 
+                      />
+                    </div>
                   </div>
-               </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {activeNote ? (
+              <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px 32px' }}>
+               
+
 
               {/* Main Tiptap Editor */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
