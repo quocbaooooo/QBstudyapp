@@ -81,7 +81,18 @@ function LoginScreen() {
         boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
         zIndex: 10
       }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <img 
+            src="/logo.png" 
+            alt="QBStudy Logo" 
+            style={{ 
+              width: '120px', 
+              height: 'auto', 
+              objectFit: 'contain',
+              marginBottom: '16px',
+              filter: 'drop-shadow(0 8px 24px rgba(34,211,238,0.3))'
+            }} 
+          />
           <h1 style={{
             fontSize: '32px', fontWeight: 800, letterSpacing: '-0.03em',
             background: 'linear-gradient(135deg, #a78bfa, #22d3ee)',
@@ -372,7 +383,10 @@ function AppContent() {
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="mb-6 px-3 mt-3 flex items-center justify-between">
-          <span className="text-xl font-extrabold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-cyan-400">QBStudy</span>
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="Logo" className="h-9 w-auto object-contain drop-shadow-[0_0_8px_rgba(34,211,238,0.4)]" />
+            <span className="text-xl font-extrabold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-cyan-400">QBStudy</span>
+          </div>
           <button
             className="lg:hidden text-slate-400 hover:text-white p-1"
             onClick={() => setSidebarOpen(false)}
