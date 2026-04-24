@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useFirestore } from '../hooks/useFirestore';
 import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File, Volume2, Save } from 'lucide-react';
@@ -33,6 +33,23 @@ export default function QuizzesView() {
   const [isTesting, setIsTesting] = useState(false);
   const [testMode, setTestMode] = useState('all'); // 'all' or 'starred'
   const [selectedReadingQuestionId, setSelectedReadingQuestionId] = useState(null);
+
+  const [isShuffled, setIsShuffled] = useState(false);
+  const [shuffledIds, setShuffledIds] = useState(null);
+
+  const shuffleArray = (source = []) => {
+    const arr = [...source];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  useEffect(() => {
+    setIsShuffled(false);
+    setShuffledIds(null);
+  }, [activeQuizId, isTesting, testMode]);
   const [aiLoading, setAiLoading] = useState(null);
   const [isTakeawaysCollapsed, setIsTakeawaysCollapsed] = useState(false);
   const [isGeneratingTakeaways, setIsGeneratingTakeaways] = useState(false);
@@ -92,8 +109,8 @@ export default function QuizzesView() {
     return cleanVisible;
   };
 
-  // Translation handler — works for both regular text (test mode) and input/textarea (edit mode)
-  const handleTextSelection = useCallback((e, questionId, field) => {
+  const handleTextSelection = useCallback((e, questionId = null, field = null) => {
+    e.stopPropagation();
     if (translationTimeoutRef.current) clearTimeout(translationTimeoutRef.current);
     translationTimeoutRef.current = setTimeout(() => {
       let selectedText = '';
@@ -101,21 +118,23 @@ export default function QuizzesView() {
       let selStart = 0, selEnd = 0;
 
       const target = e.target;
+      const qId = questionId || target.getAttribute('data-question-id') || null;
+      const fld = field || target.getAttribute('data-field') || null;
+
+      if (target.closest && target.closest('.translation-popup')) return;
+
       const isFormElement = target.tagName === 'TEXTAREA' || target.tagName === 'INPUT';
 
       if (isFormElement) {
-        // For textarea/input: use selectionStart/selectionEnd
         selStart = target.selectionStart;
         selEnd = target.selectionEnd;
         if (selStart !== selEnd) {
           selectedText = target.value.substring(selStart, selEnd).trim();
           const rect = target.getBoundingClientRect();
-          // Approximate popup position near the input
           popupX = rect.left + rect.width / 2;
           popupY = rect.top - 4;
         }
       } else {
-        // For regular text: use window.getSelection()
         const selection = window.getSelection();
         selectedText = selection?.toString()?.trim() || '';
         if (selectedText && selection.rangeCount > 0) {
@@ -131,8 +150,8 @@ export default function QuizzesView() {
           x: popupX,
           y: popupY,
           text: selectedText,
-          questionId,
-          field,
+          questionId: qId,
+          field: fld,
           selStart,
           selEnd
         });
@@ -299,7 +318,22 @@ export default function QuizzesView() {
       }
 
       const cleaned = rawText.replace(/```json\n?/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (err) {
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (match) {
+          try {
+            const sanitized = match[0].replace(/[\n\r\t]/g, ' ');
+            parsed = JSON.parse(sanitized);
+          } catch(e2) {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
 
       if (parsed.definition) setTranslatedText(parsed.definition);
       setEnrichedData({
@@ -1308,9 +1342,18 @@ ${questionsText}`;
     }
   };
 
-  const questionsToRender = isTesting && testMode === 'starred' && activeQuiz 
+  const questionsToRenderOriginal = isTesting && testMode === 'starred' && activeQuiz 
     ? activeQuiz.questions.filter(q => q.isStarred) 
     : (activeQuiz ? activeQuiz.questions : []);
+
+  const questionsToRender = useMemo(() => {
+    if (!isShuffled || !shuffledIds) return questionsToRenderOriginal;
+    return [...questionsToRenderOriginal].sort((a,b) => {
+      const idxA = shuffledIds.indexOf(a.id);
+      const idxB = shuffledIds.indexOf(b.id);
+      return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+    });
+  }, [questionsToRenderOriginal, isShuffled, shuffledIds]);
 
   const readingTestData = activeQuiz
     ? getReadingPreviewData(questionsToRender, activeQuiz)
@@ -1351,7 +1394,8 @@ ${questionsText}`;
   const showGrid = !activeQuizId && !isCreatingAiQuiz && !isImporting;
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+         onMouseUp={(e) => handleTextSelection(e, null, null)}>
       {showGrid ? (
         /* ========== GRID VIEW ========== */
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -1567,6 +1611,25 @@ ${questionsText}`;
 
             {activeQuiz && (
               <div style={{ display: 'flex', gap: '8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                <button 
+                  className={`btn ${isShuffled ? 'btn-primary' : ''}`}
+                  onClick={() => {
+                     if (isShuffled) {
+                         setIsShuffled(false);
+                         setShuffledIds(null);
+                     } else {
+                         setIsShuffled(true);
+                         const qids = (isTesting && testMode === 'starred' && activeQuiz 
+                             ? activeQuiz.questions.filter(q => q.isStarred) 
+                             : activeQuiz.questions).map(q => q.id);
+                         setShuffledIds(shuffleArray(qids));
+                     }
+                  }}
+                  style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>shuffle</span> 
+                  {isShuffled ? 'Bỏ trộn' : 'Xáo trộn'}
+                </button>
                 <button 
                   className="btn" 
                   style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }} 
@@ -2150,6 +2213,7 @@ ${questionsText}`;
                               {saveSuccess ? 'Đã lưu' : (enrichedData ? 'Lưu thẻ đầy đủ' : 'Lưu thẻ')}
                             </button>
 
+                            {translationPopup.questionId && translationPopup.field && (
                             <button
                               onClick={handleInsertTranslation}
                               style={{
@@ -2162,6 +2226,7 @@ ${questionsText}`;
                             >
                               <Sparkles size={12} /> Chèn
                             </button>
+                            )}
                           </>
                         )}
                       </div>

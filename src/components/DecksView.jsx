@@ -111,11 +111,17 @@ QUY TẮC:
         let parsed;
         try {
           parsed = JSON.parse(cleaned);
-        } catch {
+        } catch (err) {
           // Try to extract JSON array from response
           const jsonMatch = cleaned.match(/\[\s*\{[\s\S]*\}\s*\]/);
           if (jsonMatch) {
-            parsed = JSON.parse(jsonMatch[0]);
+            try {
+              // Sanitize literal newlines inside strings which cause 'Unterminated string in JSON'
+              const sanitized = jsonMatch[0].replace(/[\n\r\t]/g, ' ');
+              parsed = JSON.parse(sanitized);
+            } catch (e2) {
+              throw err; // throw original JSON parse error
+            }
           } else {
             throw new Error('AI trả về định dạng không hợp lệ.');
           }
@@ -536,7 +542,23 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
       }
 
       const cleaned = rawText.replace(/```json\n?/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (err) {
+        // Try to extract JSON object and sanitize literal newlines
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (match) {
+          try {
+            const sanitized = match[0].replace(/[\n\r\t]/g, ' ');
+            parsed = JSON.parse(sanitized);
+          } catch(e2) {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
 
       const updates = {};
 

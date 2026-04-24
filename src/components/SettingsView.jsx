@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Key, Volume2, VolumeX, Moon, Sun } from 'lucide-react';
+import { Key, Volume2, VolumeX, Moon, Sun, Lightbulb } from 'lucide-react';
 
 export default function SettingsView({ 
   bgMusicEnabled, 
@@ -84,11 +84,19 @@ export default function SettingsView({
               Cấu hình API AI
             </h3>
             <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all duration-300">
-              <div className="flex flex-col md:flex-row md:items-center justify-between mb-5 gap-3">
+              <div className="flex flex-col md:flex-row md:items-start justify-between mb-5 gap-3">
                 <div>
                   <div className="font-semibold text-white text-[15px]">Tùy chọn cung cấp AI</div>
                   <div className="text-[13px] text-slate-400 mt-1 max-w-lg leading-relaxed">
                     Nhập API Key của nhà cung cấp bạn muốn sử dụng để sinh nội dung, tạo flashcards và ngân hàng câu hỏi.
+                  </div>
+                  <div className="text-[12px] text-primary mt-2 flex items-center gap-1">
+                    <Lightbulb size={12}/>
+                    {aiProvider === 'gemini' ? (
+                      <span>Lấy <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="underline font-bold hover:text-white transition-colors">Gemini API Key miễn phí tại đây</a></span>
+                    ) : (
+                      <span>Lấy <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="underline font-bold hover:text-white transition-colors">OpenAI API Key tại đây</a> (cần có thanh toán thẻ)</span>
+                    )}
                   </div>
                 </div>
               </div>

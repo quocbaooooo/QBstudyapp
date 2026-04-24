@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { usePomodoro } from './hooks/usePomodoro';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/useAuth';
+import { useStudyStats } from './hooks/useStudyStats';
 import HomeView from './components/HomeView';
 import NotesView from './components/NotesView';
 import DecksView from './components/DecksView';
 import QuizzesView from './components/QuizzesView';
 import SettingsView from './components/SettingsView';
+import GuideModal from './components/GuideModal';
+
 function LoginScreen() {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
@@ -207,7 +211,11 @@ function AppContent() {
 
   const [activeTab, setActiveTab] = useState('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [player, setPlayer] = useState(null);
+
+  const studyStats = useStudyStats();
+  const pomodoroState = usePomodoro({ onSessionComplete: studyStats.addPomodoro });
 
   // Load YouTube IFrame API
   useEffect(() => {
@@ -473,16 +481,23 @@ function AppContent() {
             </button>
           </div>
           <div className="flex items-center gap-3 sm:gap-4">
+            <button
+              onClick={() => setIsGuideOpen(true)}
+              className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-cyan-400 transition-colors"
+              title="Hướng dẫn sử dụng"
+            >
+              <span className="material-symbols-outlined text-[20px]">help</span>
+            </button>
             <div className="flex items-center gap-1.5 glass-card px-3 py-1 rounded-full">
               <span className="material-symbols-outlined text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>local_fire_department</span>
-              <span className="text-sm font-bold text-white">12</span>
+              <span className="text-sm font-bold text-white">{studyStats.streak}</span>
             </div>
-            <div className="relative w-8 h-8 flex items-center justify-center">
+            <div className="relative w-8 h-8 flex items-center justify-center" title={`Tiến độ hôm nay: ${studyStats.progress}%`}>
               <svg className="w-full h-full -rotate-90" viewBox="0 0 40 40">
                 <circle className="text-white/10" cx="20" cy="20" fill="transparent" r="16" stroke="currentColor" strokeWidth="3"></circle>
-                <circle className="text-secondary drop-shadow-[0_0_8px_rgba(0,227,253,0.5)]" cx="20" cy="20" fill="transparent" r="16" stroke="currentColor" strokeDasharray="100" strokeDashoffset="30" strokeWidth="3"></circle>
+                <circle className="text-secondary drop-shadow-[0_0_8px_rgba(0,227,253,0.5)]" cx="20" cy="20" fill="transparent" r="16" stroke="currentColor" strokeDasharray="100" strokeDashoffset={100 - studyStats.progress} strokeWidth="3" style={{ transition: 'stroke-dashoffset 0.5s ease' }}></circle>
               </svg>
-              <span className="absolute text-[10px] font-bold">70%</span>
+              <span className="absolute text-[10px] font-bold">{studyStats.progress}%</span>
             </div>
             <div className="h-8 w-8 rounded-full border-2 border-primary-fixed p-0.5 overflow-hidden">
               {user.photoURL ? (
@@ -497,7 +512,7 @@ function AppContent() {
         </header>
 
         <main className="flex-1 min-h-0 p-3 sm:p-5 flex gap-3 sm:gap-5 overflow-y-auto">
-          {activeTab === 'home' && <HomeView />}
+          {activeTab === 'home' && <HomeView pomodoroState={pomodoroState} />}
           {activeTab === 'notes' && <NotesView />}
           {activeTab === 'flashcards' && <DecksView />}
           {activeTab === 'quizzes' && <QuizzesView />}
@@ -514,6 +529,8 @@ function AppContent() {
         </main>
         <div id="bg-music-player" style={{ position: 'absolute', top: '-1000px', left: '-1000px', opacity: 0, pointerEvents: 'none' }}></div>
       </div>
+      
+      <GuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
     </div>
   );
 }
