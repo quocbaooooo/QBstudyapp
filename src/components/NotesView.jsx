@@ -4,8 +4,17 @@ import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, Fil
 import { v4 as uuidv4 } from 'uuid';
 import TiptapEditor from './TiptapEditor';
 
+const DEMO_NOTE = {
+  id: uuidv4(),
+  title: '✨ Ghi chú Demo: Hướng dẫn sử dụng Sổ tay',
+  content: '<h2>Chào mừng đến với Sổ tay Thông minh! 🚀</h2><p>Dưới đây là một số mẹo nhỏ giúp bạn sử dụng hiệu quả tính năng này:</p><hr><h3>1. Dịch thuật & Tra từ mọi nơi 🌍</h3><p>Tính năng tra từ AI hoạt động trên toàn bộ ứng dụng! Hãy thử <strong>bôi đen (highlight)</strong> dòng tiếng Anh dưới đây:</p><blockquote><p><em>"Consistency is the key to success in learning languages."</em></p></blockquote><p>Bạn sẽ thấy một popup AI xuất hiện dịch nghĩa ngay lập tức. Sau khi dịch xong, bạn còn có thể bấm nút <strong>Lưu thẻ</strong> để thêm ngay từ vựng đó vào <strong>Thẻ học (Flashcards)</strong> cực kỳ tiện lợi.</p><h3>2. Soạn thảo đa dạng ✍️</h3><p>Bạn có thể định dạng văn bản dễ dàng giống như Word: <strong>In đậm</strong>, <em>in nghiêng</em>, <u>gạch chân</u>, highlight màu sắc, hay tạo các danh sách:</p><ul><li>Mục công việc 1</li><li>Mục công việc 2</li></ul><h3>3. Phân loại & Tìm kiếm 📁</h3><p>Nhìn lên phía trên thanh tiêu đề, bạn có thể chỉnh sửa <strong>Danh mục</strong> (ví dụ: Grammar, Vocabulary) và gắn <strong>Tag</strong>. Việc gắn tag giúp bạn có thể lọc và tìm kiếm ghi chú rất nhanh ở màn hình bên ngoài. Thử gõ thêm một tag mới và nhấn Enter nhé!</p>',
+  category: 'Hướng dẫn',
+  tags: ['demo', 'tips'],
+  updatedAt: Date.now()
+};
+
 export default function NotesView() {
-  const [notes, setNotes] = useFirestore('notes', 'study_notes', []);
+  const [notes, setNotes] = useFirestore('notes', 'study_notes', [DEMO_NOTE]);
   const [activeNoteId, setActiveNoteId] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');

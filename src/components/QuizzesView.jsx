@@ -9,10 +9,55 @@ import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-
+const DEMO_QUIZ = {
+  id: uuidv4(),
+  title: '✨ Đề thi Demo: Hướng dẫn sử dụng',
+  questions: [
+    {
+      id: uuidv4(),
+      question: 'Chào mừng bạn đến với Study App! Bạn có thể chọn đáp án đúng cho câu hỏi này để _____ tính năng làm bài tập.',
+      options: {
+        A: 'trải nghiệm',
+        B: 'bỏ qua',
+        C: 'xóa bỏ',
+        D: 'quên đi'
+      },
+      answer: 'A',
+      explanation: 'Hãy click vào nút "Làm bài" ở trên để bắt đầu tính năng Test mode. Ở chế độ này, đáp án sẽ được ẩn đi.',
+      userAnswer: null
+    },
+    {
+      id: uuidv4(),
+      question: 'Tính năng **Dịch nhanh & Tra từ điển AI**: Hãy thử bôi đen từ tiếng Anh "efficiency" trong câu sau để xem điều kỳ diệu:\\nThis app will improve your learning efficiency.',
+      options: {
+        A: 'sự hiệu quả',
+        B: 'sự khó khăn',
+        C: 'sự chậm trễ',
+        D: 'sự phức tạp'
+      },
+      answer: 'A',
+      explanation: 'Efficiency (n): sự hiệu quả. Bạn có thể bôi đen bất kỳ từ vựng nào trong lúc học để tra cứu hoặc lưu vào Bộ thẻ (Decks) để ôn tập flashcard sau này.',
+      userAnswer: null
+    },
+    {
+      id: uuidv4(),
+      question: 'Bạn có thể thêm đề trắc nghiệm mới vào hệ thống bằng cách nào?',
+      options: {
+        A: 'Dán văn bản thuần (Text)',
+        B: 'Tải lên hình ảnh (OCR sẽ quét chữ)',
+        C: 'Tải lên file PDF',
+        D: 'Tất cả các cách trên đều đúng'
+      },
+      answer: 'D',
+      explanation: 'Ứng dụng hỗ trợ rất nhiều cách nhập dữ liệu. Bạn hãy nhấn vào nút "Thêm đề" -> "Import" hoặc "Tạo đề bằng AI" để khám phá!',
+      userAnswer: null
+    }
+  ],
+  updatedAt: Date.now()
+};
 
 export default function QuizzesView() {
-  const [quizzes, setQuizzes] = useLocalStorage('study_quizzes', []);
+  const [quizzes, setQuizzes] = useLocalStorage('study_quizzes', [DEMO_QUIZ]);
   const [apiKey] = useLocalStorage('gemini_api_key', '');
   const [apiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
   
@@ -2039,6 +2084,8 @@ ${questionsText}`;
                   {translationPopup && (
                     <div
                       className="translation-popup"
+                      onMouseUp={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
                       style={{
                         position: 'fixed',
                         left: `${translationPopup.x}px`,
@@ -2069,6 +2116,8 @@ ${questionsText}`;
                           <Languages size={12} /> Dịch từ
                         </div>
                         <button 
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={() => handleSpeak(translationPopup.text)}
                           style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
                           title="Phát âm"
@@ -2099,6 +2148,8 @@ ${questionsText}`;
                                   {translatedText}
                                 </span>
                                 <button 
+                                  type="button"
+                                  onMouseDown={(e) => e.preventDefault()}
                                   onClick={() => handleSpeak(translatedText)}
                                   style={{ background: 'none', border: 'none', color: '#a78bfa', opacity: 0.6, cursor: 'pointer' }}
                                   title="Phát âm nghĩa"
@@ -2134,6 +2185,8 @@ ${questionsText}`;
                       {/* Action buttons */}
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={() => { setTranslationPopup(null); setTranslatedText(''); setSaveSuccess(false); setEnrichedData(null); }}
                           style={{
                             padding: '6px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
@@ -2145,6 +2198,8 @@ ${questionsText}`;
                         {!translatedText && !isTranslating && !isAiEnrichingPopup && (
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={() => translateText(translationPopup.text)}
                               style={{
                                 padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
@@ -2156,6 +2211,8 @@ ${questionsText}`;
                               <Languages size={12} /> Dịch
                             </button>
                             <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={handleAiEnrichForPopup}
                               style={{
                                 padding: '6px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
@@ -2181,6 +2238,8 @@ ${questionsText}`;
                           <>
                             {!enrichedData && (
                               <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
                                 onClick={handleAiEnrichForPopup}
                                 title="Hoàn thiện thông tin bằng AI"
                                 style={{
@@ -2194,6 +2253,8 @@ ${questionsText}`;
                             )}
                             
                             <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={handleSaveToLibrary}
                               disabled={isSavingToDeck}
                               style={{
@@ -2215,6 +2276,8 @@ ${questionsText}`;
 
                             {translationPopup.questionId && translationPopup.field && (
                             <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={handleInsertTranslation}
                               style={{
                                 padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,

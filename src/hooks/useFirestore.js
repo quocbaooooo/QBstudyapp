@@ -32,6 +32,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
   const [firestoreReady, setFirestoreReady] = useState(false);
   const isUpdatingFromFirestore = useRef(false);
   const pendingWrites = useRef(false);
+  const isFirestoreEmptyRef = useRef(true);
 
   // Get Firestore collection reference for current user
   const getCollectionRef = useCallback(() => {
@@ -60,7 +61,18 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
       firestoreItems.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
       isUpdatingFromFirestore.current = true;
-      setItemsState(firestoreItems);
+      
+      const migrationKey = `migrated_${collectionName}_${user.uid}`;
+      const isMigrated = localStorage.getItem(migrationKey);
+      
+      // If Firestore is empty and we haven't migrated, skip clearing state to prevent UI flash.
+      if (firestoreItems.length === 0 && !isMigrated) {
+        // migration effect will handle pushing the default/local data
+      } else {
+        setItemsState(firestoreItems);
+      }
+      
+      isFirestoreEmptyRef.current = firestoreItems.length === 0;
       setFirestoreReady(true);
       
       // Also update localStorage as cache
@@ -88,13 +100,22 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     const migrationKey = `migrated_${collectionName}_${user.uid}`;
     if (localStorage.getItem(migrationKey)) return;
 
+    const storedStr = window.localStorage.getItem(localStorageKey);
+    const hasLocalData = !!storedStr;
+
     // Check if Firestore is empty and localStorage has data
     const localData = (() => {
       try {
-        const stored = window.localStorage.getItem(localStorageKey);
-        return stored ? JSON.parse(stored) : [];
-      } catch { return []; }
+        return storedStr ? JSON.parse(storedStr) : defaultValue;
+      } catch { return defaultValue; }
     })();
+
+    // If Firestore already has data (user logging in on new device)
+    // and there is no local data, we shouldn't push defaultValue to Firestore.
+    if (!isFirestoreEmptyRef.current && !hasLocalData) {
+      localStorage.setItem(migrationKey, 'true');
+      return;
+    }
 
     if (localData.length > 0) {
       // Migrate to Firestore

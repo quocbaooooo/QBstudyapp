@@ -705,10 +705,53 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
     </div>
   );
 }
-
+const DEMO_DECK = {
+  id: uuidv4(),
+  title: '✨ Bộ thẻ Demo: Hướng dẫn sử dụng',
+  cards: [
+    {
+      id: uuidv4(),
+      front: 'Làm sao để học thẻ?',
+      back: 'Bấm nút "Luyện tập" (▶️) ở trên cùng!',
+      pronunciation: '',
+      wordType: 'Hướng dẫn',
+      example: 'Trong chế độ luyện tập, bạn nhấn vào thẻ để lật mặt, sau đó tự đánh giá mức độ nhớ (Chưa nhớ, Tạm nhớ, Đã thuộc).',
+      synonyms: ''
+    },
+    {
+      id: uuidv4(),
+      front: 'Làm sao để tạo hàng loạt thẻ bằng AI?',
+      back: 'Bấm nút "Tạo bằng AI" (✨) ở trên.',
+      pronunciation: '',
+      wordType: 'Hướng dẫn',
+      example: 'Bạn chỉ cần nhập danh sách các từ tiếng Anh (ngăn cách bằng dấu phẩy). AI sẽ tự động điền Nghĩa, Phiên âm, Ví dụ và Loại từ!',
+      synonyms: ''
+    },
+    {
+      id: uuidv4(),
+      front: 'Cách thu thập từ vựng nhanh nhất?',
+      back: 'Dùng AI Dịch & Lưu trực tiếp!',
+      pronunciation: '',
+      wordType: 'Hướng dẫn',
+      example: 'Ở bất kỳ đâu trong app (Sổ tay, Trắc nghiệm), bạn chỉ cần bôi đen 1 từ tiếng Anh để AI dịch, sau đó bấm nút "Lưu thẻ" trên popup dịch là xong.',
+      synonyms: ''
+    },
+    {
+      id: uuidv4(),
+      front: 'Làm sao để nhập thẻ từ file Excel/Word?',
+      back: 'Bấm nút "Nhập" (📥) ở trên.',
+      pronunciation: '',
+      wordType: 'Hướng dẫn',
+      example: 'Copy các cột (Từ vựng - Nghĩa) từ Excel/Word và dán vào hộp thoại Nhập. Ứng dụng sẽ tự động tách chúng thành các thẻ.',
+      synonyms: ''
+    }
+  ],
+  createdAt: new Date().toISOString(),
+  updatedAt: Date.now()
+};
 
 export default function DecksView() {
-  const [decks, setDecks] = useFirestore('decks', 'study_decks', []);
+  const [decks, setDecks] = useFirestore('decks', 'study_decks', [DEMO_DECK]);
   const [activeDeckId, setActiveDeckId] = useState(null);
   const [isStudying, setIsStudying] = useState(false);
   const [showImport, setShowImport] = useState(false);
