@@ -1,4 +1,4 @@
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
 import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
@@ -7,7 +7,6 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import { TextAlign } from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
-import Image from '@tiptap/extension-image';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { FontFamily } from '@tiptap/extension-font-family';
@@ -16,12 +15,145 @@ import {
   Undo, Redo, Bold, Italic, Underline as UnderlineIcon, Strikethrough, 
   Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare, Quote, Code, Minus, 
   AlignLeft, AlignCenter, AlignRight, Link as LinkIcon, Image as ImageIcon, PaintBucket,
-  Wand2, Info, Replace, PenLine, BookOpen
+  Wand2, Info, Replace, PenLine, BookOpen, Languages, Table as TableIcon, Grid3x3, Rows, Columns, Trash2, ArrowUpDown
 } from 'lucide-react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { useState, useEffect } from 'react';
 
-const FixedToolbar = ({ editor, onGenerateOutline, onSuggestContent, isAILoading }) => {
+import { Extension } from '@tiptap/core';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { Image as BaseImage } from '@tiptap/extension-image';
+
+const ResizableImage = BaseImage.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: '100%',
+        parseHTML: element => element.getAttribute('width') || element.style.width,
+        renderHTML: attributes => {
+          return {
+            width: attributes.width,
+            style: `width: ${attributes.width}`
+          }
+        }
+      },
+    }
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageComponent);
+  }
+});
+
+const LineHeight = Extension.create({
+  name: 'lineHeight',
+  addOptions() {
+    return {
+      types: ['paragraph', 'heading', 'listItem'],
+      defaultLineHeight: 'normal',
+    };
+  },
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          lineHeight: {
+            default: this.options.defaultLineHeight,
+            parseHTML: element => element.style.lineHeight || this.options.defaultLineHeight,
+            renderHTML: attributes => {
+              if (attributes.lineHeight === this.options.defaultLineHeight) {
+                return {};
+              }
+              return { style: `line-height: ${attributes.lineHeight}` };
+            },
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    return {
+      setLineHeight: (lineHeight) => ({ commands }) => {
+        return this.options.types.every(type => commands.updateAttributes(type, { lineHeight }));
+      },
+      unsetLineHeight: () => ({ commands }) => {
+        return this.options.types.every(type => commands.resetAttributes(type, 'lineHeight'));
+      },
+    };
+  },
+});
+
+import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useState, useEffect, useRef } from 'react';
+
+const ResizableImageComponent = (props) => {
+  const { node, updateAttributes, selected } = props;
+  const containerRef = useRef(null);
+
+  const startResize = (e, direction) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = containerRef.current.offsetWidth;
+    const startHeight = containerRef.current.offsetHeight;
+    
+    const onMouseMove = (moveEvent) => {
+      moveEvent.preventDefault();
+      const currentX = moveEvent.clientX;
+      const currentY = moveEvent.clientY;
+      const deltaX = currentX - startX;
+      const deltaY = currentY - startY;
+
+      let newWidth = startWidth;
+      
+      // We only support bottom-right, right, and bottom for simplicity, but let's just use deltaX for all right-sided handles
+      if (direction.includes('r')) {
+         newWidth = Math.max(50, startWidth + deltaX);
+      } else if (direction.includes('l')) {
+         newWidth = Math.max(50, startWidth - deltaX);
+      }
+      
+      updateAttributes({ width: `${newWidth}px` });
+    };
+    
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  return (
+    <NodeViewWrapper style={{ display: 'inline-block', position: 'relative', maxWidth: '100%', lineHeight: 0 }}>
+      <img 
+        src={node.attrs.src} 
+        alt={node.attrs.alt} 
+        style={{ width: node.attrs.width || '100%', height: 'auto', display: 'block', borderRadius: '4px' }} 
+        ref={containerRef} 
+      />
+      {selected && (
+        <>
+          <div className="image-resize-handle top-left" onMouseDown={(e) => startResize(e, 'tl')} />
+          <div className="image-resize-handle top-right" onMouseDown={(e) => startResize(e, 'tr')} />
+          <div className="image-resize-handle bottom-left" onMouseDown={(e) => startResize(e, 'bl')} />
+          <div className="image-resize-handle bottom-right" onMouseDown={(e) => startResize(e, 'br')} />
+          <div className="image-resize-handle top-center" onMouseDown={(e) => startResize(e, 't')} />
+          <div className="image-resize-handle bottom-center" onMouseDown={(e) => startResize(e, 'b')} />
+          <div className="image-resize-handle left-center" onMouseDown={(e) => startResize(e, 'l')} />
+          <div className="image-resize-handle right-center" onMouseDown={(e) => startResize(e, 'r')} />
+        </>
+      )}
+    </NodeViewWrapper>
+  );
+};
+
+const FixedToolbar = ({ editor, onGenerateOutline, onSuggestContent, isAILoading, onRequestAITextAction }) => {
   if (!editor) return null;
 
   return (
@@ -64,6 +196,16 @@ const FixedToolbar = ({ editor, onGenerateOutline, onSuggestContent, isAILoading
          <option value="H2">Tiêu đề 2</option>
          <option value="H3">Tiêu đề 3</option>
       </select>
+      
+      <select className="toolbar-select" value={editor.isActive({ lineHeight: '1.2' }) ? '1.2' : editor.isActive({ lineHeight: '1.5' }) ? '1.5' : editor.isActive({ lineHeight: '2.0' }) ? '2.0' : 'normal'} onChange={e => {
+         if (e.target.value === 'normal') editor.chain().focus().unsetLineHeight().run();
+         else editor.chain().focus().setLineHeight(e.target.value).run();
+      }} title="Khoảng cách dòng">
+         <option value="normal">Dòng: Mặc định</option>
+         <option value="1.2">Dòng: 1.2</option>
+         <option value="1.5">Dòng: 1.5</option>
+         <option value="2.0">Dòng: 2.0</option>
+      </select>
 
       <div className="toolbar-divider" />
 
@@ -94,20 +236,52 @@ const FixedToolbar = ({ editor, onGenerateOutline, onSuggestContent, isAILoading
         if (url) Object.assign(document.createElement('a'), {href: url}).host !== '' ? editor.chain().focus().setLink({ href: url }).run() : alert('URL không khả dụng');
       }} title="Chèn Link"><LinkIcon size={16}/></button>
       
-      <button className="toolbar-btn" onClick={() => {
-        const url = window.prompt('Nhập đường dẫn Ảnh (URL):');
-        if (url) editor.chain().focus().setImage({ src: url }).run();
-      }} title="Chèn Ảnh"><ImageIcon size={16}/></button>
+      <button className={`toolbar-btn ${editor.isActive('image') ? 'is-active' : ''}`} onClick={() => {
+        if (editor.isActive('image')) {
+          const width = window.prompt('Nhập chiều rộng Ảnh (VD: 100%, 500px, 300px):', editor.getAttributes('image').width || '100%');
+          if (width) editor.chain().focus().updateAttributes('image', { width }).run();
+        } else {
+          const url = window.prompt('Nhập đường dẫn Ảnh (URL):');
+          if (url) editor.chain().focus().setImage({ src: url }).run();
+        }
+      }} title="Chèn Ảnh / Chỉnh kích cỡ ảnh đang chọn"><ImageIcon size={16}/></button>
+
+      <div className="toolbar-divider" />
+      <button className="toolbar-btn" onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Chèn Bảng"><TableIcon size={16}/></button>
+      <button className="toolbar-btn" onClick={() => editor.chain().focus().addColumnAfter().run()} disabled={!editor.can().addColumnAfter()} title="Thêm Cột"><Columns size={16}/></button>
+      <button className="toolbar-btn" onClick={() => editor.chain().focus().addRowAfter().run()} disabled={!editor.can().addRowAfter()} title="Thêm Hàng"><Rows size={16}/></button>
+      <button className="toolbar-btn" onClick={() => editor.chain().focus().deleteTable().run()} disabled={!editor.can().deleteTable()} title="Xóa Bảng"><Trash2 size={16} color="#ef4444" /></button>
       
       <div className="toolbar-divider" />
       
-      <button className="toolbar-btn" onClick={onGenerateOutline} disabled={isAILoading} style={{ color: 'var(--primary)', fontWeight: 'bold' }} title="AI: Dàn ý từ Tiêu đề">
-        <Wand2 size={16} /> <span style={{ marginLeft: '4px', fontSize: '13px' }}>Dàn Ý AI</span>
+      <button className="toolbar-btn" onClick={onGenerateOutline} disabled={isAILoading} title="AI: Dàn ý từ Tiêu đề">
+        <Wand2 size={16} color="#c59aff" />
       </button>
       
-      <button className="toolbar-btn" onClick={onSuggestContent} disabled={isAILoading} style={{ color: 'var(--secondary)', fontWeight: 'bold' }} title="AI: Viết tiếp nội dung">
-        <PenLine size={16} /> <span style={{ marginLeft: '4px', fontSize: '13px' }}>Viết Tiếp</span>
+      <button className="toolbar-btn" onClick={onSuggestContent} disabled={isAILoading} title="AI: Viết tiếp nội dung">
+        <PenLine size={16} color="#60a5fa" />
       </button>
+
+      <div className="toolbar-divider" />
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'rgba(197, 154, 255, 0.05)', padding: '2px 4px', borderRadius: '6px', border: '1px solid rgba(197, 154, 255, 0.1)' }}>
+        <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#c59aff', padding: '0 4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>✨ AI</span>
+        <button className="toolbar-btn" onClick={() => onRequestAITextAction('explain')} disabled={isAILoading} title="Giải thích (Bôi đen chữ)">
+          <Info size={15} color="#c59aff"/>
+        </button>
+        <button className="toolbar-btn" onClick={() => onRequestAITextAction('summarize')} disabled={isAILoading} title="Tóm tắt (Bôi đen chữ)">
+          <Code size={15} color="#60a5fa"/>
+        </button>
+        <button className="toolbar-btn" onClick={() => onRequestAITextAction('rewrite')} disabled={isAILoading} title="Viết lại (Bôi đen chữ)">
+           <Replace size={15} color="#ffb2b9"/>
+        </button>
+        <button className="toolbar-btn" onClick={() => onRequestAITextAction('example')} disabled={isAILoading} title="Ví dụ (Bôi đen chữ)">
+           <BookOpen size={15} color="var(--accent-green)"/>
+        </button>
+        <button className="toolbar-btn" onClick={() => onRequestAITextAction('translate')} disabled={isAILoading} title="Dịch (Bôi đen chữ)">
+           <Languages size={15} color="#a78bfa"/>
+        </button>
+      </div>
 
     </div>
   );
@@ -130,12 +304,38 @@ export default function TiptapEditor({ title, content, onChange }) {
       TextStyle, Color,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Link.configure({ openOnClick: false }),
-      Image,
+      ResizableImage.configure({ inline: true }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      LineHeight,
       TaskList,
       TaskItem.configure({ nested: true }),
       FontFamily,
     ],
     content: content || '',
+    editorProps: {
+      handlePaste: (view, event, slice) => {
+        const items = Array.from(event.clipboardData?.items || []);
+        for (const item of items) {
+          if (item.type.indexOf('image') === 0) {
+            event.preventDefault();
+            const file = item.getAsFile();
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const src = e.target.result;
+              const node = view.state.schema.nodes.image.create({ src, width: '100%' });
+              const transaction = view.state.tr.replaceSelectionWith(node);
+              view.dispatch(transaction);
+            };
+            reader.readAsDataURL(file);
+            return true;
+          }
+        }
+        return false;
+      },
+    },
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
@@ -197,6 +397,7 @@ export default function TiptapEditor({ title, content, onChange }) {
 
   const cleanHTMLResponse = (html) => {
      let clean = html.replace(/```html/g, '').replace(/```/g, '').trim();
+     clean = clean.replace(/\n+/g, ' ');
      return clean;
   };
 
@@ -204,22 +405,27 @@ export default function TiptapEditor({ title, content, onChange }) {
     if (!editor) return;
     const { from, to } = editor.state.selection;
     const text = editor.state.doc.textBetween(from, to, '\n');
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      alert("Vui lòng bôi đen đoạn văn bản mà bạn muốn AI xử lý!");
+      return;
+    }
 
     let userPrompt = '';
-    if (type === 'explain') userPrompt = `Giải thích nội dung sau một cách chi tiết và dễ hiểu:\n\n${text}`;
+    if (type === 'explain') userPrompt = `Giải thích nội dung sau một cách vô cùng ngắn gọn, súc tích (chỉ 1 đoạn văn nhỏ khoảng 2-3 câu, dễ hiểu nhất có thể):\n\n${text}`;
     if (type === 'summarize') userPrompt = `Tóm tắt ngắn gọn và cô đọng nội dung sau:\n\n${text}`;
     if (type === 'rewrite') userPrompt = `Viết lại nội dung sau sao cho trôi chảy, chuyên nghiệp nhưng vẫn dễ hiểu:\n\n${text}`;
     if (type === 'example') userPrompt = `Cho 2-3 ví dụ minh hoạ thực tế liên quan đến nội dung này để dễ hình dung:\n\n${text}`;
+    if (type === 'translate') userPrompt = `Dịch đoạn văn bản sau sang tiếng Việt một cách tự nhiên và chính xác (nếu đã là tiếng Việt thì dịch sang tiếng Anh):\n\n${text}`;
 
-    const systemPrompt = `Bạn là một trợ lý AI thông minh chuyên hỗ trợ học tập và ghi chép.
-TRẢ LỜI NGAY ĐÁP ÁN, KHÔNG CHÀO HỎI. 
-BẮT BUỘC FORMAT: Sử dụng HTML thuần (<ul>, <li>, <strong>, <em>, <p>, <blockquote>). Chỉ trả về mã HTML, không dùng markdown.`;
+    const systemPrompt = `Bạn là trợ lý AI nhúng trong trình soạn thảo văn bản.
+TRẢ LỜI TRỰC TIẾP, KHÔNG BAO GIỜ CHÀO HỎI HAY GIẢI THÍCH DÀI DÒNG.
+Chỉ trả về nội dung HTML thuần (Dùng <p> cho đoạn văn, <ul><li> cho danh sách, <strong> để nhấn mạnh).
+Tuyệt đối KHÔNG dùng markdown code block như \`\`\`html. KHÔNG thêm dấu xuống dòng thừa.`;
 
     const result = await handleCallAI(userPrompt, systemPrompt);
     if (result) {
       const formatted = cleanHTMLResponse(result);
-      editor.chain().focus().insertContentAt(to, `<blockquote><strong>✨ AI Xử lý:</strong><br/>${formatted}</blockquote><p></p>`).run();
+      editor.chain().focus().insertContentAt(to, `<blockquote><strong>✨ AI:</strong> ${formatted}</blockquote><p></p>`).run();
     }
   };
 
@@ -254,26 +460,44 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
   return (
     <div className="tiptap-wrapper" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
       <style>{`
-        .ProseMirror { outline: none; min-height: 100%; padding: 0 10px 40vh 10px; color: var(--text-main); }
-        .ProseMirror p { margin-bottom: 0.75em; line-height: 1.6; font-size: 15px; }
-        .ProseMirror h1 { font-size: 2em; font-weight: 800; margin-top: 1.5em; margin-bottom: 0.5em; letter-spacing: -0.02em; }
-        .ProseMirror h2 { font-size: 1.5em; font-weight: 700; margin-top: 1.2em; margin-bottom: 0.5em; }
-        .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin-top: 1em; margin-bottom: 0.4em; }
-        .ProseMirror ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
-        .ProseMirror ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .ProseMirror { outline: none; min-height: 100%; padding: 0 16px 40vh 16px; color: var(--text-main); }
+        .ProseMirror p { margin-bottom: 12px; line-height: 1.6; font-size: 15px; }
+        .ProseMirror h1 { font-size: 2em; font-weight: 800; margin-top: 32px; margin-bottom: 16px; letter-spacing: -0.02em; }
+        .ProseMirror h2 { font-size: 1.5em; font-weight: 700; margin-top: 24px; margin-bottom: 12px; }
+        .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin-top: 16px; margin-bottom: 8px; }
+        .ProseMirror ul { list-style-type: disc; padding-left: 24px; margin-bottom: 16px; }
+        .ProseMirror ol { list-style-type: decimal; padding-left: 24px; margin-bottom: 16px; }
         .ProseMirror ul[data-type="taskList"] { list-style: none; padding: 0; }
-        .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+        .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
         .ProseMirror ul[data-type="taskList"] li label { margin-top: 4px; }
         .ProseMirror ul[data-type="taskList"] li > div { flex: 1; }
-        .ProseMirror li p { margin-bottom: 0.25rem; }
-        .ProseMirror blockquote { border-left: 3px solid var(--primary); padding-left: 1rem; color: #a3aac4; margin: 1rem 0; font-style: italic; background: rgba(197, 154, 255, 0.05); border-radius: 4px; padding: 10px 14px; }
-        .ProseMirror blockquote strong { color: var(--primary); font-style: normal; }
-        .ProseMirror code { background: rgba(var(--glass-rgb),0.08); padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; font-size: 0.9em; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.1); }
-        .ProseMirror pre { background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; color: #e2e8f0; overflow-x: auto; font-family: monospace; margin: 1rem 0; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.05); }
-        .ProseMirror mark, .tiptap-highlight { background-color: rgba(197, 154, 255, 0.4); color: white; padding: 0.1em 0.2em; border-radius: 3px; }
-        .ProseMirror hr { border: none; border-top: 1px solid rgba(var(--glass-rgb),0.1); margin: 2rem 0; }
+        .ProseMirror li p { margin-bottom: 4px; }
+        .ProseMirror blockquote { border-left: 3px solid #c59aff; padding-left: 16px; color: #a3aac4; margin: 16px 0; font-style: italic; background: rgba(197, 154, 255, 0.05); border-radius: 4px; padding: 12px 16px; }
+        .ProseMirror blockquote strong { color: #c59aff; font-style: normal; }
+        .ProseMirror code { background: rgba(var(--glass-rgb),0.08); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.1); }
+        .ProseMirror pre { background: rgba(0,0,0,0.3); padding: 16px; border-radius: 8px; color: #e2e8f0; overflow-x: auto; font-family: monospace; margin: 16px 0; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.05); }
+        .ProseMirror mark, .tiptap-highlight { background-color: rgba(197, 154, 255, 0.4); color: white; padding: 2px 4px; border-radius: 3px; }
+        .ProseMirror hr { border: none; border-top: 1px solid rgba(var(--glass-rgb),0.1); margin: 32px 0; }
         .ProseMirror a { color: var(--primary); text-decoration: underline; cursor: pointer; }
         .ProseMirror img { max-width: 100%; height: auto; border-radius: 8px; margin: 1rem 0; }
+        .ProseMirror img.ProseMirror-selectednode { outline: 3px solid var(--primary); }
+        .ProseMirror table { border-collapse: collapse; margin: 0; overflow: hidden; table-layout: fixed; width: 100%; margin-bottom: 1rem; border-radius: 4px; border: 1px solid rgba(var(--glass-rgb), 0.2); }
+        .ProseMirror table td, .ProseMirror table th { border: 1px solid rgba(var(--glass-rgb), 0.2); box-sizing: border-box; min-width: 1em; padding: 6px 8px; position: relative; vertical-align: top; background: rgba(var(--glass-rgb), 0.02); }
+        .ProseMirror table th { font-weight: bold; text-align: left; background-color: rgba(var(--glass-rgb), 0.08); }
+        .ProseMirror table .selectedCell:after { background: rgba(197, 154, 255, 0.2); content: ""; left: 0; right: 0; top: 0; bottom: 0; position: absolute; pointer-events: none; z-index: 2; }
+        .ProseMirror table .column-resize-handle { background-color: var(--primary); bottom: -2px; position: absolute; right: -2px; pointer-events: none; top: 0; width: 4px; z-index: 20; }
+        
+        .image-resize-handle { position: absolute; width: 10px; height: 10px; background-color: white; border: 1px solid #7c3aed; border-radius: 50%; z-index: 10; }
+        .image-resize-handle.top-left { top: -5px; left: -5px; cursor: nwse-resize; }
+        .image-resize-handle.top-right { top: -5px; right: -5px; cursor: nesw-resize; }
+        .image-resize-handle.bottom-left { bottom: -5px; left: -5px; cursor: nesw-resize; }
+        .image-resize-handle.bottom-right { bottom: -5px; right: -5px; cursor: nwse-resize; }
+        .image-resize-handle.top-center { top: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+        .image-resize-handle.bottom-center { bottom: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+        .image-resize-handle.left-center { top: calc(50% - 5px); left: -5px; cursor: ew-resize; }
+        .image-resize-handle.right-center { top: calc(50% - 5px); right: -5px; cursor: ew-resize; }
+        .ProseMirror img.ProseMirror-selectednode { outline: 2px solid #7c3aed; }
+        
         .ProseMirror-focused { outline: none; }
         
         .toolbar-btn { padding: 6px; border-radius: 6px; color: #a3aac4; transition: all 0.2s; background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -301,24 +525,8 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
         onGenerateOutline={requestAIGenerateFromTitle}
         onSuggestContent={requestAISuggestContent}
         isAILoading={isAILoading}
+        onRequestAITextAction={requestAITextAction}
       />
-
-      {/* AI Bubble Menu - pops up only when text is selected */}
-      {editor && <BubbleMenu editor={editor} tippyOptions={{ duration: 100, placement: 'top' }} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(15, 25, 48, 0.85)', backdropFilter: 'blur(20px)', padding: '6px', borderRadius: '12px', border: '1px solid rgba(var(--glass-rgb),0.15)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 50 }}>
-          <div style={{ padding: '0 4px', fontSize: '12px', fontWeight: 'bold', color: 'var(--primary)' }}>✨ Trợ lý AI:</div>
-          <button className="bubble-menu-ai-btn" onClick={() => requestAITextAction('explain')} disabled={isAILoading}>
-            <Info size={14} color="var(--primary)"/> {isAILoading ? '...' : 'Giải thích'}
-          </button>
-          <button className="bubble-menu-ai-btn" onClick={() => requestAITextAction('summarize')} disabled={isAILoading}>
-            <Code size={14} color="var(--secondary)"/> Tóm tắt
-          </button>
-          <button className="bubble-menu-ai-btn" onClick={() => requestAITextAction('rewrite')} disabled={isAILoading}>
-             <Replace size={14} color="#ffb2b9"/> Viết lại
-          </button>
-          <button className="bubble-menu-ai-btn" onClick={() => requestAITextAction('example')} disabled={isAILoading}>
-             <BookOpen size={14} color="var(--accent-green)"/> Ví dụ
-          </button>
-      </BubbleMenu>}
 
       {/* Floating Menu Removed as user prefers clicking AI buttons on the top fixed toolbar instead of having it popup on every new line */}
 

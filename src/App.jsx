@@ -10,7 +10,6 @@ import DecksView from './components/DecksView';
 import QuizzesView from './components/QuizzesView';
 import SettingsView from './components/SettingsView';
 import GuideModal from './components/GuideModal';
-import GlobalTranslationPopup from './components/GlobalTranslationPopup';
 
 function LoginScreen() {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
@@ -532,7 +531,6 @@ function AppContent() {
       </div>
       
       <GuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
-      <GlobalTranslationPopup />
     </div>
   );
 }
