@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { exportQuizToWord } from '../utils/exportWord';
 import Tesseract from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
+import TiptapEditor from './TiptapEditor';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
@@ -2570,12 +2571,14 @@ ${questionsText}`;
                                     {aiLoading === q.id ? 'Đang hỏi AI...' : <><Sparkles size={16}/> {q.answer ? 'Hỏi lại AI' : 'Hỏi AI Đáp Án & Giải Thích'}</>}
                                   </button>
                                 </div>
-                                <textarea
-                                  value={q.explanation || ''}
-                                  onChange={e => handleUpdateQuestionProp(q.id, 'explanation', e.target.value)}
-                                  placeholder="Nhập giải thích thủ công hoặc để AI trợ giúp điền..."
-                                  style={{ width: '100%', minHeight: '120px', background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', fontSize: '13px', resize: 'vertical', lineHeight: '1.6' }}
-                                />
+                                <div style={{ marginTop: '8px' }}>
+                                  <TiptapEditor
+                                    variant="mini"
+                                    title="Giải thích"
+                                    content={q.explanation || ''}
+                                    onChange={html => handleUpdateQuestionProp(q.id, 'explanation', html)}
+                                  />
+                                </div>
                               </div>
                             ) : (
                               <div style={{ fontSize: '14px' }}>
@@ -2616,8 +2619,13 @@ ${questionsText}`;
                                 })()}
 
                                 {q.explanation && (
-                                  <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}>
-                                    <strong style={{ color: 'var(--accent-orange)' }}>📝 Giải thích:</strong>{'\n'}{q.explanation}
+                                  <div style={{ color: 'var(--text-muted)', whiteSpace: q.explanation.includes('<p>') ? 'normal' : 'pre-wrap', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}>
+                                    <strong style={{ color: 'var(--accent-orange)', display: 'block', marginBottom: '8px' }}>📝 Giải thích:</strong>
+                                    {q.explanation.includes('<p>') ? (
+                                      <div className="prose-explanation" dangerouslySetInnerHTML={{ __html: q.explanation }} />
+                                    ) : (
+                                      <div>{q.explanation}</div>
+                                    )}
                                   </div>
                                 )}
                               </div>

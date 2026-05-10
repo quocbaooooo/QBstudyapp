@@ -288,7 +288,7 @@ const FixedToolbar = ({ editor, onGenerateOutline, onSuggestContent, isAILoading
 };
 
 
-export default function TiptapEditor({ title, content, onChange }) {
+export default function TiptapEditor({ title, content, onChange, variant = 'default' }) {
   const [apiKey] = useLocalStorage('gemini_api_key', '');
   const [apiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
   const [aiProvider] = useLocalStorage('ai_provider', 'gemini');
@@ -458,34 +458,38 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
   if (!editor) return null;
 
   return (
-    <div className="tiptap-wrapper" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+    <div className={`tiptap-wrapper ${variant === 'mini' ? 'mini' : ''}`} style={{ flex: variant === 'mini' ? 'none' : 1, display: 'flex', flexDirection: 'column', height: variant === 'mini' ? 'auto' : '100%', position: 'relative' }}>
       <style>{`
-        .ProseMirror { outline: none; min-height: 100%; padding: 0 16px 40vh 16px; color: var(--text-main); }
-        .ProseMirror p { margin-bottom: 12px; line-height: 1.6; font-size: 15px; }
-        .ProseMirror h1 { font-size: 2em; font-weight: 800; margin-top: 32px; margin-bottom: 16px; letter-spacing: -0.02em; }
-        .ProseMirror h2 { font-size: 1.5em; font-weight: 700; margin-top: 24px; margin-bottom: 12px; }
-        .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin-top: 16px; margin-bottom: 8px; }
-        .ProseMirror ul { list-style-type: disc; padding-left: 24px; margin-bottom: 16px; }
-        .ProseMirror ol { list-style-type: decimal; padding-left: 24px; margin-bottom: 16px; }
-        .ProseMirror ul[data-type="taskList"] { list-style: none; padding: 0; }
-        .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
-        .ProseMirror ul[data-type="taskList"] li label { margin-top: 4px; }
-        .ProseMirror ul[data-type="taskList"] li > div { flex: 1; }
-        .ProseMirror li p { margin-bottom: 4px; }
-        .ProseMirror blockquote { border-left: 3px solid #c59aff; padding-left: 16px; color: #a3aac4; margin: 16px 0; font-style: italic; background: rgba(197, 154, 255, 0.05); border-radius: 4px; padding: 12px 16px; }
-        .ProseMirror blockquote strong { color: #c59aff; font-style: normal; }
-        .ProseMirror code { background: rgba(var(--glass-rgb),0.08); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.1); }
-        .ProseMirror pre { background: rgba(0,0,0,0.3); padding: 16px; border-radius: 8px; color: #e2e8f0; overflow-x: auto; font-family: monospace; margin: 16px 0; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.05); }
-        .ProseMirror mark, .tiptap-highlight { background-color: rgba(197, 154, 255, 0.4); color: white; padding: 2px 4px; border-radius: 3px; }
-        .ProseMirror hr { border: none; border-top: 1px solid rgba(var(--glass-rgb),0.1); margin: 32px 0; }
-        .ProseMirror a { color: var(--primary); text-decoration: underline; cursor: pointer; }
-        .ProseMirror img { max-width: 100%; height: auto; border-radius: 8px; margin: 1rem 0; }
-        .ProseMirror img.ProseMirror-selectednode { outline: 3px solid var(--primary); }
-        .ProseMirror table { border-collapse: collapse; margin: 0; overflow: hidden; table-layout: fixed; width: 100%; margin-bottom: 1rem; border-radius: 4px; border: 1px solid rgba(var(--glass-rgb), 0.2); }
-        .ProseMirror table td, .ProseMirror table th { border: 1px solid rgba(var(--glass-rgb), 0.2); box-sizing: border-box; min-width: 1em; padding: 6px 8px; position: relative; vertical-align: top; background: rgba(var(--glass-rgb), 0.02); }
-        .ProseMirror table th { font-weight: bold; text-align: left; background-color: rgba(var(--glass-rgb), 0.08); }
-        .ProseMirror table .selectedCell:after { background: rgba(197, 154, 255, 0.2); content: ""; left: 0; right: 0; top: 0; bottom: 0; position: absolute; pointer-events: none; z-index: 2; }
-        .ProseMirror table .column-resize-handle { background-color: var(--primary); bottom: -2px; position: absolute; right: -2px; pointer-events: none; top: 0; width: 4px; z-index: 20; }
+        .tiptap-wrapper .ProseMirror { outline: none; color: var(--text-main); }
+        .tiptap-wrapper:not(.mini) .ProseMirror { min-height: 100%; padding: 0 16px 40vh 16px; }
+        .tiptap-wrapper.mini .ProseMirror { min-height: 120px; padding: 12px; font-size: 13.5px; }
+        .tiptap-wrapper.mini { border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); }
+        .tiptap-wrapper.mini .editor-fixed-toolbar { padding: 4px 8px; margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border: none; border-bottom: 1px solid rgba(var(--glass-rgb),0.08); background: rgba(0,0,0,0.1); box-shadow: none; position: static; flex-wrap: wrap; }
+        .tiptap-wrapper .ProseMirror p { margin-bottom: 12px; line-height: 1.6; font-size: 15px; }
+        .tiptap-wrapper .ProseMirror h1 { font-size: 2em; font-weight: 800; margin-top: 32px; margin-bottom: 16px; letter-spacing: -0.02em; }
+        .tiptap-wrapper .ProseMirror h2 { font-size: 1.5em; font-weight: 700; margin-top: 24px; margin-bottom: 12px; }
+        .tiptap-wrapper .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin-top: 16px; margin-bottom: 8px; }
+        .tiptap-wrapper .ProseMirror ul { list-style-type: disc; padding-left: 24px; margin-bottom: 16px; }
+        .tiptap-wrapper .ProseMirror ol { list-style-type: decimal; padding-left: 24px; margin-bottom: 16px; }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] { list-style: none; padding: 0; }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] li label { margin-top: 4px; }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] li > div { flex: 1; }
+        .tiptap-wrapper .ProseMirror li p { margin-bottom: 4px; }
+        .tiptap-wrapper .ProseMirror blockquote { border-left: 3px solid #c59aff; padding-left: 16px; color: #a3aac4; margin: 16px 0; font-style: italic; background: rgba(197, 154, 255, 0.05); border-radius: 4px; padding: 12px 16px; }
+        .tiptap-wrapper .ProseMirror blockquote strong { color: #c59aff; font-style: normal; }
+        .tiptap-wrapper .ProseMirror code { background: rgba(var(--glass-rgb),0.08); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.1); }
+        .tiptap-wrapper .ProseMirror pre { background: rgba(0,0,0,0.3); padding: 16px; border-radius: 8px; color: #e2e8f0; overflow-x: auto; font-family: monospace; margin: 16px 0; box-shadow: inset 0 0 0 1px rgba(var(--glass-rgb),0.05); }
+        .tiptap-wrapper .ProseMirror mark, .tiptap-highlight { background-color: rgba(197, 154, 255, 0.4); color: white; padding: 2px 4px; border-radius: 3px; }
+        .tiptap-wrapper .ProseMirror hr { border: none; border-top: 1px solid rgba(var(--glass-rgb),0.1); margin: 32px 0; }
+        .tiptap-wrapper .ProseMirror a { color: var(--primary); text-decoration: underline; cursor: pointer; }
+        .tiptap-wrapper .ProseMirror img { max-width: 100%; height: auto; border-radius: 8px; margin: 1rem 0; }
+        .tiptap-wrapper .ProseMirror img.ProseMirror-selectednode { outline: 3px solid var(--primary); }
+        .tiptap-wrapper .ProseMirror table { border-collapse: collapse; margin: 0; overflow: hidden; table-layout: fixed; width: 100%; margin-bottom: 1rem; border-radius: 4px; border: 1px solid rgba(var(--glass-rgb), 0.2); }
+        .tiptap-wrapper .ProseMirror table td, .tiptap-wrapper .ProseMirror table th { border: 1px solid rgba(var(--glass-rgb), 0.2); box-sizing: border-box; min-width: 1em; padding: 6px 8px; position: relative; vertical-align: top; background: rgba(var(--glass-rgb), 0.02); }
+        .tiptap-wrapper .ProseMirror table th { font-weight: bold; text-align: left; background-color: rgba(var(--glass-rgb), 0.08); }
+        .tiptap-wrapper .ProseMirror table .selectedCell:after { background: rgba(197, 154, 255, 0.2); content: ""; left: 0; right: 0; top: 0; bottom: 0; position: absolute; pointer-events: none; z-index: 2; }
+        .tiptap-wrapper .ProseMirror table .column-resize-handle { background-color: var(--primary); bottom: -2px; position: absolute; right: -2px; pointer-events: none; top: 0; width: 4px; z-index: 20; }
         
         .image-resize-handle { position: absolute; width: 10px; height: 10px; background-color: white; border: 1px solid #7c3aed; border-radius: 50%; z-index: 10; }
         .image-resize-handle.top-left { top: -5px; left: -5px; cursor: nwse-resize; }
@@ -496,9 +500,9 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
         .image-resize-handle.bottom-center { bottom: -5px; left: calc(50% - 5px); cursor: ns-resize; }
         .image-resize-handle.left-center { top: calc(50% - 5px); left: -5px; cursor: ew-resize; }
         .image-resize-handle.right-center { top: calc(50% - 5px); right: -5px; cursor: ew-resize; }
-        .ProseMirror img.ProseMirror-selectednode { outline: 2px solid #7c3aed; }
+        .tiptap-wrapper .ProseMirror img.ProseMirror-selectednode { outline: 2px solid #7c3aed; }
         
-        .ProseMirror-focused { outline: none; }
+        .tiptap-wrapper .ProseMirror-focused { outline: none; }
         
         .toolbar-btn { padding: 6px; border-radius: 6px; color: #a3aac4; transition: all 0.2s; background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .toolbar-btn:disabled { opacity: 0.3; cursor: not-allowed; }
@@ -530,7 +534,7 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
 
       {/* Floating Menu Removed as user prefers clicking AI buttons on the top fixed toolbar instead of having it popup on every new line */}
 
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ flex: variant === 'mini' ? 'none' : 1, overflowY: 'auto' }}>
         <EditorContent editor={editor} style={{ height: '100%' }} />
       </div>
 
