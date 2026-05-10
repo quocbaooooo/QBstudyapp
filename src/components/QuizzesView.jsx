@@ -2619,10 +2619,10 @@ ${questionsText}`;
                                 })()}
 
                                 {q.explanation && (
-                                  <div style={{ color: 'var(--text-muted)', whiteSpace: q.explanation.includes('<p>') ? 'normal' : 'pre-wrap', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}>
+                                  <div style={{ color: 'var(--text-muted)', whiteSpace: /<[a-z][\s\S]*>/i.test(q.explanation) ? 'normal' : 'pre-wrap', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}>
                                     <strong style={{ color: 'var(--accent-orange)', display: 'block', marginBottom: '8px' }}>📝 Giải thích:</strong>
-                                    {q.explanation.includes('<p>') ? (
-                                      <div className="prose-explanation" dangerouslySetInnerHTML={{ __html: q.explanation }} />
+                                    {/<[a-z][\s\S]*>/i.test(q.explanation) ? (
+                                      <TiptapEditor content={q.explanation} readOnly={true} onChange={() => {}} />
                                     ) : (
                                       <div>{q.explanation}</div>
                                     )}

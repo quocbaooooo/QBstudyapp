@@ -288,7 +288,7 @@ const FixedToolbar = ({ editor, onGenerateOutline, onSuggestContent, isAILoading
 };
 
 
-export default function TiptapEditor({ title, content, onChange, variant = 'default' }) {
+export default function TiptapEditor({ title, content, onChange = () => {}, variant = 'default', readOnly = false }) {
   const [apiKey] = useLocalStorage('gemini_api_key', '');
   const [apiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
   const [aiProvider] = useLocalStorage('ai_provider', 'gemini');
@@ -297,6 +297,7 @@ export default function TiptapEditor({ title, content, onChange, variant = 'defa
   const [isAILoading, setIsAILoading] = useState(false);
 
   const editor = useEditor({
+    editable: !readOnly,
     extensions: [
       StarterKit,
       Highlight.configure({ HTMLAttributes: { class: 'tiptap-highlight' } }),
@@ -458,14 +459,19 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
   if (!editor) return null;
 
   return (
-    <div className={`tiptap-wrapper ${variant === 'mini' ? 'mini' : ''}`} style={{ flex: variant === 'mini' ? 'none' : 1, display: 'flex', flexDirection: 'column', height: variant === 'mini' ? 'auto' : '100%', position: 'relative' }}>
+    <div className={`tiptap-wrapper ${variant === 'mini' ? 'mini' : ''} ${readOnly ? 'readOnly' : ''}`} style={{ flex: variant === 'mini' ? 'none' : 1, display: 'flex', flexDirection: 'column', height: variant === 'mini' ? 'auto' : '100%', position: 'relative' }}>
       <style>{`
         .tiptap-wrapper .ProseMirror { outline: none; color: var(--text-main); }
-        .tiptap-wrapper:not(.mini) .ProseMirror { min-height: 100%; padding: 0 16px 40vh 16px; }
+        .tiptap-wrapper:not(.mini):not(.readOnly) .ProseMirror { min-height: 100%; padding: 0 16px 40vh 16px; }
         .tiptap-wrapper.mini .ProseMirror { min-height: 120px; padding: 12px; font-size: 13.5px; }
         .tiptap-wrapper.mini { border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); }
         .tiptap-wrapper.mini .editor-fixed-toolbar { padding: 4px 8px; margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border: none; border-bottom: 1px solid rgba(var(--glass-rgb),0.08); background: rgba(0,0,0,0.1); box-shadow: none; position: static; flex-wrap: wrap; }
+        
+        .tiptap-wrapper.readOnly { background: transparent; border: none; border-radius: 0; }
+        .tiptap-wrapper.readOnly .ProseMirror { padding: 0; min-height: auto; font-size: 13.5px; }
+
         .tiptap-wrapper .ProseMirror p { margin-bottom: 12px; line-height: 1.6; font-size: 15px; }
+        .tiptap-wrapper.mini .ProseMirror p, .tiptap-wrapper.readOnly .ProseMirror p { font-size: 13.5px; }
         .tiptap-wrapper .ProseMirror h1 { font-size: 2em; font-weight: 800; margin-top: 32px; margin-bottom: 16px; letter-spacing: -0.02em; }
         .tiptap-wrapper .ProseMirror h2 { font-size: 1.5em; font-weight: 700; margin-top: 24px; margin-bottom: 12px; }
         .tiptap-wrapper .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin-top: 16px; margin-bottom: 8px; }
@@ -524,13 +530,15 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
       `}</style>
 
       {/* Main Top Toolbar */}
-      <FixedToolbar 
-        editor={editor} 
-        onGenerateOutline={requestAIGenerateFromTitle}
-        onSuggestContent={requestAISuggestContent}
-        isAILoading={isAILoading}
-        onRequestAITextAction={requestAITextAction}
-      />
+      {!readOnly && (
+        <FixedToolbar 
+          editor={editor} 
+          onGenerateOutline={requestAIGenerateFromTitle}
+          onSuggestContent={requestAISuggestContent}
+          isAILoading={isAILoading}
+          onRequestAITextAction={requestAITextAction}
+        />
+      )}
 
       {/* Floating Menu Removed as user prefers clicking AI buttons on the top fixed toolbar instead of having it popup on every new line */}
 
