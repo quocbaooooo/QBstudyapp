@@ -82,6 +82,7 @@ export default function QuizzesView() {
 
   const [isShuffled, setIsShuffled] = useState(false);
   const [shuffledIds, setShuffledIds] = useState(null);
+  const [shuffledOptions, setShuffledOptions] = useState(null);
 
   const shuffleArray = (source = []) => {
     const arr = [...source];
@@ -95,6 +96,7 @@ export default function QuizzesView() {
   useEffect(() => {
     setIsShuffled(false);
     setShuffledIds(null);
+    setShuffledOptions(null);
   }, [activeQuizId, isTesting, testMode]);
   const [aiLoading, setAiLoading] = useState(null);
   const [isTakeawaysCollapsed, setIsTakeawaysCollapsed] = useState(false);
@@ -1343,9 +1345,9 @@ D. ${questionObj.options.D}`;
       
 YÊU CẦU:
 - Bóc tách các điểm ngữ pháp, cấu trúc câu, hoặc nhóm từ vựng quan trọng xuất hiện trong đề.
-- Trình bày dạng danh sách gạch đầu dòng (Markdown bullet points).
+- Trình bày dạng danh sách gạch đầu dòng bằng mã HTML (sử dụng các thẻ <ul>, <li>, <strong>, <br>...).
 - Rất ngắn gọn, súc tích, dễ nhớ.
-- Chỉ trả về nội dung tóm tắt, không giới thiệu.
+- Chỉ trả về nội dung tóm tắt định dạng HTML, không bọc trong markdown block (không dùng \`\`\`html), không giới thiệu.
 
 Danh sách câu hỏi:
 ${questionsText}`;
@@ -1657,25 +1659,35 @@ ${questionsText}`;
 
             {activeQuiz && (
               <div style={{ display: 'flex', gap: '8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                <button 
-                  className={`btn ${isShuffled ? 'btn-primary' : ''}`}
-                  onClick={() => {
-                     if (isShuffled) {
-                         setIsShuffled(false);
-                         setShuffledIds(null);
-                     } else {
-                         setIsShuffled(true);
-                         const qids = (isTesting && testMode === 'starred' && activeQuiz 
-                             ? activeQuiz.questions.filter(q => q.isStarred) 
-                             : activeQuiz.questions).map(q => q.id);
-                         setShuffledIds(shuffleArray(qids));
-                     }
-                  }}
-                  style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>shuffle</span> 
-                  {isShuffled ? 'Bỏ trộn' : 'Xáo trộn'}
-                </button>
+                {isTesting && (
+                  <button 
+                    className={`btn ${isShuffled ? 'btn-primary' : ''}`}
+                    onClick={() => {
+                       if (isShuffled) {
+                           setIsShuffled(false);
+                           setShuffledIds(null);
+                           setShuffledOptions(null);
+                       } else {
+                           setIsShuffled(true);
+                           const targetQuestions = (isTesting && testMode === 'starred' && activeQuiz 
+                               ? activeQuiz.questions.filter(q => q.isStarred) 
+                               : activeQuiz.questions);
+                           const qids = targetQuestions.map(q => q.id);
+                           setShuffledIds(shuffleArray(qids));
+                           
+                           const sOpts = {};
+                           targetQuestions.forEach(q => {
+                             sOpts[q.id] = shuffleArray(['A', 'B', 'C', 'D']);
+                           });
+                           setShuffledOptions(sOpts);
+                       }
+                    }}
+                    style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>shuffle</span> 
+                    {isShuffled ? 'Bỏ trộn' : 'Xáo trộn'}
+                  </button>
+                )}
                 <button 
                   className="btn" 
                   style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }} 
@@ -2047,15 +2059,24 @@ ${questionsText}`;
                     {!isTakeawaysCollapsed && (
                       <div style={{ marginTop: '16px' }}>
                         {!isTesting ? (
-                          <textarea 
-                            value={activeQuiz.keyTakeaways || ''}
-                            onChange={e => setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: e.target.value } : q))}
-                            placeholder="Ghi chú các điểm ngữ pháp, từ vựng cần lưu ý ở đề này. Hoặc bấm 'AI Tổng hợp' để tự động quét..."
-                            style={{ width: '100%', minHeight: '100px', background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', fontSize: '13.5px', resize: 'vertical', lineHeight: '1.6' }}
-                          />
+                          <div style={{ marginTop: '8px' }}>
+                            <TiptapEditor 
+                              content={activeQuiz.keyTakeaways || ''}
+                              onChange={content => setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: content } : q))}
+                              placeholder="Ghi chú các điểm ngữ pháp, từ vựng cần lưu ý ở đề này. Hoặc bấm 'AI Tổng hợp' để tự động quét..."
+                            />
+                          </div>
                         ) : (
-                          <div style={{ color: 'var(--text-main)', whiteSpace: 'pre-wrap', lineHeight: '1.7', background: 'rgba(var(--glass-rgb),0.03)', borderRadius: '8px', padding: '16px', border: '1px dashed rgba(255,152,0, 0.3)', fontSize: '14px' }}>
-                            {activeQuiz.keyTakeaways ? activeQuiz.keyTakeaways : <span style={{ color: 'var(--text-muted)' }}>Chưa có tổng hợp kiến thức. Bấm Quay về sửa đề để thêm.</span>}
+                          <div style={{ color: 'var(--text-main)', lineHeight: '1.7', background: 'rgba(var(--glass-rgb),0.03)', borderRadius: '8px', padding: '16px', border: '1px dashed rgba(255,152,0, 0.3)', fontSize: '14px' }}>
+                            {activeQuiz.keyTakeaways ? (
+                              /<[a-z][\s\S]*>/i.test(activeQuiz.keyTakeaways) ? (
+                                <TiptapEditor content={activeQuiz.keyTakeaways} readOnly={true} onChange={() => {}} />
+                              ) : (
+                                <div style={{ whiteSpace: 'pre-wrap' }}>{activeQuiz.keyTakeaways}</div>
+                              )
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }}>Chưa có tổng hợp kiến thức. Bấm Quay về sửa đề để thêm.</span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2385,7 +2406,9 @@ ${questionsText}`;
                                       )}
 
                                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                        {['A', 'B', 'C', 'D'].map(opt => (
+                                        {(isShuffled && shuffledOptions?.[item.id] ? shuffledOptions[item.id] : ['A', 'B', 'C', 'D']).map((opt, idx) => {
+                                          const displayLetter = ['A', 'B', 'C', 'D'][idx];
+                                          return (
                                           <div
                                             key={`${item.id}-${opt}`}
                                             onClick={() => handleSelectAnswer(item.id, opt)}
@@ -2403,12 +2426,13 @@ ${questionsText}`;
                                               fontSize: '13px'
                                             }}
                                           >
-                                            <strong>{opt}.</strong>
+                                            <strong>{isTesting ? displayLetter : opt}.</strong>
                                             <span>{renderQuizText(item.options[opt], answerRevealed)}</span>
                                             {item.answer && item.userAnswer === opt && opt === item.answer && <CheckCircle size={14} color="var(--accent-green)"/>}
                                             {item.answer && item.userAnswer === opt && opt !== item.answer && <XCircle size={14} color="var(--accent-red)"/>}
                                           </div>
-                                        ))}
+                                          );
+                                        })}
                                       </div>
                                     </div>
                                   );
@@ -2509,7 +2533,9 @@ ${questionsText}`;
                         )}
                         
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                          {['A', 'B', 'C', 'D'].map(opt => (
+                          {(isShuffled && shuffledOptions?.[q.id] ? shuffledOptions[q.id] : ['A', 'B', 'C', 'D']).map((opt, idx) => {
+                            const displayLetter = ['A', 'B', 'C', 'D'][idx];
+                            return (
                             <div 
                               key={opt} onClick={() => isTesting && handleSelectAnswer(q.id, opt)}
                               style={{ 
@@ -2520,7 +2546,7 @@ ${questionsText}`;
                                 cursor: isTesting ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '8px'
                               }}
                             >
-                              <strong>{opt}.</strong> 
+                              <strong>{isTesting ? displayLetter : opt}.</strong> 
                               {!isTesting ? (
                                 <input type="text" value={q.options[opt]} onChange={(e) => handleUpdateOptionProp(q.id, opt, e.target.value)}
                                   onMouseUp={(e) => handleTextSelection(e, q.id, `option_${opt}`)}
@@ -2539,8 +2565,10 @@ ${questionsText}`;
                               {isTesting && q.answer && q.userAnswer === opt && opt === q.answer && <CheckCircle size={16} color="var(--accent-green)"/>}
                               {isTesting && q.answer && q.userAnswer === opt && opt !== q.answer && <XCircle size={16} color="var(--accent-red)"/>}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
+
 
                         {(!isTesting || q.userAnswer) && (
                           <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--border-color)' }}>
