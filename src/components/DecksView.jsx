@@ -626,6 +626,13 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
 
         {/* Action buttons */}
         <div className="flex flex-col items-center gap-1 shrink-0">
+          <button 
+            className={`p-1.5 rounded-lg transition-all ${card.isStarred ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10' : 'text-slate-500 hover:text-yellow-400 hover:bg-yellow-400/10'}`} 
+            onClick={() => onUpdate(card.id, 'isStarred', !card.isStarred)} 
+            title={card.isStarred ? "Bỏ gắn sao" : "Gắn sao"}
+          >
+            <span className="material-symbols-outlined text-[18px]" style={card.isStarred ? { fontVariationSettings: "'FILL' 1" } : {}}>star</span>
+          </button>
           <button className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all" onClick={() => onDelete(card.id)} title="Xóa">
             <Trash2 size={15} />
           </button>
@@ -833,6 +840,7 @@ export default function DecksView() {
         onUpdateDeck={(updatedDeck) => {
           setDecks(decks.map(d => d.id === updatedDeck.id ? updatedDeck : d));
         }}
+        filterStarred={isStudying === 'starred'}
       />
     );
   }
@@ -932,12 +940,22 @@ export default function DecksView() {
                 <button
                   className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
                   style={{ backgroundColor: 'var(--secondary)', color: 'var(--on-secondary)' }}
-                  onClick={() => setIsStudying(true)}
+                  onClick={() => setIsStudying('all')}
                   disabled={activeDeck.cards.length === 0}
                 >
                   <Play size={14} />
                   Học
                 </button>
+                {activeDeck.cards.some(c => c.isStarred) && (
+                  <button
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    style={{ backgroundColor: 'rgba(250, 204, 21, 0.2)', color: '#fde047', border: '1px solid rgba(250, 204, 21, 0.5)' }}
+                    onClick={() => setIsStudying('starred')}
+                  >
+                    <span className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
+                    Ôn thẻ đã sao
+                  </button>
+                )}
               </div>
             </div>
 
