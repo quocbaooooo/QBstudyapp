@@ -777,8 +777,42 @@ export default function QuizzesView() {
         continue;
       }
 
-      // If we see an explicit new question marker, and we already have options -> flush
-      const isNewQuestion = /^(?:Câu|Question|Q|Bài)\s*\d+/i.test(trimmed) || /^\d+\s*[.)]/.test(trimmed);
+      // Check if it's an explicit new question marker
+      let isNewQuestion = /^(?:Câu|Question|Q|Bài)\s*\d+/i.test(trimmed) || /^\d+\s*[.)]/.test(trimmed);
+
+      // Heuristics for un-numbered questions after options
+      if (!isNewQuestion && Object.keys(currentOptions).length > 0) {
+        let foundA = false;
+        let foundOtherOption = false;
+        for (let j = i + 1; j < Math.min(lines.length, i + 12); j++) {
+           const nextLine = lines[j].trim();
+           if (!nextLine) continue;
+           const m = nextLine.match(optionRe);
+           if (m) {
+              if (m[1].toUpperCase() === 'A') {
+                 foundA = true;
+              } else {
+                 foundOtherOption = true;
+              }
+              break;
+           }
+           if (/^(?:Câu|Question|Q|Bài)\s*\d+/i.test(nextLine) || /^\d+\s*[.)]/.test(nextLine)) {
+              break; 
+           }
+           if (nextLine.match(answerRe) || nextLine.match(explainRe)) {
+              break;
+           }
+        }
+
+        if (foundA) {
+           isNewQuestion = true;
+        } else if (!foundOtherOption && trimmed.length > 60) {
+           isNewQuestion = true;
+        } else if (!foundOtherOption && /^\d+\s+/.test(trimmed)) {
+           isNewQuestion = true;
+        }
+      }
+
       if (Object.keys(currentOptions).length > 0 && isNewQuestion) {
         flushQuestion();
         currentQuestion = trimmed;
