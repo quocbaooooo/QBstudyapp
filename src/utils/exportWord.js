@@ -91,12 +91,17 @@ export const exportQuizToWord = async (quiz) => {
       })
     );
 
-    // 2. In các đáp án A, B, C, D
+    // 2. In các đáp án A, B, ...
     if (q.options) {
-      if (q.options.A) children.push(new Paragraph({ text: `A. ${q.options.A}`, indent: { left: 400 } }));
-      if (q.options.B) children.push(new Paragraph({ text: `B. ${q.options.B}`, indent: { left: 400 } }));
-      if (q.options.C) children.push(new Paragraph({ text: `C. ${q.options.C}`, indent: { left: 400 } }));
-      if (q.options.D) children.push(new Paragraph({ text: `D. ${q.options.D}`, indent: { left: 400 }, spacing: { after: 200 } }));
+      const keys = Object.keys(q.options);
+      keys.forEach((optKey, idx) => {
+        const isLast = idx === keys.length - 1;
+        children.push(new Paragraph({ 
+          text: `${optKey}. ${q.options[optKey]}`, 
+          indent: { left: 400 },
+          ...(isLast ? { spacing: { after: 200 } } : {})
+        }));
+      });
     }
 
     // 3. In đáp án đúng ngay bên dưới

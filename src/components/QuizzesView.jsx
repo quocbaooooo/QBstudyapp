@@ -694,7 +694,7 @@ export default function QuizzesView() {
    * 4. Handles inline and multi-line formats
    * 5. Never merges next question into option D
    */
-  function parseQuizText(text) {
+   function parseQuizText(text) {
     if (!text || !text.trim()) return [];
 
     // Normalize line endings
@@ -706,10 +706,9 @@ export default function QuizzesView() {
     let currentAnswer = '';
     let currentExplanation = '';
     let lastOption = ''; // tracks which option we're currently filling
-    let hasAllOptions = false;
 
-    const optionRe = /^\s*([A-D])\s*[.)]\s*(.*)/i;
-    const answerRe = /^\s*(?:Đáp án|Answer|Đáp Án)\s*[:.]\s*([A-D])/i;
+    const optionRe = /^\s*([A-F])\s*[.)]\s*(.*)/i;
+    const answerRe = /^\s*(?:Đáp án|Answer|Đáp Án)\s*[:.]\s*([A-F])/i;
     const explainRe = /^\s*(?:Giải thích|Explanation|Giải Thích)\s*[:.]\s*(.*)/i;
 
     function flushQuestion() {
@@ -719,16 +718,17 @@ export default function QuizzesView() {
       q = q.replace(/^\d+\s*[.)]\s+/, '');
       q = q.trim();
 
-      if (q && currentOptions.A && currentOptions.B && currentOptions.C && currentOptions.D) {
+      // Ensure we have at least A and B to form a valid question
+      if (q && currentOptions.A && currentOptions.B) {
+        // Clean options text
+        const cleanedOptions = {};
+        for (const key of Object.keys(currentOptions)) {
+          cleanedOptions[key] = currentOptions[key].trim();
+        }
         questions.push({
           id: uuidv4(),
           question: q,
-          options: {
-            A: currentOptions.A.trim(),
-            B: currentOptions.B.trim(),
-            C: currentOptions.C.trim(),
-            D: currentOptions.D.trim(),
-          },
+          options: cleanedOptions,
           answer: currentAnswer,
           explanation: currentExplanation.trim(),
           userAnswer: null,
@@ -740,7 +740,6 @@ export default function QuizzesView() {
       currentAnswer = '';
       currentExplanation = '';
       lastOption = '';
-      hasAllOptions = false;
     }
 
     for (let i = 0; i < lines.length; i++) {
@@ -768,23 +767,19 @@ export default function QuizzesView() {
         const letter = optMatch[1].toUpperCase();
         const optText = optMatch[2].trim();
 
-        // If we already have D and we see A again → flush and start new question
-        if (hasAllOptions && letter === 'A') {
+        // If we already have options and we see A again → flush and start new question
+        if (Object.keys(currentOptions).length > 0 && letter === 'A') {
           flushQuestion();
         }
 
         currentOptions[letter] = optText;
         lastOption = letter;
-
-        if (letter === 'D') {
-          hasAllOptions = !!(currentOptions.A && currentOptions.B && currentOptions.C && currentOptions.D);
-        }
         continue;
       }
 
-      // It's a regular text line (not an option, not answer/explanation)
-      // If we have all 4 options → this must be the start of a new question
-      if (hasAllOptions) {
+      // If we see an explicit new question marker, and we already have options -> flush
+      const isNewQuestion = /^(?:Câu|Question|Q|Bài)\s*\d+/i.test(trimmed) || /^\d+\s*[.)]/.test(trimmed);
+      if (Object.keys(currentOptions).length > 0 && isNewQuestion) {
         flushQuestion();
         currentQuestion = trimmed;
         continue;
@@ -1165,10 +1160,14 @@ LƯU Ý QUAN TRỌNG:
     }
     setAiLoading(qId);
     try {
+      const optionsText = Object.keys(questionObj.options)
+        .map(key => `${key}. ${questionObj.options[key]}`)
+        .join('\n');
+
       const prompt = `Bạn là giáo viên tiếng Anh. Chọn đáp án và giải thích câu trắc nghiệm sau thật NGẮN GỌN.
 
 FORMAT BẮT BUỘC:
-- Dòng 1: CHỈ ghi duy nhất 1 chữ cái đáp án đúng (A, B, C, hoặc D)
+- Dòng 1: CHỈ ghi duy nhất 1 chữ cái đáp án đúng (A, B, C, D, E, hoặc F)
 - Từ dòng 2 trở đi: Giải thích NGẮN GỌN trong 1 đoạn nhỏ.
 
 CẤU TRÚC GIẢI THÍCH (TỐI ĐA 2-4 DÒNG):
@@ -1181,10 +1180,7 @@ QUY TẮC:
 - Viết bằng tiếng Việt.
 
 Câu hỏi: ${questionObj.question}
-A. ${questionObj.options.A}
-B. ${questionObj.options.B}
-C. ${questionObj.options.C}
-D. ${questionObj.options.D}`;
+${optionsText}`;
 
       let res;
       if (aiProvider === 'gemini') {
@@ -1677,7 +1673,7 @@ ${questionsText}`;
                            
                            const sOpts = {};
                            targetQuestions.forEach(q => {
-                             sOpts[q.id] = shuffleArray(['A', 'B', 'C', 'D']);
+                             sOpts[q.id] = shuffleArray(Object.keys(q.options));
                            });
                            setShuffledOptions(sOpts);
                        }
@@ -1940,8 +1936,9 @@ ${questionsText}`;
                                       Câu {i + 1}{q.blankNumber ? ` (${q.blankNumber})` : ''}: {q._questionOnly || q.question}
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                                      <div>A. {q.options.A}</div><div>B. {q.options.B}</div>
-                                      <div>C. {q.options.C}</div><div>D. {q.options.D}</div>
+                                      {Object.keys(q.options).map(optKey => (
+                                        <div key={optKey}>{optKey}. {q.options[optKey]}</div>
+                                      ))}
                                     </div>
                                     {(q.answer || q.explanation) && (
                                       <div style={{ marginTop: '10px', fontSize: '13px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '8px', borderRadius: '6px' }}>
@@ -1960,8 +1957,9 @@ ${questionsText}`;
                           <div key={i} style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px dashed rgba(var(--glass-rgb),0.06)' }}>
                             <div style={{ fontWeight: '500', marginBottom: '8px', fontSize: '15px' }}>Câu {i + 1}: {q.question}</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                              <div>A. {q.options.A}</div><div>B. {q.options.B}</div>
-                              <div>C. {q.options.C}</div><div>D. {q.options.D}</div>
+                              {Object.keys(q.options).map(optKey => (
+                                <div key={optKey}>{optKey}. {q.options[optKey]}</div>
+                              ))}
                             </div>
                             {(q.answer || q.explanation) && (
                               <div style={{ marginTop: '10px', fontSize: '13px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '8px', borderRadius: '6px' }}>
@@ -2533,8 +2531,8 @@ ${questionsText}`;
                         )}
                         
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                          {(isShuffled && shuffledOptions?.[q.id] ? shuffledOptions[q.id] : ['A', 'B', 'C', 'D']).map((opt, idx) => {
-                            const displayLetter = ['A', 'B', 'C', 'D'][idx];
+                          {(isShuffled && shuffledOptions?.[q.id] ? shuffledOptions[q.id] : Object.keys(q.options)).map((opt, idx) => {
+                            const displayLetter = ['A', 'B', 'C', 'D', 'E', 'F'][idx] || opt;
                             return (
                             <div 
                               key={opt} onClick={() => isTesting && handleSelectAnswer(q.id, opt)}
@@ -2590,10 +2588,9 @@ ${questionsText}`;
                                     style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px' }}
                                   >
                                     <option value="">-- Đáp án đúng --</option>
-                                    <option value="A">A</option>
-                                    <option value="B">B</option>
-                                    <option value="C">C</option>
-                                    <option value="D">D</option>
+                                    {Object.keys(q.options).map(optKey => (
+                                      <option key={optKey} value={optKey}>{optKey}</option>
+                                    ))}
                                   </select>
                                   <button className="btn" style={{ color: 'var(--accent-orange)', padding: '6px 12px' }} onClick={() => handleCallAI(q.id, q)} disabled={aiLoading === q.id}>
                                     {aiLoading === q.id ? 'Đang hỏi AI...' : <><Sparkles size={16}/> {q.answer ? 'Hỏi lại AI' : 'Hỏi AI Đáp Án & Giải Thích'}</>}
@@ -2622,7 +2619,7 @@ ${questionsText}`;
                                   if (q.question?.includes('/')) {
                                     hiddenParts.push({ label: 'Câu hỏi', text: q.question.substring(q.question.indexOf('/') + 1).trim() });
                                   }
-                                  ['A', 'B', 'C', 'D'].forEach(opt => {
+                                  Object.keys(q.options).forEach(opt => {
                                     if (q.options[opt]?.includes('/')) {
                                       hiddenParts.push({ label: `Đáp án ${opt}`, text: q.options[opt].substring(q.options[opt].indexOf('/') + 1).trim() });
                                     }
