@@ -7,6 +7,7 @@ import { exportQuizToWord } from '../utils/exportWord';
 import Tesseract from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import TiptapEditor from './TiptapEditor';
+import * as mammoth from 'mammoth';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
@@ -584,6 +585,25 @@ export default function QuizzesView() {
     setImportMode('normal');
   };
 
+  const handleWordUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      if (result.value) {
+         setImportText(result.value);
+      } else {
+         alert('Không tìm thấy chữ trong file Word này.');
+      }
+    } catch (err) {
+      console.error("Error reading Word file:", err);
+      alert('Không thể đọc file Word. Vui lòng đảm bảo file là định dạng .docx hợp lệ.');
+    }
+    e.target.value = ''; // Reset input
+  };
+
   const getBlankNumbersFromPassage = (text = '') => {
     if (!text) return [];
     const numberSet = new Set();
@@ -705,22 +725,20 @@ export default function QuizzesView() {
     let currentOptions = {};
     let currentAnswer = '';
     let currentExplanation = '';
-    let lastOption = ''; // tracks which option we're currently filling
+    let lastOption = ''; 
+    let mode = 'question'; // 'question', 'options', 'answer', 'explanation'
 
     const optionRe = /^\s*([A-F])\s*[.)]\s*(.*)/i;
-    const answerRe = /^\s*(?:Đáp án|Answer|Đáp Án)\s*[:.]\s*([A-F])/i;
+    const answerRe = /^\s*(?:Đáp án|Answer|Đáp Án)\s*[:.]\s*([A-F]?)/i;
     const explainRe = /^\s*(?:Giải thích|Explanation|Giải Thích)\s*[:.]\s*(.*)/i;
 
     function flushQuestion() {
-      // Clean question text
       let q = currentQuestion.trim();
       q = q.replace(/^(?:Câu|Question|Q|Bài)\s*\d+\s*[.):]*\s*/i, '');
       q = q.replace(/^\d+\s*[.)]\s+/, '');
       q = q.trim();
 
-      // Ensure we have at least A and B to form a valid question
       if (q && currentOptions.A && currentOptions.B) {
-        // Clean options text
         const cleanedOptions = {};
         for (const key of Object.keys(currentOptions)) {
           cleanedOptions[key] = currentOptions[key].trim();
@@ -734,12 +752,12 @@ export default function QuizzesView() {
           userAnswer: null,
         });
       }
-      // Reset
       currentQuestion = '';
       currentOptions = {};
       currentAnswer = '';
       currentExplanation = '';
       lastOption = '';
+      mode = 'question';
     }
 
     for (let i = 0; i < lines.length; i++) {
@@ -747,10 +765,23 @@ export default function QuizzesView() {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
+      // Check if it's an explicit new question marker
+      let isExplicitNewQuestion = /^(?:Câu|Question|Q|Bài)\s*\d+/i.test(trimmed) || /^\d+\s*[.)]/.test(trimmed);
+
+      if (isExplicitNewQuestion) {
+        if (Object.keys(currentOptions).length > 0 || currentQuestion) {
+          flushQuestion();
+        }
+        mode = 'question';
+        currentQuestion = trimmed;
+        continue;
+      }
+
       // Check for answer line: "Đáp án: B"
       const ansMatch = trimmed.match(answerRe);
       if (ansMatch) {
-        currentAnswer = ansMatch[1].toUpperCase();
+        currentAnswer = (ansMatch[1] || '').toUpperCase();
+        mode = 'answer';
         continue;
       }
 
@@ -758,6 +789,7 @@ export default function QuizzesView() {
       const explMatch = trimmed.match(explainRe);
       if (explMatch) {
         currentExplanation = explMatch[1];
+        mode = 'explanation';
         continue;
       }
 
@@ -771,72 +803,56 @@ export default function QuizzesView() {
         if (Object.keys(currentOptions).length > 0 && letter === 'A') {
           flushQuestion();
         }
-
+        
+        mode = 'options';
         currentOptions[letter] = optText;
         lastOption = letter;
         continue;
       }
 
-      // Check if it's an explicit new question marker
-      let isNewQuestion = /^(?:Câu|Question|Q|Bài)\s*\d+/i.test(trimmed) || /^\d+\s*[.)]/.test(trimmed);
-
-      // Heuristics for un-numbered questions after options
-      if (!isNewQuestion && Object.keys(currentOptions).length > 0) {
-        let foundA = false;
-        let foundOtherOption = false;
-        for (let j = i + 1; j < Math.min(lines.length, i + 12); j++) {
-           const nextLine = lines[j].trim();
-           if (!nextLine) continue;
-           const m = nextLine.match(optionRe);
-           if (m) {
-              if (m[1].toUpperCase() === 'A') {
-                 foundA = true;
-              } else {
-                 foundOtherOption = true;
-              }
-              break;
-           }
-           if (/^(?:Câu|Question|Q|Bài)\s*\d+/i.test(nextLine) || /^\d+\s*[.)]/.test(nextLine)) {
-              break; 
-           }
-           if (nextLine.match(answerRe) || nextLine.match(explainRe)) {
-              break;
-           }
-        }
-
-        if (foundA) {
-           isNewQuestion = true;
-        } else if (!foundOtherOption && trimmed.length > 60) {
-           isNewQuestion = true;
-        } else if (!foundOtherOption && /^\d+\s+/.test(trimmed)) {
-           isNewQuestion = true;
-        }
+      // Heuristics for un-numbered questions:
+      // If we are in 'options' or 'answer' mode and see text that is NOT a marker, 
+      // look ahead. If we see 'A.', it might be a new question.
+      if (mode !== 'question' && Object.keys(currentOptions).length > 0) {
+         let foundA = false;
+         for (let j = i + 1; j < Math.min(lines.length, i + 8); j++) {
+            const nextLine = lines[j].trim();
+            if (!nextLine) continue;
+            if (nextLine.match(optionRe) && nextLine.match(optionRe)[1].toUpperCase() === 'A') {
+               foundA = true;
+               break;
+            }
+            if (/^(?:Câu|Question|Q|Bài)\s*\d+/i.test(nextLine) || /^\d+\s*[.)]/.test(nextLine) || nextLine.match(answerRe) || nextLine.match(explainRe)) {
+               break;
+            }
+         }
+         
+         // Only break out into 'question' mode if we are NOT in 'explanation' mode.
+         // Explanation mode can have multi-line text, so we rely on explicit markers like "Câu X:" to break out.
+         if (foundA && mode !== 'explanation') {
+            flushQuestion();
+            mode = 'question';
+            currentQuestion = trimmed;
+            continue;
+         }
       }
 
-      if (Object.keys(currentOptions).length > 0 && isNewQuestion) {
-        flushQuestion();
-        currentQuestion = trimmed;
-        continue;
-      }
-
-      // If we haven't started options yet → this is question text
-      if (!lastOption || Object.keys(currentOptions).length === 0) {
-        if (currentQuestion) {
-          currentQuestion += ' ' + trimmed;
-        } else {
-          currentQuestion = trimmed;
+      // Append based on current mode
+      if (mode === 'question') {
+        currentQuestion += (currentQuestion ? '\n' : '') + trimmed;
+      } else if (mode === 'options') {
+        if (lastOption) {
+          currentOptions[lastOption] += '\n' + trimmed;
         }
-        continue;
-      }
-
-      // We're in the middle of options, but this line isn't an option marker
-      // Append to the last option (multi-line option text)
-      if (lastOption && currentOptions[lastOption] !== undefined) {
-        currentOptions[lastOption] += ' ' + trimmed;
+      } else if (mode === 'answer') {
+        // If extra text follows answer without "Giải thích" marker, assume it's explanation
+        mode = 'explanation';
+        currentExplanation += (currentExplanation ? '\n' : '') + trimmed;
+      } else if (mode === 'explanation') {
+        currentExplanation += (currentExplanation ? '\n' : '') + trimmed;
       }
     }
 
-    // Flush last question
     if (currentQuestion || Object.keys(currentOptions).length > 0) {
       flushQuestion();
     }
@@ -2054,6 +2070,17 @@ ${questionsText}`;
                       >
                         READING (1 đoạn + nhiều câu)
                       </button>
+                      <div style={{ flex: 1 }}></div>
+                      <label style={{
+                          padding: '7px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700,
+                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                          background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-muted)',
+                          display: 'flex', alignItems: 'center', gap: '6px'
+                      }}>
+                        <FileText size={14} />
+                        Nhập từ file Word (.docx)
+                        <input type="file" accept=".docx" style={{ display: 'none' }} onChange={handleWordUpload} />
+                      </label>
                     </div>
 
                     <p style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '14px' }}>
