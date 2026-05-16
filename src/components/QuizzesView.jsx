@@ -58,7 +58,7 @@ const DEMO_QUIZ = {
 };
 
 export default function QuizzesView() {
-  const [quizzes, setQuizzes] = useLocalStorage('study_quizzes', [DEMO_QUIZ]);
+  const [quizzes, setQuizzes] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
   const [apiKey] = useLocalStorage('gemini_api_key', '');
   const [apiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
   
