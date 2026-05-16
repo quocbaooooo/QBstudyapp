@@ -40,6 +40,8 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     return collection(db, 'users', user.uid, collectionName);
   }, [user, collectionName]);
 
+  const initialLocalDataRef = useRef(items);
+
   // Listen to Firestore changes (real-time sync)
   useEffect(() => {
     if (!user) {
@@ -65,23 +67,27 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
       const migrationKey = `migrated_${collectionName}_${user.uid}`;
       const isMigrated = localStorage.getItem(migrationKey);
       
-      // If Firestore is empty and we haven't migrated, skip clearing state to prevent UI flash.
-      if (firestoreItems.length === 0 && !isMigrated) {
+      const localHasRealData = initialLocalDataRef.current.length > 0 && initialLocalDataRef.current[0].id !== defaultValue[0]?.id;
+
+      // If we haven't migrated and have real local data, DON'T overwrite local state with firestore yet.
+      // The migration effect will merge them.
+      if (!isMigrated && localHasRealData) {
+        // Just keep the local state for now until migration runs
+      } else if (firestoreItems.length === 0 && !isMigrated) {
         // migration effect will handle pushing the default/local data
       } else {
         setItemsState(firestoreItems);
+        // Also update localStorage as cache
+        try {
+          window.localStorage.setItem(localStorageKey, JSON.stringify(firestoreItems));
+        } catch (e) {
+          console.warn('Failed to cache to localStorage', e);
+        }
       }
       
       isFirestoreEmptyRef.current = firestoreItems.length === 0;
       setFirestoreReady(true);
       
-      // Also update localStorage as cache
-      try {
-        window.localStorage.setItem(localStorageKey, JSON.stringify(firestoreItems));
-      } catch (e) {
-        console.warn('Failed to cache to localStorage', e);
-      }
-
       setTimeout(() => {
         isUpdatingFromFirestore.current = false;
       }, 100);
@@ -100,24 +106,17 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     const migrationKey = `migrated_${collectionName}_${user.uid}`;
     if (localStorage.getItem(migrationKey)) return;
 
-    const storedStr = window.localStorage.getItem(localStorageKey);
-    const hasLocalData = !!storedStr;
+    const localData = initialLocalDataRef.current;
+    const hasLocalData = localData && localData.length > 0;
+    const localHasRealData = hasLocalData && localData[0].id !== defaultValue[0]?.id;
 
-    // Check if Firestore is empty and localStorage has data
-    const localData = (() => {
-      try {
-        return storedStr ? JSON.parse(storedStr) : defaultValue;
-      } catch { return defaultValue; }
-    })();
-
-    // If Firestore already has data (user logging in on new device)
-    // and there is no local data, we shouldn't push defaultValue to Firestore.
-    if (!isFirestoreEmptyRef.current && !hasLocalData) {
+    // If Firestore is NOT empty and we DON'T have real local data, just skip migration
+    if (!isFirestoreEmptyRef.current && !localHasRealData) {
       localStorage.setItem(migrationKey, 'true');
       return;
     }
 
-    if (localData.length > 0) {
+    if (hasLocalData) {
       // Migrate to Firestore
       const colRef = getCollectionRef();
       if (!colRef) return;
@@ -131,6 +130,10 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
       batch.commit().then(() => {
         localStorage.setItem(migrationKey, 'true');
         console.log(`✅ Migrated ${localData.length} ${collectionName} to Firestore`);
+        // If we merged, update state to trigger a re-render with merged data
+        if (!isFirestoreEmptyRef.current && localHasRealData) {
+           // Merging is done in Firestore, the next onSnapshot will pull the merged data
+        }
       }).catch(err => {
         console.error(`Migration error for ${collectionName}:`, err);
       });
