@@ -1337,13 +1337,28 @@ ${optionsText}`;
 
   const handleSelectAnswer = (qId, optionKey) => {
     const q = activeQuiz.questions.find(x => x.id === qId);
-    if (q) {
-      const isCorrect = optionKey === q.answer;
-      playFeedbackSound(isCorrect);
+    let newUserAnswer = optionKey;
+    
+    if (q?.allowMultipleAnswers) {
+      const currentAns = (q.userAnswer || '').split(',').filter(Boolean);
+      if (currentAns.includes(optionKey)) {
+        newUserAnswer = currentAns.filter(a => a !== optionKey).join(',');
+      } else {
+        newUserAnswer = [...currentAns, optionKey].sort().join(',');
+      }
+      
+      if (q.answer && newUserAnswer === q.answer) {
+        playFeedbackSound(true);
+      }
+    } else {
+      if (q) {
+        const isCorrect = optionKey === q.answer;
+        playFeedbackSound(isCorrect);
+      }
     }
 
     const newQuestions = activeQuiz.questions.map(q => 
-      q.id === qId ? { ...q, userAnswer: optionKey } : q
+      q.id === qId ? { ...q, userAnswer: newUserAnswer } : q
     );
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
   };
@@ -2567,14 +2582,24 @@ ${questionsText}`;
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                           {(isShuffled && shuffledOptions?.[q.id] ? shuffledOptions[q.id] : Object.keys(q.options)).map((opt, idx) => {
                             const displayLetter = ['A', 'B', 'C', 'D', 'E', 'F'][idx] || opt;
+                            const isSelected = q.allowMultipleAnswers ? (q.userAnswer || '').split(',').includes(opt) : q.userAnswer === opt;
+                            const isCorrectOption = q.allowMultipleAnswers ? (q.answer || '').split(',').includes(opt) : q.answer === opt;
+                            
+                            let bgColor = 'transparent';
+                            if (isTesting) {
+                              if (isSelected) {
+                                bgColor = (q.answer && !isCorrectOption) ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)';
+                              }
+                            } else {
+                              if (isCorrectOption) bgColor = 'rgba(16, 185, 129, 0.2)';
+                            }
+
                             return (
                             <div 
                               key={opt} onClick={() => isTesting && handleSelectAnswer(q.id, opt)}
                               style={{ 
                                 padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)',
-                                background: isTesting 
-                                  ? (q.userAnswer === opt ? (q.answer && q.userAnswer !== q.answer ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)') : 'transparent')
-                                  : (q.answer === opt ? 'rgba(16, 185, 129, 0.2)' : 'transparent'),
+                                background: bgColor,
                                 cursor: isTesting ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '8px'
                               }}
                             >
@@ -2594,8 +2619,8 @@ ${questionsText}`;
                                   {' '}{renderQuizText(q.options[opt], answerRevealed)}
                                 </span>
                               )}
-                              {isTesting && q.answer && q.userAnswer === opt && opt === q.answer && <CheckCircle size={16} color="var(--accent-green)"/>}
-                              {isTesting && q.answer && q.userAnswer === opt && opt !== q.answer && <XCircle size={16} color="var(--accent-red)"/>}
+                              {isTesting && q.answer && isSelected && isCorrectOption && <CheckCircle size={16} color="var(--accent-green)"/>}
+                              {isTesting && q.answer && isSelected && !isCorrectOption && <XCircle size={16} color="var(--accent-red)"/>}
                             </div>
                             );
                           })}
@@ -2616,16 +2641,55 @@ ${questionsText}`;
                                       style={{ width: '150px', background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '6px 8px' }}
                                     />
                                   )}
-                                  <select
-                                    value={q.answer || ''}
-                                    onChange={e => handleUpdateQuestionProp(q.id, 'answer', e.target.value)}
-                                    style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px' }}
-                                  >
-                                    <option value="">-- Đáp án đúng --</option>
-                                    {Object.keys(q.options).map(optKey => (
-                                      <option key={optKey} value={optKey}>{optKey}</option>
-                                    ))}
-                                  </select>
+                                  <label style={{display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-main)', cursor: 'pointer', background: 'rgba(var(--glass-rgb),0.05)', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border-color)'}}>
+                                    <input type="checkbox" checked={!!q.allowMultipleAnswers} onChange={(e) => {
+                                      handleUpdateQuestionProp(q.id, 'allowMultipleAnswers', e.target.checked);
+                                      if (!e.target.checked && (q.answer || '').includes(',')) {
+                                        handleUpdateQuestionProp(q.id, 'answer', q.answer.split(',')[0]);
+                                      }
+                                    }} />
+                                    Nhiều đáp án
+                                  </label>
+
+                                  {q.allowMultipleAnswers ? (
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                      {Object.keys(q.options).map(optKey => {
+                                        const isSelected = (q.answer || '').split(',').includes(optKey);
+                                        return (
+                                          <button
+                                            key={optKey}
+                                            onClick={() => {
+                                              const currentAns = (q.answer || '').split(',').filter(Boolean);
+                                              if (isSelected) {
+                                                handleUpdateQuestionProp(q.id, 'answer', currentAns.filter(a => a !== optKey).join(','));
+                                              } else {
+                                                handleUpdateQuestionProp(q.id, 'answer', [...currentAns, optKey].sort().join(','));
+                                              }
+                                            }}
+                                            style={{
+                                              padding: '6px 12px', borderRadius: '4px', border: '1px solid var(--border-color)',
+                                              background: isSelected ? 'var(--primary)' : 'var(--bg-secondary)',
+                                              color: isSelected ? 'var(--on-primary)' : 'var(--text-main)',
+                                              cursor: 'pointer', fontWeight: 600
+                                            }}
+                                          >
+                                            {optKey}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <select
+                                      value={q.answer || ''}
+                                      onChange={e => handleUpdateQuestionProp(q.id, 'answer', e.target.value)}
+                                      style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px' }}
+                                    >
+                                      <option value="">-- Đáp án đúng --</option>
+                                      {Object.keys(q.options).map(optKey => (
+                                        <option key={optKey} value={optKey}>{optKey}</option>
+                                      ))}
+                                    </select>
+                                  )}
                                   <button className="btn" style={{ color: 'var(--accent-orange)', padding: '6px 12px' }} onClick={() => handleCallAI(q.id, q)} disabled={aiLoading === q.id}>
                                     {aiLoading === q.id ? 'Đang hỏi AI...' : <><Sparkles size={16}/> {q.answer ? 'Hỏi lại AI' : 'Hỏi AI Đáp Án & Giải Thích'}</>}
                                   </button>
