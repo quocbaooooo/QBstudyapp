@@ -2433,6 +2433,11 @@ ${questionsText}`;
                                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
                                         <div style={{ fontSize: '14px', fontWeight: 600, lineHeight: '1.45' }}>
                                           Câu {itemIndex + 1}{item.blankNumber ? ` (${item.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
+                                          {item.allowMultipleAnswers && (
+                                            <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(234,179,8,0.15)', color: '#facc15', border: '1px solid rgba(234,179,8,0.3)', fontWeight: 'normal', display: 'inline-block', verticalAlign: 'middle', marginTop: '-2px' }}>
+                                              Đây là câu chọn nhiều đáp án
+                                            </span>
+                                          )}
                                         </div>
                                         <button
                                           onClick={() => {
@@ -2532,6 +2537,11 @@ ${questionsText}`;
                                 }
                               }}>
                                 Câu {i + 1}{q.readingGroupId && q.blankNumber ? ` (${q.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
+                                {isTesting && q.allowMultipleAnswers && (
+                                  <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(234,179,8,0.15)', color: '#facc15', border: '1px solid rgba(234,179,8,0.3)', fontWeight: 'normal', display: 'inline-block', verticalAlign: 'middle', marginTop: '-2px' }}>
+                                    Đây là câu chọn nhiều đáp án
+                                  </span>
+                                )}
                               </span>
                             )}
                           </div>
