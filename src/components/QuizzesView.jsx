@@ -137,25 +137,38 @@ export default function QuizzesView() {
     let visiblePart = slashIdx !== -1 ? text.substring(0, slashIdx).trimEnd() : text;
     const hiddenPart = slashIdx !== -1 ? text.substring(slashIdx + 1).trimStart() : '';
 
-    // In visible part, hide content in () unless showHidden
-    const renderWithParens = (str) => {
-      if (showHidden) return str;
+    if (!showHidden) {
       // Remove (translation text) patterns — but keep content that was there originally
-      return str.replace(/\s*\([^)]*\)/g, '');
+      return visiblePart.replace(/\s*\([^)]*\)/g, '');
+    }
+
+    // If showHidden is true, format the (...) parts in visiblePart
+    const formatParens = (str) => {
+      const parts = str.split(/(\([^)]*\))/g);
+      return parts.map((part, index) => {
+        if (part.startsWith('(') && part.endsWith(')')) {
+          return (
+            <span key={index} style={{ color: 'var(--accent-orange)', fontStyle: 'italic', opacity: 0.85 }}>
+              {part}
+            </span>
+          );
+        }
+        return part;
+      });
     };
 
-    const cleanVisible = renderWithParens(visiblePart);
+    const formattedVisible = formatParens(visiblePart);
 
-    if (showHidden && hiddenPart) {
+    if (hiddenPart) {
       return (
         <>
-          {visiblePart}
+          {formattedVisible}
           <span style={{ color: 'var(--accent-orange)', fontStyle: 'italic', opacity: 0.85 }}> / {hiddenPart}</span>
         </>
       );
     }
 
-    return cleanVisible;
+    return formattedVisible;
   };
 
   const handleTextSelection = useCallback((e, questionId = null, field = null) => {
@@ -1045,6 +1058,36 @@ export default function QuizzesView() {
     processFiles(e.dataTransfer.files);
   }, [processFiles]);
 
+  useEffect(() => {
+    if (!isCreatingAiQuiz) return;
+    
+    const handlePasteEvent = (e) => {
+      // Don't intercept if user is typing in form elements
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+      
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      
+      const files = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file') {
+          const file = items[i].getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      
+      if (files.length > 0) {
+        e.preventDefault();
+        processFiles(files);
+      }
+    };
+
+    document.addEventListener('paste', handlePasteEvent);
+    return () => {
+      document.removeEventListener('paste', handlePasteEvent);
+    };
+  }, [isCreatingAiQuiz, processFiles]);
+
   const handleGenerateAiQuiz = async () => {
     const activeApiKey = aiProvider === 'gemini' ? apiKey : openaiKey;
     if (!activeApiKey) {
@@ -1873,14 +1916,33 @@ ${questionsText}`;
                             </div>
                           )}
                         </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'center', gap: '15px' }}>
-                          <span><ImageIcon size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} /> Ảnh/PDF ({aiQuizFiles.length}/5)</span>
-                          <span 
-                            onClick={(e) => { e.stopPropagation(); setOptimizeTokens(!optimizeTokens); }}
-                            style={{ color: optimizeTokens ? 'var(--accent-green)' : 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}
-                          >
-                            {optimizeTokens ? '✓ Tối ưu Token (OCR/PDF text)' : '○ Gửi tệp gốc (Tạm dừng tối ưu)'}
-                          </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', marginTop: '12px' }}>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'center', gap: '15px' }}>
+                            <span><ImageIcon size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} /> Ảnh/PDF ({aiQuizFiles.length}/5)</span>
+                            <span 
+                              onClick={(e) => { e.stopPropagation(); setOptimizeTokens(!optimizeTokens); }}
+                              style={{ color: optimizeTokens ? 'var(--accent-green)' : 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              {optimizeTokens ? '✓ Tối ưu Token (OCR/PDF text)' : '○ Gửi tệp gốc (Tạm dừng tối ưu)'}
+                            </span>
+                          </div>
+                          
+                          {optimizeTokens && aiQuizFiles.some(f => f.extractedText) && (
+                            <button
+                              className="btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const texts = aiQuizFiles.map(f => f.extractedText).filter(Boolean);
+                                if (texts.length > 0) {
+                                  const combined = texts.join('\n\n---\n\n');
+                                  setAiQuizPrompt(prev => prev ? prev + '\n\n' + combined : combined);
+                                }
+                              }}
+                              style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <FileText size={14} /> Chuyển Text đã trích xuất xuống ô Yêu cầu
+                            </button>
+                          )}
                         </div>
                       </div>
                     ) : (
