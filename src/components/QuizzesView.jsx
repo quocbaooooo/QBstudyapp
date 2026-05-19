@@ -2546,9 +2546,9 @@ ${questionsText}`;
                                         </div>
                                       )}
 
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                        {(isShuffled && shuffledOptions?.[item.id] ? shuffledOptions[item.id] : ['A', 'B', 'C', 'D']).map((opt, idx) => {
-                                          const displayLetter = ['A', 'B', 'C', 'D'][idx];
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                                        {(isShuffled && shuffledOptions?.[item.id] ? shuffledOptions[item.id] : Object.keys(item.options).sort()).map((opt, idx) => {
+                                          const displayLetter = ['A', 'B', 'C', 'D', 'E', 'F'][idx] || opt;
                                           return (
                                           <div
                                             key={`${item.id}-${opt}`}
@@ -2678,8 +2678,8 @@ ${questionsText}`;
                           </div>
                         )}
                         
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                          {(isShuffled && shuffledOptions?.[q.id] ? shuffledOptions[q.id] : Object.keys(q.options)).map((opt, idx) => {
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginBottom: '16px' }}>
+                          {(isShuffled && shuffledOptions?.[q.id] ? shuffledOptions[q.id] : Object.keys(q.options).sort()).map((opt, idx) => {
                             const displayLetter = ['A', 'B', 'C', 'D', 'E', 'F'][idx] || opt;
                             const isSelected = q.allowMultipleAnswers ? (q.userAnswer || '').split(',').includes(opt) : q.userAnswer === opt;
                             const isCorrectOption = q.allowMultipleAnswers ? (q.answer || '').split(',').includes(opt) : q.answer === opt;
@@ -2752,7 +2752,7 @@ ${questionsText}`;
 
                                   {q.allowMultipleAnswers ? (
                                     <div style={{ display: 'flex', gap: '6px' }}>
-                                      {Object.keys(q.options).map(optKey => {
+                                      {Object.keys(q.options).sort().map(optKey => {
                                         const isSelected = (q.answer || '').split(',').includes(optKey);
                                         return (
                                           <button
@@ -2784,7 +2784,7 @@ ${questionsText}`;
                                       style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '6px' }}
                                     >
                                       <option value="">-- Đáp án đúng --</option>
-                                      {Object.keys(q.options).map(optKey => (
+                                      {Object.keys(q.options).sort().map(optKey => (
                                         <option key={optKey} value={optKey}>{optKey}</option>
                                       ))}
                                     </select>
