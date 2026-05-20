@@ -2546,7 +2546,7 @@ ${questionsText}`;
                                         </div>
                                       )}
 
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                                      <div style={{ display: 'grid', gridTemplateColumns: Object.values(item.options).some(o => o && o.length > 50) ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))', gap: '8px' }}>
                                         {(isShuffled && shuffledOptions?.[item.id] ? shuffledOptions[item.id] : Object.keys(item.options).sort()).map((opt, idx) => {
                                           const displayLetter = ['A', 'B', 'C', 'D', 'E', 'F'][idx] || opt;
                                           return (
@@ -2678,7 +2678,7 @@ ${questionsText}`;
                           </div>
                         )}
                         
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginBottom: '16px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: Object.values(q.options).some(o => o && o.length > 50) ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px', marginBottom: '16px' }}>
                           {(isShuffled && shuffledOptions?.[q.id] ? shuffledOptions[q.id] : Object.keys(q.options).sort()).map((opt, idx) => {
                             const displayLetter = ['A', 'B', 'C', 'D', 'E', 'F'][idx] || opt;
                             const isSelected = q.allowMultipleAnswers ? (q.userAnswer || '').split(',').includes(opt) : q.userAnswer === opt;
