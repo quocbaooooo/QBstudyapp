@@ -348,7 +348,19 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
                       {currentCard.pronunciation && <span>{currentCard.pronunciation}</span>}
                     </div>
                   ) : null}
-                  {currentCard.example && <div className="mt-1"><b>Ví dụ:</b> <i>{currentCard.example}</i></div>}
+                  {currentCard.example && (
+                    <div className="mt-1 flex items-start gap-2">
+                      <div><b>Ví dụ:</b> <i>{currentCard.example}</i></div>
+                      <button
+                        type="button"
+                        className="p-1 -mt-1 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center shrink-0 transition-all"
+                        onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
+                        title="Đọc ví dụ"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">volume_up</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -425,8 +437,18 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
 
                 {/* Example */}
                 {currentCard.example && (
-                  <div className="text-sm italic text-secondary/80 text-center mt-1">
-                    {currentCard.example}
+                  <div className="flex items-center justify-center gap-2 mt-1">
+                    <div className="text-sm italic text-secondary/80 text-center">
+                      {currentCard.example}
+                    </div>
+                    <button
+                      type="button"
+                      className="p-1.5 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
+                      onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
+                      title="Đọc ví dụ"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">volume_up</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -518,7 +540,19 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
                 <div>
                   <div className="font-bold mb-1">{mcqSelected === currentCard.id ? 'Chính xác!' : 'Chưa chính xác! Đáp án đúng là: ' + currentCard.back}</div>
                   {currentCard.synonyms && <div className="mt-1"><b>Đồng nghĩa:</b> {currentCard.synonyms}</div>}
-                  {currentCard.example && <div className="mt-1"><b>Ví dụ:</b> <i>{currentCard.example}</i></div>}
+                  {currentCard.example && (
+                    <div className="mt-1 flex items-start gap-2">
+                      <div><b>Ví dụ:</b> <i>{currentCard.example}</i></div>
+                      <button
+                        type="button"
+                        className="p-1 -mt-1 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center shrink-0 transition-all"
+                        onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
+                        title="Đọc ví dụ"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">volume_up</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

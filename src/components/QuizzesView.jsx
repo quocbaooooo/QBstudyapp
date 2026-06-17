@@ -99,6 +99,25 @@ export default function QuizzesView() {
     setShuffledIds(null);
     setShuffledOptions(null);
   }, [activeQuizId, isTesting, testMode]);
+
+  // Scroll to newly added question
+  useEffect(() => {
+    if (addedQuestionIdRef.current) {
+      const qId = addedQuestionIdRef.current;
+      const timer = setTimeout(() => {
+        const element = document.getElementById(`question-card-${qId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const textarea = element.querySelector('textarea');
+          if (textarea) {
+            textarea.focus();
+          }
+          addedQuestionIdRef.current = null;
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [quizzes]);
   const [aiLoading, setAiLoading] = useState(null);
   const [isTakeawaysCollapsed, setIsTakeawaysCollapsed] = useState(false);
   const [isGeneratingTakeaways, setIsGeneratingTakeaways] = useState(false);
@@ -111,6 +130,54 @@ export default function QuizzesView() {
   const [aiProgress, setAiProgress] = useState('');
   const [optimizeTokens, setOptimizeTokens] = useLocalStorage('ai_optimize_tokens', true);
   const fileInputRef = useRef(null);
+  const addedQuestionIdRef = useRef(null);
+
+  const [isMerging, setIsMerging] = useState(false);
+  const [selectedQuizzesToMerge, setSelectedQuizzesToMerge] = useState([]);
+
+  const handleMergeQuizzes = () => {
+    if (selectedQuizzesToMerge.length < 2) return;
+    
+    const quizzesToMerge = quizzes.filter(q => selectedQuizzesToMerge.includes(q.id));
+    const allQuestions = [];
+    const allPassages = [];
+    
+    quizzesToMerge.forEach(q => {
+      // Deep clone to prevent reference sharing between independent quizzes
+      const clonedQuestions = JSON.parse(JSON.stringify(q.questions || []));
+      const clonedPassages = JSON.parse(JSON.stringify(q.readingPassages || []));
+      
+      const passageIdMap = {};
+      clonedPassages.forEach(p => {
+        const oldId = p.id;
+        p.id = uuidv4();
+        passageIdMap[oldId] = p.id;
+      });
+      
+      clonedQuestions.forEach(q => {
+        q.id = uuidv4();
+        if (q.readingGroupId && passageIdMap[q.readingGroupId]) {
+          q.readingGroupId = passageIdMap[q.readingGroupId];
+        }
+      });
+
+      allQuestions.push(...clonedQuestions);
+      allPassages.push(...clonedPassages);
+    });
+
+    const newQuiz = {
+      id: uuidv4(),
+      title: `Bộ đề gộp (${selectedQuizzesToMerge.length} bộ)`,
+      questions: allQuestions,
+      readingPassages: allPassages,
+      updatedAt: Date.now()
+    };
+
+    setQuizzes([...quizzes, newQuiz]);
+    setIsMerging(false);
+    setSelectedQuizzesToMerge([]);
+    setActiveQuizId(newQuiz.id);
+  };
 
 
   // Translation popup state
@@ -544,6 +611,9 @@ export default function QuizzesView() {
 
     if (importTargetQuizId) {
       // Import into currently opened quiz
+      if (previewQuestions[0]?.id) {
+        addedQuestionIdRef.current = previewQuestions[0].id;
+      }
       const newQuizzes = quizzes.map(q => {
         if (q.id !== importTargetQuizId) return q;
 
@@ -1211,6 +1281,9 @@ LƯU Ý QUAN TRỌNG:
       if (questions.length > 0) {
         if (activeQuizId) {
           // Append to existing quiz
+          if (questions[0]?.id) {
+            addedQuestionIdRef.current = questions[0].id;
+          }
           const newQuizzes = quizzes.map(q => {
             if (q.id === activeQuizId) {
               return {
@@ -1576,45 +1649,91 @@ ${questionsText}`;
                   {quizzes.length} bộ đề · Chọn một bộ đề để bắt đầu ôn tập
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  onClick={handleCreateEmptyQuiz}
-                  style={{
-                    padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-                    border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
-                    background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
-                    display: 'flex', alignItems: 'center', gap: '6px',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <PlusIcon /> Tạo đề trống
-                </button>
-                <button
-                  onClick={() => { setIsImporting(true); setImportTargetQuizId(null); setIsCreatingAiQuiz(false); setActiveQuizId(null); }}
-                  style={{
-                    padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-                    border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
-                    background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
-                    display: 'flex', alignItems: 'center', gap: '6px',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>description</span>
-                  Nhập từ Word
-                </button>
-                <button
-                  onClick={() => { setIsCreatingAiQuiz(true); setIsImporting(false); setActiveQuizId(null); }}
-                  style={{
-                    padding: '9px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
-                    border: 'none', cursor: 'pointer',
-                    background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white',
-                    display: 'flex', alignItems: 'center', gap: '6px',
-                    transition: 'all 0.2s',
-                    boxShadow: '0 4px 20px rgba(124,77,255,0.35)'
-                  }}
-                >
-                  <Zap size={15} fill="white" /> Tạo đề bằng AI
-                </button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                {isMerging ? (
+                  <>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-orange)' }}>Đã chọn {selectedQuizzesToMerge.length} bộ đề</span>
+                    <button
+                      onClick={() => { setIsMerging(false); setSelectedQuizzesToMerge([]); }}
+                      style={{
+                        padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                        border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                        background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      onClick={handleMergeQuizzes}
+                      disabled={selectedQuizzesToMerge.length < 2}
+                      style={{
+                        padding: '9px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
+                        border: 'none', cursor: selectedQuizzesToMerge.length < 2 ? 'not-allowed' : 'pointer',
+                        background: selectedQuizzesToMerge.length < 2 ? 'rgba(var(--glass-rgb),0.1)' : 'linear-gradient(135deg, #10b981, #34d399)',
+                        color: selectedQuizzesToMerge.length < 2 ? 'var(--text-muted)' : 'white',
+                        transition: 'all 0.2s',
+                        boxShadow: selectedQuizzesToMerge.length < 2 ? 'none' : '0 4px 20px rgba(16,185,129,0.3)'
+                      }}
+                    >
+                      Thực hiện gộp
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setIsMerging(true)}
+                      style={{
+                        padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                        border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                        background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>library_add</span>
+                      Gộp đề
+                    </button>
+                    <button
+                      onClick={handleCreateEmptyQuiz}
+                      style={{
+                        padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                        border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                        background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <PlusIcon /> Tạo đề trống
+                    </button>
+                    <button
+                      onClick={() => { setIsImporting(true); setImportTargetQuizId(null); setIsCreatingAiQuiz(false); setActiveQuizId(null); }}
+                      style={{
+                        padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                        border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                        background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>description</span>
+                      Nhập từ Word
+                    </button>
+                    <button
+                      onClick={() => { setIsCreatingAiQuiz(true); setIsImporting(false); setActiveQuizId(null); }}
+                      style={{
+                        padding: '9px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
+                        border: 'none', cursor: 'pointer',
+                        background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white',
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 4px 20px rgba(124,77,255,0.35)'
+                      }}
+                    >
+                      <Zap size={15} fill="white" /> Tạo đề bằng AI
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1651,17 +1770,42 @@ ${questionsText}`;
                     <div
                       key={quiz.id}
                       className="quiz-card"
-                      onClick={() => { setActiveQuizId(quiz.id); setIsTesting(false); setIsImporting(false); setIsCreatingAiQuiz(false); setTestMode('all'); }}
-                      style={{ background: cardGradients[gradientIdx] }}
+                      onClick={() => { 
+                        if (isMerging) {
+                          if (selectedQuizzesToMerge.includes(quiz.id)) {
+                            setSelectedQuizzesToMerge(prev => prev.filter(id => id !== quiz.id));
+                          } else {
+                            setSelectedQuizzesToMerge(prev => [...prev, quiz.id]);
+                          }
+                        } else {
+                          setActiveQuizId(quiz.id); setIsTesting(false); setIsImporting(false); setIsCreatingAiQuiz(false); setTestMode('all'); 
+                        }
+                      }}
+                      style={{ 
+                        background: cardGradients[gradientIdx],
+                        border: isMerging && selectedQuizzesToMerge.includes(quiz.id) ? '2px solid var(--accent-green)' : 'none',
+                        transform: isMerging && selectedQuizzesToMerge.includes(quiz.id) ? 'translateY(-2px)' : 'none',
+                        boxShadow: isMerging && selectedQuizzesToMerge.includes(quiz.id) ? '0 8px 24px rgba(16, 185, 129, 0.2)' : 'none',
+                        position: 'relative'
+                      }}
                     >
                       <div className="quiz-card-accent" style={{ background: cardAccentColors[gradientIdx] }} />
-                      <button
-                        className="quiz-card-delete"
-                        onClick={(e) => handleDeleteQuiz(e, quiz.id)}
-                        title="Xóa bộ đề"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      
+                      {!isMerging && (
+                        <button
+                          className="quiz-card-delete"
+                          onClick={(e) => handleDeleteQuiz(e, quiz.id)}
+                          title="Xóa bộ đề"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                      
+                      {isMerging && (
+                        <div style={{ position: 'absolute', top: '12px', right: '12px', width: '22px', height: '22px', borderRadius: '50%', border: '2px solid', borderColor: selectedQuizzesToMerge.includes(quiz.id) ? 'var(--accent-green)' : 'rgba(var(--glass-rgb),0.3)', background: selectedQuizzesToMerge.includes(quiz.id) ? 'var(--accent-green)' : 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {selectedQuizzesToMerge.includes(quiz.id) && <CheckCircle size={14} color="white" />}
+                        </div>
+                      )}
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <h3 className="quiz-card-title">{quiz.title}</h3>
                         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -2513,7 +2657,7 @@ ${questionsText}`;
                                     && !(readingPassageMap.get(item.readingGroupId)?.blankNumbers || []).some(n => String(n) === String(item.blankNumber));
 
                                   return (
-                                    <div key={`reading-inline-card-${item.id}`} style={{
+                                    <div key={`reading-inline-card-${item.id}`} id={`question-card-${item.id}`} style={{
                                       borderRadius: '10px',
                                       border: '1px solid rgba(148,163,184,0.22)',
                                       background: 'rgba(2,6,23,0.25)',
@@ -2607,7 +2751,7 @@ ${questionsText}`;
                           </div>
                         </div>
                       )}
-                      <div key={q.id} className="glass-panel" style={{ padding: '20px', marginBottom: '16px' }}>
+                      <div key={q.id} id={`question-card-${q.id}`} className="glass-panel" style={{ padding: '20px', marginBottom: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                           <div style={{ fontWeight: '500', fontSize: '16px', flex: 1 }}>
                             {!isTesting ? (
@@ -2866,8 +3010,9 @@ ${questionsText}`;
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', padding: '10px 0 30px 0', flexWrap: 'wrap' }}>
                       <button 
                         onClick={() => {
+                          const newId = uuidv4();
                           const newQuestion = {
-                            id: uuidv4(),
+                            id: newId,
                             question: '',
                             options: { A: '', B: '', C: '', D: '' },
                             answer: '',
@@ -2875,6 +3020,7 @@ ${questionsText}`;
                             userAnswer: null,
                             isStarred: false,
                           };
+                          addedQuestionIdRef.current = newId;
                           const newQuizzes = quizzes.map(q => q.id === activeQuizId ? { ...q, questions: [...q.questions, newQuestion] } : q);
                           setQuizzes(newQuizzes);
                         }}
