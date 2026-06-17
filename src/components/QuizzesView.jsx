@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useFirestore } from '../hooks/useFirestore';
-import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File, Volume2, Save } from 'lucide-react';
+import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File, Volume2, Save, Copy } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportQuizToWord } from '../utils/exportWord';
 import Tesseract from 'tesseract.js';
@@ -134,6 +134,7 @@ export default function QuizzesView() {
 
   const [isMerging, setIsMerging] = useState(false);
   const [selectedQuizzesToMerge, setSelectedQuizzesToMerge] = useState([]);
+  const [copiedQuestionId, setCopiedQuestionId] = useState(null);
 
   const handleMergeQuizzes = () => {
     if (selectedQuizzesToMerge.length < 2) return;
@@ -1502,6 +1503,37 @@ ${optionsText}`;
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
   };
 
+  const handleCopyQuestionToClipboard = (q, index) => {
+    const stripHtml = (html) => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      return doc.body.textContent || "";
+    };
+
+    const optionsText = Object.keys(q.options)
+      .sort()
+      .filter(key => q.options[key])
+      .map(key => `${key}. ${q.options[key]}`)
+      .join('\n');
+
+    let textToCopy = `Câu ${index + 1}: ${q.question}\n${optionsText}`;
+    if (q.answer) {
+      textToCopy += `\nĐáp án: ${q.answer}`;
+    }
+    if (q.explanation) {
+      const cleanExpl = q.explanation.includes('<') && q.explanation.includes('>') 
+        ? stripHtml(q.explanation) 
+        : q.explanation;
+      textToCopy += `\nGiải thích: ${cleanExpl}`;
+    }
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopiedQuestionId(q.id);
+      setTimeout(() => setCopiedQuestionId(null), 2000);
+    }).catch(err => {
+      console.error('Lỗi sao chép: ', err);
+    });
+  };
+
   const handleGenerateTakeaways = async () => {
     if (!activeQuiz || activeQuiz.questions.length === 0) {
       alert("Đề thi chưa có câu hỏi nào để tổng hợp.");
@@ -2672,16 +2704,29 @@ ${questionsText}`;
                                             </span>
                                           )}
                                         </div>
-                                        <button
-                                          onClick={() => {
-                                            setSelectedReadingQuestionId(item.id);
-                                            handleToggleBookmark(item.id);
-                                          }}
-                                          title={item.isStarred ? 'Bỏ đánh dấu' : 'Đánh dấu câu hỏi này'}
-                                          style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: item.isStarred ? '#fbbf24' : 'var(--text-muted)' }}
-                                        >
-                                          <Star size={16} fill={item.isStarred ? '#fbbf24' : 'none'} color={item.isStarred ? '#fbbf24' : 'currentColor'} />
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
+                                          <button
+                                            onClick={() => handleCopyQuestionToClipboard(item, itemIndex)}
+                                            title={copiedQuestionId === item.id ? "Đã sao chép!" : "Sao chép câu hỏi này"}
+                                            style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: copiedQuestionId === item.id ? 'var(--accent-green)' : 'var(--text-muted)', display: 'flex' }}
+                                          >
+                                            {copiedQuestionId === item.id ? (
+                                              <CheckCircle size={15} color="var(--accent-green)" />
+                                            ) : (
+                                              <Copy size={15} />
+                                            )}
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setSelectedReadingQuestionId(item.id);
+                                              handleToggleBookmark(item.id);
+                                            }}
+                                            title={item.isStarred ? 'Bỏ đánh dấu' : 'Đánh dấu câu hỏi này'}
+                                            style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: item.isStarred ? '#fbbf24' : 'var(--text-muted)', display: 'flex' }}
+                                          >
+                                            <Star size={16} fill={item.isStarred ? '#fbbf24' : 'none'} color={item.isStarred ? '#fbbf24' : 'currentColor'} />
+                                          </button>
+                                        </div>
                                       </div>
 
                                       {blankNotFoundInPassage && (
@@ -2788,6 +2833,17 @@ ${questionsText}`;
                                 🔎
                               </button>
                             )}
+                            <button 
+                              onClick={() => handleCopyQuestionToClipboard(q, i)}
+                              title={copiedQuestionId === q.id ? "Đã sao chép!" : "Sao chép câu hỏi này"}
+                              style={{ padding: '8px', background: copiedQuestionId === q.id ? 'rgba(16, 185, 129, 0.1)' : 'transparent', border: 'none', cursor: 'pointer', color: copiedQuestionId === q.id ? 'var(--accent-green)' : 'var(--text-muted)', borderRadius: '8px', transition: 'all 0.2s', display: 'flex' }}
+                            >
+                              {copiedQuestionId === q.id ? (
+                                <CheckCircle size={18} color="var(--accent-green)" />
+                              ) : (
+                                <Copy size={18} />
+                              )}
+                            </button>
                             <button 
                               onClick={() => handleToggleBookmark(q.id)}
                               title={q.isStarred ? "Bỏ đánh dấu" : "Đánh dấu câu hỏi này"}
