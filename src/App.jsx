@@ -214,6 +214,14 @@ function AppContent() {
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [player, setPlayer] = useState(null);
 
+  // Automatically switch to quizzes tab if ?share=... query parameter is present
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('share')) {
+      setActiveTab('quizzes');
+    }
+  }, []);
+
   const studyStats = useStudyStats();
   const pomodoroState = usePomodoro({ onSessionComplete: studyStats.addPomodoro });
 
