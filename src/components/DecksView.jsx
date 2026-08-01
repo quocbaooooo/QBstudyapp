@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { Trash2, Play, Sparkles, Loader, Wand2, CheckCircle, AlertCircle, X } from 'lucide-react';
@@ -137,6 +137,7 @@ QUY TẮC:
             wordType: item.wordType || '',
             example: item.example || '',
             synonyms: item.synonyms || '',
+            image: '',
           };
           allCards.push(card);
         }
@@ -361,6 +362,7 @@ function ImportModal({ onImport, onClose }) {
           wordType: parts[3] || '',
           example: parts[4] || '',
           synonyms: parts[5] || '',
+          image: '',
         });
       }
     });
@@ -482,11 +484,116 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
   const [expanded, setExpanded] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Image search/upload states
+  const [showImageSearch, setShowImageSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(card.front || '');
+  const [imageResults, setImageResults] = useState([]);
+  const [isSearchingImages, setIsSearchingImages] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [startIndex, setStartIndex] = useState(0);
+
   const [apiKey] = useLocalStorage('gemini_api_key', '');
   const [apiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
   const [aiProvider] = useLocalStorage('ai_provider', 'gemini');
   const [openaiKey] = useLocalStorage('openai_api_key', '');
   const [openaiModel] = useLocalStorage('openai_api_model', 'gpt-4o-mini');
+
+  // Sync searchQuery with card.front when it changes
+  useEffect(() => {
+    if (card.front) {
+      setSearchQuery(card.front);
+    }
+  }, [card.front]);
+
+  // Auto search when panel opens
+  useEffect(() => {
+    if (showImageSearch && card.front && imageResults.length === 0) {
+      handleSearch(card.front);
+    }
+  }, [showImageSearch, card.front]);
+
+  // Openverse search function
+  const handleSearch = async (queryParam) => {
+    const query = queryParam || searchQuery;
+    if (!query.trim()) return;
+    setIsSearchingImages(true);
+    setSearchError('');
+    setStartIndex(0);
+    try {
+      const response = await fetch(`https://api.openverse.org/v1/images/?q=${encodeURIComponent(query)}&page_size=20`);
+      if (!response.ok) {
+        throw new Error('Không thể kết nối đến dịch vụ tìm kiếm hình ảnh.');
+      }
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        setImageResults(data.results.map(r => ({
+          url: r.url,
+          thumbnail: r.thumbnail || r.url,
+          title: r.title || ''
+        })));
+      } else {
+        setImageResults([]);
+        setSearchError('Không tìm thấy hình ảnh nào.');
+      }
+    } catch (err) {
+      console.error(err);
+      setSearchError('Đã xảy ra lỗi khi tìm kiếm hình ảnh.');
+    } finally {
+      setIsSearchingImages(false);
+    }
+  };
+
+  // Image compression helper
+  const compressImage = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (e) => {
+        const img = new Image();
+        img.src = e.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          const maxDim = 300;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          resolve(dataUrl);
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      const compressedBase64 = await compressImage(file);
+      onUpdate(card.id, 'image', compressedBase64);
+      setShowImageSearch(false);
+    } catch (err) {
+      console.error(err);
+      alert('Không thể tải lên hoặc xử lý hình ảnh này.');
+    }
+  };
 
   const handleAiAnalyze = async () => {
     if (!card.front || isGenerating) return;
@@ -588,9 +695,9 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
           {index + 1}
         </div>
 
-        {/* Term + Definition */}
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
-          <div>
+        {/* Term + Definition + Image Button */}
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-4 min-w-0">
+          <div className="md:col-span-5">
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Thuật ngữ</label>
             <div className="relative group/term">
               <input
@@ -602,6 +709,7 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
                 style={{ background: 'rgba(0,0,0,0.25)' }}
               />
               <button 
+                type="button"
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-500 hover:text-primary hover:bg-primary/10 transition-all disabled:opacity-30 flex items-center justify-center"
                 onClick={handleAiAnalyze}
                 disabled={!card.front || isGenerating}
@@ -611,7 +719,8 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
               </button>
             </div>
           </div>
-          <div>
+          
+          <div className="md:col-span-5">
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Định nghĩa</label>
             <input
               type="text"
@@ -622,27 +731,59 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
               style={{ background: 'rgba(0,0,0,0.25)' }}
             />
           </div>
+
+          <div className="md:col-span-2">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Hình ảnh</label>
+            {card.image ? (
+              <div 
+                onClick={() => setShowImageSearch(!showImageSearch)}
+                className="w-full h-[38px] rounded-lg overflow-hidden border border-white/10 relative group/img-preview cursor-pointer"
+              >
+                <img src={card.image} alt="Preview" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onUpdate(card.id, 'image', ''); }}
+                  className="absolute top-0.5 right-0.5 bg-black/70 hover:bg-red-500 text-white rounded p-0.5 transition-all opacity-0 group-hover/img-preview:opacity-100 flex items-center justify-center"
+                  title="Xóa hình ảnh"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowImageSearch(!showImageSearch)}
+                className="w-full h-[38px] rounded-lg border border-dashed border-white/10 hover:border-white/20 hover:bg-white/5 transition-all text-xs text-slate-400 flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">image</span>
+                Hình ảnh
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Action buttons */}
         <div className="flex flex-col items-center gap-1 shrink-0">
           <button 
+            type="button"
             className={`p-1.5 rounded-lg transition-all ${card.isStarred ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10' : 'text-slate-500 hover:text-yellow-400 hover:bg-yellow-400/10'}`} 
             onClick={() => onUpdate(card.id, 'isStarred', !card.isStarred)} 
             title={card.isStarred ? "Bỏ gắn sao" : "Gắn sao"}
           >
             <span className="material-symbols-outlined text-[18px]" style={card.isStarred ? { fontVariationSettings: "'FILL' 1" } : {}}>star</span>
           </button>
-          <button className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all" onClick={() => onDelete(card.id)} title="Xóa">
+          <button type="button" className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all" onClick={() => onDelete(card.id)} title="Xóa">
             <Trash2 size={15} />
           </button>
           <button
+            type="button"
             className="p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 transition-all disabled:opacity-20"
             onClick={() => onMoveUp(card.id)} disabled={isFirst} title="Di chuyển lên"
           >
             <span className="material-symbols-outlined text-[16px]">expand_less</span>
           </button>
           <button
+            type="button"
             className="p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 transition-all disabled:opacity-20"
             onClick={() => onMoveDown(card.id)} disabled={isLast} title="Di chuyển xuống"
           >
@@ -650,6 +791,124 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
           </button>
         </div>
       </div>
+
+      {/* Image search and upload drawer panel */}
+      {showImageSearch && (
+        <div className="px-4 py-4 border-t border-white/5" style={{ background: 'rgba(0,0,0,0.15)' }}>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Tìm kiếm hình ảnh..."
+                className="w-full pl-9 pr-3 py-1.5 rounded-lg text-sm bg-black/35 text-white border border-white/10 outline-none focus:border-primary/40"
+                onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+              />
+              <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-[18px]">search</span>
+            </div>
+            
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSearch()}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#7c4dff] hover:bg-[#7c4dff]/90 text-white transition-all"
+                disabled={isSearchingImages}
+              >
+                Tìm
+              </button>
+              
+              <span className="text-xs text-slate-500">hoặc</span>
+
+              {/* Upload button */}
+              <label className="px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all cursor-pointer flex items-center gap-1.5 text-slate-300">
+                <span className="material-symbols-outlined text-[16px]">upload</span>
+                Tải lên
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageUpload}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Search Results Gallery */}
+          {isSearchingImages ? (
+            <div className="flex justify-center py-6">
+              <Loader size={20} className="animate-spin text-primary" />
+            </div>
+          ) : searchError ? (
+            <div className="text-xs text-red-400 text-center py-4">{searchError}</div>
+          ) : imageResults.length > 0 ? (
+            <div className="relative flex items-center px-6">
+              {/* Left Arrow */}
+              {startIndex > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setStartIndex(Math.max(0, startIndex - 4))}
+                  className="absolute left-0 z-10 p-1 rounded-full bg-black/80 hover:bg-black text-white hover:scale-105 transition-all flex items-center justify-center"
+                >
+                  <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+                </button>
+              )}
+              
+              {/* Gallery Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full overflow-hidden">
+                {imageResults.slice(startIndex, startIndex + 4).map((img, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => onUpdate(card.id, 'image', img.url)}
+                    className={`aspect-[4/3] rounded-lg overflow-hidden border cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg relative group/gallery-item ${
+                      card.image === img.url ? 'border-primary shadow-primary/20 ring-1 ring-primary' : 'border-white/5 hover:border-white/20'
+                    }`}
+                  >
+                    <img src={img.thumbnail || img.url} alt={img.title} className="w-full h-full object-cover" />
+                    {card.image === img.url && (
+                      <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-white text-[20px]">check_circle</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Right Arrow */}
+              {startIndex + 4 < imageResults.length && (
+                <button
+                  type="button"
+                  onClick={() => setStartIndex(startIndex + 4)}
+                  className="absolute right-0 z-10 p-1 rounded-full bg-black/80 hover:bg-black text-white hover:scale-105 transition-all flex items-center justify-center"
+                >
+                  <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500 text-center py-4">Nhập từ khóa và bấm Tìm để tìm kiếm hình ảnh.</div>
+          )}
+
+          {/* Báo cáo hình ảnh link & close button */}
+          <div className="flex justify-between items-center mt-4 pt-2 border-t border-white/5">
+            <button 
+              type="button"
+              onClick={() => alert("Cảm ơn bạn đã báo cáo hình ảnh! Chúng tôi sẽ xem xét hình ảnh này.")}
+              className="text-[11px] text-slate-500 hover:text-slate-400 transition-colors"
+            >
+              Báo cáo hình ảnh
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowImageSearch(false)}
+              className="text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Expandable extra fields */}
       {expanded && (
@@ -703,6 +962,7 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
 
       {/* Expand toggle */}
       <button
+        type="button"
         className="w-full py-1.5 text-center text-xs text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all flex items-center justify-center gap-1 border-t border-white/5"
         onClick={() => setExpanded(!expanded)}
       >
@@ -723,7 +983,8 @@ const DEMO_DECK = {
       pronunciation: '',
       wordType: 'Hướng dẫn',
       example: 'Trong chế độ luyện tập, bạn nhấn vào thẻ để lật mặt, sau đó tự đánh giá mức độ nhớ (Chưa nhớ, Tạm nhớ, Đã thuộc).',
-      synonyms: ''
+      synonyms: '',
+      image: 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=300&auto=format&fit=crop&q=60'
     },
     {
       id: uuidv4(),
@@ -732,7 +993,8 @@ const DEMO_DECK = {
       pronunciation: '',
       wordType: 'Hướng dẫn',
       example: 'Bạn chỉ cần nhập danh sách các từ tiếng Anh (ngăn cách bằng dấu phẩy). AI sẽ tự động điền Nghĩa, Phiên âm, Ví dụ và Loại từ!',
-      synonyms: ''
+      synonyms: '',
+      image: ''
     },
     {
       id: uuidv4(),
@@ -741,7 +1003,8 @@ const DEMO_DECK = {
       pronunciation: '',
       wordType: 'Hướng dẫn',
       example: 'Ở bất kỳ đâu trong app (Sổ tay, Trắc nghiệm), bạn chỉ cần bôi đen 1 từ tiếng Anh để AI dịch, sau đó bấm nút "Lưu thẻ" trên popup dịch là xong.',
-      synonyms: ''
+      synonyms: '',
+      image: ''
     },
     {
       id: uuidv4(),
@@ -750,7 +1013,8 @@ const DEMO_DECK = {
       pronunciation: '',
       wordType: 'Hướng dẫn',
       example: 'Copy các cột (Từ vựng - Nghĩa) từ Excel/Word và dán vào hộp thoại Nhập. Ứng dụng sẽ tự động tách chúng thành các thẻ.',
-      synonyms: ''
+      synonyms: '',
+      image: ''
     }
   ],
   createdAt: new Date().toISOString(),
@@ -783,7 +1047,7 @@ export default function DecksView() {
   };
 
   const handleAddCard = () => {
-    const newCard = { id: uuidv4(), front: '', back: '', pronunciation: '', wordType: '', example: '', synonyms: '' };
+    const newCard = { id: uuidv4(), front: '', back: '', pronunciation: '', wordType: '', example: '', synonyms: '', image: '' };
     setDecks(decks.map(d =>
       d.id === activeDeckId ? { ...d, cards: [...d.cards, newCard] } : d
     ));

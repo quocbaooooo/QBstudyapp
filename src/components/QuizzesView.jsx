@@ -816,6 +816,7 @@ export default function QuizzesView() {
         pronunciation: enrichedData?.pronunciation || '',
         example: enrichedData?.example || '',
         synonyms: enrichedData?.synonyms ? enrichedData.synonyms.join('; ') : '',
+        image: '',
         createdAt: new Date().toISOString(),
         isAIGenerated: !!enrichedData
       };

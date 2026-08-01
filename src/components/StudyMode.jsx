@@ -279,6 +279,13 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
               </div>
 
               <div className="text-slate-400 text-sm mb-2 uppercase tracking-wider font-semibold">Nghĩa của từ</div>
+              {currentCard.image && (
+                <img 
+                  src={currentCard.image} 
+                  alt="clue" 
+                  className="max-w-full max-h-36 object-contain rounded-lg mb-4" 
+                />
+              )}
               <div className="text-2xl sm:text-3xl font-bold text-white mt-2 mb-2">{currentCard.back}</div>
               {currentCard.synonyms && (
                 <div className="text-sm text-slate-400 text-center">{currentCard.synonyms}</div>
@@ -392,6 +399,13 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
                   </button>
                 </div>
 
+                {currentCard.image && (
+                  <img 
+                    src={currentCard.image} 
+                    alt="card visual" 
+                    className="max-w-full max-h-36 object-contain rounded-lg mb-4" 
+                  />
+                )}
                 <div className="text-2xl sm:text-3xl font-bold text-white mb-3" style={{ whiteSpace: 'pre-wrap', textAlign: 'center' }}>
                   {currentCard.front}
                 </div>
@@ -425,6 +439,13 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
                   </button>
                 </div>
 
+                {currentCard.image && (
+                  <img 
+                    src={currentCard.image} 
+                    alt="card visual" 
+                    className="max-w-full max-h-36 object-contain rounded-lg mb-4" 
+                  />
+                )}
                 {/* Definition */}
                 <div className="text-2xl sm:text-3xl font-bold text-white" style={{ textAlign: 'center' }}>
                   {currentCard.back}
@@ -479,6 +500,13 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
                 </button>
               </div>
 
+              {currentCard.image && (
+                <img 
+                  src={currentCard.image} 
+                  alt="card visual" 
+                  className="max-w-full max-h-32 object-contain rounded-lg mb-4" 
+                />
+              )}
               <div className="text-2xl sm:text-3xl font-bold text-white mt-4 mb-2">{currentCard.front}</div>
               {(currentCard.wordType || currentCard.pronunciation) && (
                 <div className="flex items-center justify-center gap-2 text-slate-400 text-sm italic">
