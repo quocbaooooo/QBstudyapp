@@ -719,6 +719,7 @@ export default function QuizzesView() {
         "pronunciation": "phiên âm IPA",
         "wordType": "n./v./adj./adv./phr.",
         "example": "1 câu ví dụ tiếng Anh tự nhiên",
+        "exampleTranslation": "dịch nghĩa tiếng Việt của câu ví dụ trên",
         "synonyms": "2-3 từ đồng nghĩa, cách nhau bởi dấu phẩy"
       }`;
 
@@ -777,6 +778,7 @@ export default function QuizzesView() {
         pronunciation: parsed.pronunciation || '',
         wordType: parsed.wordType || '',
         example: parsed.example || '',
+        exampleTranslation: parsed.exampleTranslation || '',
         synonyms: parsed.synonyms ? parsed.synonyms.split(',').map(s => s.trim()) : []
       });
       
@@ -815,6 +817,7 @@ export default function QuizzesView() {
         wordType: enrichedData?.wordType || '', // Double check which one is used
         pronunciation: enrichedData?.pronunciation || '',
         example: enrichedData?.example || '',
+        exampleTranslation: enrichedData?.exampleTranslation || '',
         synonyms: enrichedData?.synonyms ? enrichedData.synonyms.join('; ') : '',
         image: '',
         createdAt: new Date().toISOString(),

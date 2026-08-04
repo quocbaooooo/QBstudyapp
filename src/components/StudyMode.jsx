@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 const shuffleArray = (source = []) => {
@@ -83,6 +83,92 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
       );
       onUpdateDeck({ ...deck, cards: updatedCards });
     }
+  };
+
+  const dragStart = useRef({ x: 0, y: 0 });
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const hasDragged = useRef(false);
+
+  const startDrag = (clientX, clientY) => {
+    hasDragged.current = false;
+    dragStart.current = { x: clientX, y: clientY };
+    setIsDragging(true);
+  };
+
+  const moveDrag = (clientX, clientY) => {
+    if (!isDragging) return;
+    const dx = clientX - dragStart.current.x;
+    if (Math.abs(dx) > 10) {
+      hasDragged.current = true;
+    }
+    setSwipeOffset(dx);
+  };
+
+  const endDrag = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+
+    const threshold = 100; // pixels
+    if (swipeOffset > threshold) {
+      // Swipe Right -> Prev card
+      if (currentIndex > 0) {
+        handlePrev();
+      }
+    } else if (swipeOffset < -threshold) {
+      // Swipe Left -> Next card
+      if (currentIndex < totalCards - 1) {
+        handleNext();
+      }
+    }
+    setSwipeOffset(0);
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length !== 1) return;
+    startDrag(e.touches[0].clientX, e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - dragStart.current.x;
+    const dy = e.touches[0].clientY - dragStart.current.y;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      if (e.cancelable) e.preventDefault();
+      moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    endDrag();
+  };
+
+  const handleMouseDown = (e) => {
+    if (e.button !== 0) return; // Only left click
+    startDrag(e.clientX, e.clientY);
+  };
+
+  const handleMouseMove = (e) => {
+    moveDrag(e.clientX, e.clientY);
+  };
+
+  const handleMouseUp = () => {
+    endDrag();
+  };
+
+  const handleMouseLeave = () => {
+    if (isDragging) {
+      endDrag();
+    }
+  };
+
+  const handleCardClick = (e) => {
+    if (hasDragged.current) {
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
+    handleFlip();
   };
 
   // Keyboard shortcuts
@@ -356,16 +442,21 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
                     </div>
                   ) : null}
                   {currentCard.example && (
-                    <div className="mt-1 flex items-start gap-2">
-                      <div><b>Ví dụ:</b> <i>{currentCard.example}</i></div>
-                      <button
-                        type="button"
-                        className="p-1 -mt-1 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center shrink-0 transition-all"
-                        onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
-                        title="Đọc ví dụ"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">volume_up</span>
-                      </button>
+                    <div className="mt-1 flex flex-col gap-1">
+                      <div className="flex items-start gap-2">
+                        <div><b>Ví dụ:</b> <i>{currentCard.example}</i></div>
+                        <button
+                          type="button"
+                          className="p-1 -mt-1 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center shrink-0 transition-all"
+                          onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
+                          title="Đọc ví dụ"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">volume_up</span>
+                        </button>
+                      </div>
+                      {currentCard.exampleTranslation && (
+                        <div className="text-xs text-slate-400">({currentCard.exampleTranslation})</div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -375,8 +466,24 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
         ) : studyType === 'flip' ? (
           <div
             className={`flip-card ${isFlipped ? 'flipped' : ''}`}
-            onClick={handleFlip}
-            style={{ cursor: 'pointer', maxWidth: '600px', width: '100%', height: 'min(400px, 55vh)' }}
+            onClick={handleCardClick}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+            style={{ 
+              cursor: isDragging ? 'grabbing' : 'grab', 
+              maxWidth: '600px', 
+              width: '100%', 
+              height: 'min(400px, 55vh)',
+              transform: swipeOffset !== 0 ? `translateX(${swipeOffset}px) rotate(${swipeOffset * 0.05}deg)` : '',
+              transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease',
+              opacity: swipeOffset !== 0 ? Math.max(0.4, 1 - Math.abs(swipeOffset) / 350) : 1,
+              touchAction: 'pan-y'
+            }}
           >
             <div className="flip-card-inner">
               {/* FRONT */}
@@ -458,18 +565,25 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
 
                 {/* Example */}
                 {currentCard.example && (
-                  <div className="flex items-center justify-center gap-2 mt-1">
-                    <div className="text-sm italic text-secondary/80 text-center">
-                      {currentCard.example}
+                  <div className="flex flex-col items-center gap-1 mt-1">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="text-sm italic text-secondary/80 text-center">
+                        {currentCard.example}
+                      </div>
+                      <button
+                        type="button"
+                        className="p-1.5 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
+                        onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
+                        title="Đọc ví dụ"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">volume_up</span>
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="p-1.5 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
-                      onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
-                      title="Đọc ví dụ"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">volume_up</span>
-                    </button>
+                    {currentCard.exampleTranslation && (
+                      <div className="text-xs text-slate-400 text-center">
+                        ({currentCard.exampleTranslation})
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -569,16 +683,21 @@ export default function StudyMode({ deck, onClose, onUpdateDeck, filterStarred =
                   <div className="font-bold mb-1">{mcqSelected === currentCard.id ? 'Chính xác!' : 'Chưa chính xác! Đáp án đúng là: ' + currentCard.back}</div>
                   {currentCard.synonyms && <div className="mt-1"><b>Đồng nghĩa:</b> {currentCard.synonyms}</div>}
                   {currentCard.example && (
-                    <div className="mt-1 flex items-start gap-2">
-                      <div><b>Ví dụ:</b> <i>{currentCard.example}</i></div>
-                      <button
-                        type="button"
-                        className="p-1 -mt-1 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center shrink-0 transition-all"
-                        onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
-                        title="Đọc ví dụ"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">volume_up</span>
-                      </button>
+                    <div className="mt-1 flex flex-col gap-1">
+                      <div className="flex items-start gap-2">
+                        <div><b>Ví dụ:</b> <i>{currentCard.example}</i></div>
+                        <button
+                          type="button"
+                          className="p-1 -mt-1 rounded-full text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 flex items-center justify-center shrink-0 transition-all"
+                          onClick={(e) => { e.stopPropagation(); speak(currentCard.example); }}
+                          title="Đọc ví dụ"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">volume_up</span>
+                        </button>
+                      </div>
+                      {currentCard.exampleTranslation && (
+                        <div className="text-xs text-slate-400">({currentCard.exampleTranslation})</div>
+                      )}
                     </div>
                   )}
                 </div>

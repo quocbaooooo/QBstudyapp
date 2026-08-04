@@ -45,6 +45,7 @@ TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON ARRAY sau (không markdown, không backtic
     "pronunciation": "phiên âm IPA, ví dụ: /həˈloʊ/",
     "wordType": "loại từ viết tắt: n. (danh từ), v. (động từ), adj. (tính từ), adv. (trạng từ), prep. (giới từ), conj. (liên từ), phr. (cụm từ)",
     "example": "1 câu ví dụ tiếng Anh sử dụng từ này (tự nhiên, dễ hiểu)",
+    "exampleTranslation": "dịch nghĩa tiếng Việt của câu ví dụ trên",
     "synonyms": "2-3 từ đồng nghĩa tiếng Anh, cách nhau bởi dấu phẩy (nếu có)"
   }
 ]
@@ -136,6 +137,7 @@ QUY TẮC:
             pronunciation: item.pronunciation || '',
             wordType: item.wordType || '',
             example: item.example || '',
+            exampleTranslation: item.exampleTranslation || '',
             synonyms: item.synonyms || '',
             image: '',
           };
@@ -361,7 +363,8 @@ function ImportModal({ onImport, onClose }) {
           pronunciation: parts[2] || '',
           wordType: parts[3] || '',
           example: parts[4] || '',
-          synonyms: parts[5] || '',
+          exampleTranslation: parts[5] || '',
+          synonyms: parts[6] || '',
           image: '',
         });
       }
@@ -613,6 +616,7 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
         "pronunciation": "phiên âm IPA",
         "wordType": "n./v./adj./adv./phr.",
         "example": "1 câu ví dụ tiếng Anh tự nhiên",
+        "exampleTranslation": "dịch nghĩa tiếng Việt của câu ví dụ trên",
         "synonyms": "2-3 từ đồng nghĩa, cách nhau bởi dấu phẩy"
       }`;
 
@@ -673,6 +677,7 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
       if (parsed.pronunciation) updates.pronunciation = parsed.pronunciation;
       if (parsed.wordType) updates.wordType = parsed.wordType;
       if (parsed.example) updates.example = parsed.example;
+      if (parsed.exampleTranslation) updates.exampleTranslation = parsed.exampleTranslation;
       if (parsed.synonyms) updates.synonyms = parsed.synonyms;
       
       onUpdateFields(card.id, updates);
@@ -947,6 +952,17 @@ function CardEditor({ card, index, onUpdate, onUpdateFields, onDelete, onMoveUp,
             />
           </div>
           <div>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">Dịch nghĩa ví dụ <span className="text-slate-600 normal-case">(Tùy chọn)</span></label>
+            <input
+              type="text"
+              value={card.exampleTranslation || ''}
+              onChange={e => onUpdate(card.id, 'exampleTranslation', e.target.value)}
+              placeholder="Nhập bản dịch của câu ví dụ"
+              className="w-full px-3 py-1.5 rounded-lg text-sm text-[color:var(--text-main)] placeholder-slate-500 outline-none border border-[color:var(--border-color)] focus:border-primary/30 transition-colors"
+              style={{ background: 'rgba(0,0,0,0.2)' }}
+            />
+          </div>
+          <div>
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 block">Từ đồng nghĩa <span className="text-slate-600 normal-case">(Tùy chọn)</span></label>
             <input
               type="text"
@@ -1047,7 +1063,7 @@ export default function DecksView() {
   };
 
   const handleAddCard = () => {
-    const newCard = { id: uuidv4(), front: '', back: '', pronunciation: '', wordType: '', example: '', synonyms: '', image: '' };
+    const newCard = { id: uuidv4(), front: '', back: '', pronunciation: '', wordType: '', example: '', exampleTranslation: '', synonyms: '', image: '' };
     setDecks(decks.map(d =>
       d.id === activeDeckId ? { ...d, cards: [...d.cards, newCard] } : d
     ));
