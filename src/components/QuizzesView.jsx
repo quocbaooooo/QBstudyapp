@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useFirestore } from '../hooks/useFirestore';
 import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File, Volume2, Save, Copy, Folder, FolderPlus, Edit3, Plus, Share2, Headphones, Music, Eye, EyeOff } from 'lucide-react';
@@ -527,12 +528,74 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   // Translation popup state
   const [translationPopup, setTranslationPopup] = useState(null); // { x, y, text, questionId, field, selStart, selEnd }
   const [translatedText, setTranslatedText] = useState('');
+  const [takeawayAddedSuccess, setTakeawayAddedSuccess] = useState(false);
+  const [quickNoteInput, setQuickNoteInput] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [isSavingToDeck, setIsSavingToDeck] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isAiEnrichingPopup, setIsAiEnrichingPopup] = useState(false);
   const [enrichedData, setEnrichedData] = useState(null); // { pronunciation, wordType, example, synonyms }
   const translationTimeoutRef = useRef(null);
+  const lastPopupTimeRef = useRef(0);
+  const [cheatSheetViewMode, setCheatSheetViewMode] = useState('grid'); // 'grid' | 'editor'
+  const [copiedBlockIdx, setCopiedBlockIdx] = useState(null);
+
+  const parseTakeawaysToBlocks = useCallback((raw = '') => {
+    if (!raw || !raw.trim()) return [];
+
+    let items = [];
+    if (/<[a-z][\s\S]*>/i.test(raw)) {
+      const matches = raw.match(/<(p|li|div)[\s\S]*?>([\s\S]*?)<\/\1>/gi);
+      if (matches && matches.length > 0) {
+        items = matches.map(m => m.replace(/^<(p|li|div)[\s\S]*?>|<\/(p|li|div)>$/gi, '').trim());
+      } else {
+        items = raw.split(/<br\s*\/?>|\n/).map(s => s.trim());
+      }
+    } else {
+      items = raw.split('\n').map(s => s.trim());
+    }
+
+    return items
+      .filter(item => item && item.replace(/<[^>]+>/g, '').trim().length > 0)
+      .map((item, idx) => {
+        const textContent = item.replace(/<[^>]+>/g, '').replace(/^[•\-\*\s]+/, '').trim();
+        return {
+          id: idx,
+          rawHtml: item,
+          text: textContent
+        };
+      });
+  }, []);
+
+  const handleDeleteTakeawayBlock = (idxToDelete) => {
+    if (!activeQuizId || !activeQuiz) return;
+    const blocks = parseTakeawaysToBlocks(activeQuiz.keyTakeaways || '');
+    const remaining = blocks.filter((_, idx) => idx !== idxToDelete);
+    const newContent = remaining.map(b => `<p>${b.rawHtml}</p>`).join('');
+    setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: newContent, updatedAt: Date.now() } : q));
+  };
+
+  const handleAddToTakeaways = (textToAdd) => {
+    if (!activeQuizId || !textToAdd) return;
+    const cleanText = textToAdd.trim();
+    if (!cleanText) return;
+
+    const existing = activeQuiz?.keyTakeaways || '';
+    let newContent = '';
+
+    if (/<[a-z][\s\S]*>/i.test(existing)) {
+      newContent = `${existing}<p>• <strong>${cleanText}</strong></p>`;
+    } else if (existing.trim()) {
+      newContent = `${existing}\n• ${cleanText}`;
+    } else {
+      newContent = `<p>• <strong>${cleanText}</strong></p>`;
+    }
+
+    setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: newContent, updatedAt: Date.now() } : q));
+    setIsTakeawaysCollapsed(false);
+    setTakeawayAddedSuccess(true);
+    setTimeout(() => setTakeawayAddedSuccess(false), 2200);
+  };
 
   const activeQuiz = quizzes.find(q => q.id === activeQuizId);
 
@@ -642,8 +705,87 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     return formattedVisible;
   };
 
+  // Global text selection listener for active quiz view (handles inputs, textareas, and body text)
+  useEffect(() => {
+    if (!activeQuizId || enviDictEnabled === false) return;
+
+    const handleGlobalSelection = (e) => {
+      // Don't trigger if click/key was inside translation-popup
+      if (e.target && e.target.closest && e.target.closest('.translation-popup')) return;
+
+      if (translationTimeoutRef.current) clearTimeout(translationTimeoutRef.current);
+
+      translationTimeoutRef.current = setTimeout(() => {
+        let selectedText = '';
+        let rect = null;
+        let selStart = 0, selEnd = 0;
+
+        const target = document.activeElement || e.target;
+        const isFormElement = target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT');
+
+        if (isFormElement) {
+          selStart = target.selectionStart;
+          selEnd = target.selectionEnd;
+          if (selStart !== undefined && selEnd !== undefined && selStart !== selEnd) {
+            selectedText = target.value.substring(selStart, selEnd).trim();
+            rect = target.getBoundingClientRect();
+          }
+        }
+
+        if (!selectedText) {
+          const selection = window.getSelection();
+          selectedText = selection?.toString()?.trim() || '';
+          if (selectedText && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const rangeRect = range.getBoundingClientRect();
+            if (rangeRect.width > 0 || rangeRect.height > 0) {
+              rect = rangeRect;
+            }
+          }
+        }
+
+        if (selectedText && selectedText.length > 0 && selectedText.length < 300 && rect) {
+          let popupX = rect.left + rect.width / 2;
+          popupX = Math.max(160, Math.min(window.innerWidth - 160, popupX));
+
+          let popupY = 0;
+          let isAbove = true;
+
+          if (rect.top > 240) {
+            popupY = Math.max(10, rect.top - 10);
+            isAbove = true;
+          } else {
+            popupY = Math.min(window.innerHeight - 180, rect.bottom + 10);
+            isAbove = false;
+          }
+
+          lastPopupTimeRef.current = Date.now();
+          setTranslationPopup({
+            x: popupX,
+            y: popupY,
+            isAbove,
+            text: selectedText,
+            questionId: target.getAttribute ? target.getAttribute('data-question-id') : null,
+            field: target.getAttribute ? target.getAttribute('data-field') : null,
+            selStart,
+            selEnd
+          });
+          setTranslatedText('');
+          setEnrichedData(null);
+        }
+      }, 80);
+    };
+
+    window.addEventListener('mouseup', handleGlobalSelection);
+    window.addEventListener('keyup', handleGlobalSelection);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalSelection);
+      window.removeEventListener('keyup', handleGlobalSelection);
+    };
+  }, [activeQuizId, enviDictEnabled]);
+
   const handleTextSelection = useCallback((e, questionId = null, field = null) => {
-    if (enviDictEnabled) return;
+    if (enviDictEnabled === false) return;
     e.stopPropagation();
     if (translationTimeoutRef.current) clearTimeout(translationTimeoutRef.current);
     translationTimeoutRef.current = setTimeout(() => {
@@ -652,8 +794,8 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       let selStart = 0, selEnd = 0;
 
       const target = e.target;
-      const qId = questionId || target.getAttribute('data-question-id') || null;
-      const fld = field || target.getAttribute('data-field') || null;
+      const qId = questionId || (target.getAttribute ? target.getAttribute('data-question-id') : null);
+      const fld = field || (target.getAttribute ? target.getAttribute('data-field') : null);
 
       if (target.closest && target.closest('.translation-popup')) return;
 
@@ -666,7 +808,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
           selectedText = target.value.substring(selStart, selEnd).trim();
           const rect = target.getBoundingClientRect();
           popupX = rect.left + rect.width / 2;
-          popupY = rect.top - 4;
+          popupY = Math.max(10, rect.top - 12);
         }
       } else {
         const selection = window.getSelection();
@@ -675,11 +817,11 @@ export default function QuizzesView({ modeFilter = 'all' }) {
           const range = selection.getRangeAt(0);
           const rect = range.getBoundingClientRect();
           popupX = rect.left + rect.width / 2;
-          popupY = rect.top - 10;
+          popupY = Math.max(10, rect.top - 12);
         }
       }
 
-      if (selectedText && selectedText.length > 0 && selectedText.length < 200) {
+      if (selectedText && selectedText.length > 0 && selectedText.length < 300) {
         setTranslationPopup({
           x: popupX,
           y: popupY,
@@ -692,8 +834,8 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         setTranslatedText('');
         setEnrichedData(null);
       }
-    }, 250);
-  }, []);
+    }, 150);
+  }, [enviDictEnabled]);
 
   // Handle delete question
   const handleDeleteQuestion = (qId) => {
@@ -734,12 +876,28 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     }
   };
 
-  // Close translation popup on click outside
+  // Close translation popup on click outside (with trackpad drag noise threshold)
   useEffect(() => {
     const handleClickOutside = (e) => {
+      // Ignore click if it happened within 400ms of popup opening (trackpad drag release noise)
+      if (Date.now() - lastPopupTimeRef.current < 400) return;
+
       if (translationPopup && !e.target.closest('.translation-popup')) {
-        setTranslationPopup(null);
-        setTranslatedText('');
+        setTimeout(() => {
+          const sel = window.getSelection();
+          const activeEl = document.activeElement;
+          const isFormEl = activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT');
+          let hasSel = false;
+          if (isFormEl) {
+            hasSel = activeEl.selectionStart !== undefined && activeEl.selectionEnd !== undefined && activeEl.selectionStart !== activeEl.selectionEnd;
+          } else {
+            hasSel = !!(sel && sel.toString().trim().length > 0);
+          }
+          if (!hasSel) {
+            setTranslationPopup(null);
+            setTranslatedText('');
+          }
+        }, 120);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -3590,7 +3748,35 @@ ${questionsText}`;
                         <Lightbulb size={18} />
                         <h4 style={{ margin: 0, fontWeight: 'bold', fontSize: '15px' }}>Kiến Thức Cốt Lõi (Cheat Sheet)</h4>
                       </div>
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        {/* Mode Switcher: Grid vs Editor */}
+                        <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '2px', border: '1px solid rgba(255,152,0,0.2)' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setCheatSheetViewMode('grid'); setIsTakeawaysCollapsed(false); }}
+                            style={{
+                              padding: '3px 9px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, border: 'none', cursor: 'pointer',
+                              background: cheatSheetViewMode === 'grid' ? 'rgba(255,152,0,0.3)' : 'transparent',
+                              color: cheatSheetViewMode === 'grid' ? '#fbbf24' : 'var(--text-muted)',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            Lưới Block
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setCheatSheetViewMode('editor'); setIsTakeawaysCollapsed(false); }}
+                            style={{
+                              padding: '3px 9px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, border: 'none', cursor: 'pointer',
+                              background: cheatSheetViewMode === 'editor' ? 'rgba(255,152,0,0.3)' : 'transparent',
+                              color: cheatSheetViewMode === 'editor' ? '#fbbf24' : 'var(--text-muted)',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            Soạn thảo
+                          </button>
+                        </div>
+
                         {!isTesting && (
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleGenerateTakeaways(); }}
@@ -3606,26 +3792,138 @@ ${questionsText}`;
                     
                     {!isTakeawaysCollapsed && (
                       <div style={{ marginTop: '16px' }}>
-                        {!isTesting ? (
-                          <div style={{ marginTop: '8px' }}>
-                            <TiptapEditor 
-                              content={activeQuiz.keyTakeaways || ''}
-                              onChange={content => setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: content } : q))}
-                              placeholder="Ghi chú các điểm ngữ pháp, từ vựng cần lưu ý ở đề này. Hoặc bấm 'AI Tổng hợp' để tự động quét..."
-                            />
-                          </div>
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                          <input
+                            type="text"
+                            value={quickNoteInput}
+                            onChange={(e) => setQuickNoteInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && quickNoteInput.trim()) {
+                                handleAddToTakeaways(quickNoteInput);
+                                setQuickNoteInput('');
+                              }
+                            }}
+                            placeholder="Thêm ghi chú nhanh vào Kiến Thức Cốt Lõi rồi nhấn Enter..."
+                            style={{
+                              flex: 1, background: 'rgba(0,0,0,0.3)', color: 'var(--text-main)',
+                              border: '1px solid rgba(255,152,0,0.3)', borderRadius: '8px',
+                              padding: '8px 12px', fontSize: '13px', outline: 'none'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (quickNoteInput.trim()) {
+                                handleAddToTakeaways(quickNoteInput);
+                                setQuickNoteInput('');
+                              }
+                            }}
+                            style={{
+                              padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
+                              background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000',
+                              border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
+                              boxShadow: '0 2px 10px rgba(245,158,11,0.3)'
+                            }}
+                          >
+                            <Plus size={14} /> Thêm ghi chú
+                          </button>
+                        </div>
+
+                        {cheatSheetViewMode === 'grid' ? (
+                          (() => {
+                            const blocks = parseTakeawaysToBlocks(activeQuiz.keyTakeaways || '');
+                            if (blocks.length === 0) {
+                              return (
+                                <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', background: 'rgba(0,0,0,0.15)', borderRadius: '10px', border: '1px dashed rgba(255,152,0,0.2)' }}>
+                                  Chưa có block ghi chú nào. Bôi đen từ vựng trong đề và chọn <strong>+ Cheat Sheet</strong> hoặc gõ vào ô phía trên để thêm block!
+                                </div>
+                              );
+                            }
+                            return (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px', marginTop: '10px' }}>
+                                {blocks.map((block, idx) => (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      background: 'linear-gradient(135deg, rgba(255,152,0,0.08), rgba(251,191,36,0.03))',
+                                      border: '1px solid rgba(255,152,0,0.22)',
+                                      borderRadius: '12px',
+                                      padding: '12px 14px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      justify: 'space-between',
+                                      gap: '8px',
+                                      boxShadow: '0 4px 14px rgba(0,0,0,0.2)',
+                                      transition: 'all 0.2s ease',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                      <span style={{ color: '#fbbf24', fontSize: '14px', marginTop: '2px', flexShrink: 0 }}>💡</span>
+                                      <div
+                                        style={{ flex: 1, fontSize: '13.5px', lineHeight: '1.55', color: 'var(--text-main)', wordBreak: 'break-word' }}
+                                        dangerouslySetInnerHTML={{ __html: block.rawHtml }}
+                                      />
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px', marginTop: '4px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSpeak(block.text)}
+                                        style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                        title="Phát âm"
+                                      >
+                                        <Volume2 size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(block.text);
+                                          setCopiedBlockIdx(idx);
+                                          setTimeout(() => setCopiedBlockIdx(null), 1500);
+                                        }}
+                                        style={{ background: 'none', border: 'none', color: copiedBlockIdx === idx ? 'var(--accent-green)' : 'var(--text-muted)', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                        title="Sao chép"
+                                      >
+                                        {copiedBlockIdx === idx ? <CheckCircle size={13} /> : <Copy size={13} />}
+                                      </button>
+                                      {!isTesting && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteTakeawayBlock(idx)}
+                                          style={{ background: 'none', border: 'none', color: '#ef4444', opacity: 0.7, cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                          title="Xóa block này"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()
                         ) : (
-                          <div style={{ color: 'var(--text-main)', lineHeight: '1.7', background: 'rgba(var(--glass-rgb),0.03)', borderRadius: '8px', padding: '16px', border: '1px dashed rgba(255,152,0, 0.3)', fontSize: '14px' }}>
-                            {activeQuiz.keyTakeaways ? (
-                              /<[a-z][\s\S]*>/i.test(activeQuiz.keyTakeaways) ? (
-                                <TiptapEditor content={activeQuiz.keyTakeaways} readOnly={true} onChange={() => {}} />
+                          // Editor View Mode
+                          !isTesting ? (
+                            <div style={{ marginTop: '8px' }}>
+                              <TiptapEditor 
+                                content={activeQuiz.keyTakeaways || ''}
+                                onChange={content => setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: content } : q))}
+                                placeholder="Ghi chú các điểm ngữ pháp, từ vựng cần lưu ý ở đề này. Hoặc bấm 'AI Tổng hợp' để tự động quét..."
+                              />
+                            </div>
+                          ) : (
+                            <div style={{ color: 'var(--text-main)', lineHeight: '1.7', background: 'rgba(var(--glass-rgb),0.03)', borderRadius: '8px', padding: '16px', border: '1px dashed rgba(255,152,0, 0.3)', fontSize: '14px' }}>
+                              {activeQuiz.keyTakeaways ? (
+                                /<[a-z][\s\S]*>/i.test(activeQuiz.keyTakeaways) ? (
+                                  <TiptapEditor content={activeQuiz.keyTakeaways} readOnly={true} onChange={() => {}} />
+                                ) : (
+                                  <div style={{ whiteSpace: 'pre-wrap' }}>{activeQuiz.keyTakeaways}</div>
+                                )
                               ) : (
-                                <div style={{ whiteSpace: 'pre-wrap' }}>{activeQuiz.keyTakeaways}</div>
-                              )
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)' }}>Chưa có tổng hợp kiến thức. Bấm Quay về sửa đề để thêm.</span>
-                            )}
-                          </div>
+                                <span style={{ color: 'var(--text-muted)' }}>Chưa có tổng hợp kiến thức. Bấm Quay về sửa đề để thêm.</span>
+                              )}
+                            </div>
+                          )
                         )}
                       </div>
                     )}
@@ -3651,7 +3949,7 @@ ${questionsText}`;
                   )}
 
                   {/* Translation Popup */}
-                  {translationPopup && (
+                  {translationPopup && createPortal(
                     <div
                       className="translation-popup"
                       onMouseUp={(e) => e.stopPropagation()}
@@ -3660,24 +3958,32 @@ ${questionsText}`;
                         position: 'fixed',
                         left: `${translationPopup.x}px`,
                         top: `${translationPopup.y}px`,
-                        transform: 'translate(-50%, -100%)',
-                        zIndex: 9999,
+                        transform: translationPopup.isAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)',
+                        zIndex: 999999,
                         background: 'linear-gradient(135deg, #1a1e3a, #1e2140)',
                         borderRadius: '14px',
                         padding: '14px 18px',
-                        border: '1px solid rgba(124,77,255,0.3)',
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(124,77,255,0.15)',
-                        minWidth: '200px',
-                        maxWidth: '360px',
-                        animation: 'fadeInUp 0.2s ease-out',
+                        border: '1px solid rgba(124,77,255,0.4)',
+                        boxShadow: '0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(124,77,255,0.25)',
+                        minWidth: '220px',
+                        maxWidth: '380px',
+                        animation: 'fadeInUp 0.15s ease-out',
                       }}
                     >
                       {/* Arrow */}
                       <div style={{
-                        position: 'absolute', bottom: '-6px', left: '50%', transform: 'translateX(-50%) rotate(45deg)',
-                        width: '12px', height: '12px', background: '#1e2140',
-                        borderRight: '1px solid rgba(124,77,255,0.3)',
-                        borderBottom: '1px solid rgba(124,77,255,0.3)',
+                        position: 'absolute',
+                        bottom: translationPopup.isAbove ? '-6px' : 'auto',
+                        top: translationPopup.isAbove ? 'auto' : '-6px',
+                        left: '50%',
+                        transform: 'translateX(-50%) rotate(45deg)',
+                        width: '12px',
+                        height: '12px',
+                        background: '#1e2140',
+                        borderRight: translationPopup.isAbove ? '1px solid rgba(124,77,255,0.3)' : 'none',
+                        borderBottom: translationPopup.isAbove ? '1px solid rgba(124,77,255,0.3)' : 'none',
+                        borderLeft: translationPopup.isAbove ? 'none' : '1px solid rgba(124,77,255,0.3)',
+                        borderTop: translationPopup.isAbove ? 'none' : '1px solid rgba(124,77,255,0.3)',
                       }} />
 
                       {/* Selected text */}
@@ -3770,6 +4076,20 @@ ${questionsText}`;
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => handleAddToTakeaways(translationPopup.text)}
+                              style={{
+                                padding: '6px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
+                                background: takeawayAddedSuccess ? 'var(--accent-green)' : 'rgba(255,152,0,0.15)',
+                                color: takeawayAddedSuccess ? 'white' : '#fbbf24', border: '1px solid rgba(255,152,0,0.3)', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s'
+                              }}
+                            >
+                              {takeawayAddedSuccess ? <CheckCircle size={12} /> : <Lightbulb size={12} />}
+                              {takeawayAddedSuccess ? 'Đã thêm' : '+ Cheat Sheet'}
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={() => translateText(translationPopup.text)}
                               style={{
                                 padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
@@ -3806,6 +4126,20 @@ ${questionsText}`;
 
                         {translatedText && !isTranslating && !isAiEnrichingPopup && (
                           <>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => handleAddToTakeaways(`${translationPopup.text}: ${translatedText}`)}
+                              style={{
+                                padding: '6px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
+                                background: takeawayAddedSuccess ? 'var(--accent-green)' : 'rgba(255,152,0,0.15)',
+                                color: takeawayAddedSuccess ? 'white' : '#fbbf24', border: '1px solid rgba(255,152,0,0.3)', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s'
+                              }}
+                            >
+                              {takeawayAddedSuccess ? <CheckCircle size={12} /> : <Lightbulb size={12} />}
+                              {takeawayAddedSuccess ? 'Đã thêm Cheat Sheet' : '+ Cheat Sheet'}
+                            </button>
                             {!enrichedData && (
                               <button
                                 type="button"
@@ -3863,7 +4197,8 @@ ${questionsText}`;
                           </>
                         )}
                       </div>
-                    </div>
+                    </div>,
+                    document.body
                   )}
 
                   {(() => {
