@@ -1,12 +1,45 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Play, Volume2, Music } from 'lucide-react';
+import { getAudioFromIDB } from '../../utils/audioStorage';
 
-export default function TOEICAudioPlayer({ src, title }) {
+export default function TOEICAudioPlayer({ src, title, passageId }) {
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [audioSource, setAudioSource] = useState(src);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function resolveAudio() {
+      if (src && src.length > 200 && !src.startsWith('[STORED_')) {
+        setAudioSource(src);
+        return;
+      }
+
+      if (passageId) {
+        setIsLoadingAudio(true);
+        const idbAudio = await getAudioFromIDB(passageId);
+        if (isMounted) {
+          if (idbAudio) {
+            setAudioSource(idbAudio);
+          } else {
+            setAudioSource(src);
+          }
+          setIsLoadingAudio(false);
+        }
+      }
+    }
+
+    resolveAudio();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [src, passageId]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -52,7 +85,7 @@ export default function TOEICAudioPlayer({ src, title }) {
     return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  if (!src) return null;
+  if (!audioSource && !isLoadingAudio) return null;
 
   return (
     <div style={{
@@ -63,27 +96,31 @@ export default function TOEICAudioPlayer({ src, title }) {
       marginBottom: '14px',
       boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
     }}>
-      <audio
-        ref={audioRef}
-        src={src}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onEnded={() => setIsPlaying(false)}
-      />
+      {audioSource && (
+        <audio
+          ref={audioRef}
+          src={audioSource}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={() => setIsPlaying(false)}
+        />
+      )}
       {title && (
         <div style={{ fontSize: '12px', fontWeight: 700, color: '#d8ccff', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Music size={14} color="#8eefff" /> {title}
+          <Music size={14} color="#8eefff" /> {title} {isLoadingAudio && <span style={{ fontSize: '11px', color: '#8eefff' }}>(Đang tải audio từ bộ nhớ máy...)</span>}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={togglePlay}
+          disabled={isLoadingAudio || !audioSource}
           style={{
             width: '40px', height: '40px', borderRadius: '50%', border: 'none',
             background: 'linear-gradient(135deg, #7c4dff, #00e3fd)', color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(124,77,255,0.4)', flexShrink: 0
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isLoadingAudio ? 'wait' : 'pointer',
+            boxShadow: '0 4px 12px rgba(124,77,255,0.4)', flexShrink: 0,
+            opacity: isLoadingAudio ? 0.6 : 1
           }}
         >
           {isPlaying ? <Volume2 size={20} /> : <Play size={20} style={{ marginLeft: '2px' }} />}
@@ -98,6 +135,7 @@ export default function TOEICAudioPlayer({ src, title }) {
             step="0.1"
             value={currentTime}
             onChange={handleSeek}
+            disabled={isLoadingAudio || !audioSource}
             style={{ flex: 1, cursor: 'pointer', accentColor: '#7c4dff' }}
           />
           <span style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{formatTime(duration)}</span>

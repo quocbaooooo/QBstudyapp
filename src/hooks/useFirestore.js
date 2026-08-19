@@ -7,11 +7,13 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/useAuth';
+import { saveAudioToIDB } from '../utils/audioStorage';
 
 /**
  * Hook that syncs a Firestore collection with local state.
  * Each item in the array becomes a document in: users/{userId}/{collectionName}/{item.id}
  * Falls back to localStorage if user is not logged in.
+ * Audio files are stored in IndexedDB to bypass 5MB localStorage and 1MB Firestore limits.
  * 
  * @param {string} collectionName - Name of the sub-collection (e.g., 'notes', 'decks', 'quizzes')
  * @param {string} localStorageKey - localStorage key for fallback/migration
@@ -62,33 +64,13 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     const unsubscribe = onSnapshot(colRef, (snapshot) => {
       if (pendingWrites.current) return; // Skip if we're writing
       
-      const firestoreItems = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data
-        };
-      });
-
-      // Merge local audio data if firestore stripped it due to 1MB limit
-      const localDataMap = new Map((items || []).map(i => [i.id, i]));
-      const mergedItems = firestoreItems.map(fsItem => {
-        const localItem = localDataMap.get(fsItem.id);
-        if (localItem && localItem.listeningPassages && fsItem.listeningPassages) {
-          const mergedPassages = fsItem.listeningPassages.map((p, pIdx) => {
-            const localP = localItem.listeningPassages[pIdx];
-            if (localP && localP.audioUrl && (p.audioUrl === '[STORED_LOCALLY]' || !p.audioUrl)) {
-              return { ...p, audioUrl: localP.audioUrl, isLocalAudio: true };
-            }
-            return p;
-          });
-          return { ...fsItem, listeningPassages: mergedPassages };
-        }
-        return fsItem;
-      });
+      const firestoreItems = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
       // Sort by updatedAt descending (newest first)
-      mergedItems.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      firestoreItems.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
       isUpdatingFromFirestore.current = true;
       
@@ -99,18 +81,32 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
 
       if (!isMigrated && localHasRealData) {
         // Keep local state for migration
-      } else if (mergedItems.length === 0 && !isMigrated) {
+      } else if (firestoreItems.length === 0 && !isMigrated) {
         // migration effect will handle pushing default/local data
       } else {
-        setItemsState(mergedItems);
+        setItemsState(firestoreItems);
+        
+        // Save clean version to localStorage (sanitize large audio Base64 to prevent QuotaExceededError)
         try {
-          window.localStorage.setItem(localStorageKey, JSON.stringify(mergedItems));
+          const sanitizedForLocalStorage = firestoreItems.map(item => {
+            if (!item.listeningPassages) return item;
+            return {
+              ...item,
+              listeningPassages: item.listeningPassages.map(p => {
+                if (p.audioUrl && p.audioUrl.length > 200000) {
+                  return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]' };
+                }
+                return p;
+              })
+            };
+          });
+          window.localStorage.setItem(localStorageKey, JSON.stringify(sanitizedForLocalStorage));
         } catch (e) {
-          console.warn('Failed to cache to localStorage', e);
+          console.warn('Failed to cache to localStorage:', e);
         }
       }
       
-      isFirestoreEmptyRef.current = mergedItems.length === 0;
+      isFirestoreEmptyRef.current = firestoreItems.length === 0;
       setFirestoreReady(true);
       setSyncState({ status: 'synced', error: null, lastSaved: Date.now() });
       
@@ -156,15 +152,38 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     }
   }, [user, firestoreReady, collectionName, localStorageKey, getCollectionRef]);
 
-  // Wrapper setItems that writes to both Firestore and localStorage
+  // Wrapper setItems that writes to both Firestore, localStorage, and IndexedDB
   const setItems = useCallback((newValueOrFn) => {
     setItemsState(prev => {
       const newItems = typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn;
 
-      // Always save to localStorage as backup
+      // Extract and save audio files to IndexedDB (unlimited storage)
+      newItems.forEach(item => {
+        if (item.listeningPassages) {
+          item.listeningPassages.forEach(p => {
+            if (p.id && p.audioUrl && p.audioUrl.length > 200 && p.audioUrl !== '[STORED_IN_INDEXEDDB]' && p.audioUrl !== '[STORED_LOCALLY]') {
+              saveAudioToIDB(p.id, p.audioUrl);
+            }
+          });
+        }
+      });
+
+      // Save to localStorage as backup (sanitize audio Base64 if large)
       let localSaveOk = true;
       try {
-        window.localStorage.setItem(localStorageKey, JSON.stringify(newItems));
+        const sanitizedForLocalStorage = newItems.map(item => {
+          if (!item.listeningPassages) return item;
+          return {
+            ...item,
+            listeningPassages: item.listeningPassages.map(p => {
+              if (p.audioUrl && p.audioUrl.length > 200000) {
+                return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]' };
+              }
+              return p;
+            })
+          };
+        });
+        window.localStorage.setItem(localStorageKey, JSON.stringify(sanitizedForLocalStorage));
       } catch (e) {
         console.warn('localStorage write failed (Quota limit):', e);
         localSaveOk = false;
@@ -183,7 +202,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
       } else if (!user) {
         setSyncState({
           status: localSaveOk ? 'local_only' : 'error',
-          error: localSaveOk ? 'Chưa đăng nhập (Đã lưu tại máy)' : 'Bộ nhớ trình duyệt đầy, không thể lưu!',
+          error: localSaveOk ? 'Chưa đăng nhập (Đã lưu tại máy IndexedDB)' : 'Bộ nhớ trình duyệt đầy!',
           lastSaved: Date.now()
         });
       }
@@ -219,8 +238,8 @@ async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
           const sanitizedItem = JSON.parse(itemJson);
           if (sanitizedItem.listeningPassages) {
             sanitizedItem.listeningPassages = sanitizedItem.listeningPassages.map(p => {
-              if (p.audioUrl && p.audioUrl.length > 300000) {
-                return { ...p, audioUrl: '[STORED_LOCALLY]', isLocalAudio: true };
+              if (p.audioUrl && p.audioUrl.length > 200000) {
+                return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]', isLocalAudio: true };
               }
               return p;
             });
@@ -245,7 +264,7 @@ async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
     if (hasOversizedDoc) {
       setSyncState({
         status: 'local_only',
-        error: 'File âm thanh bài nghe >1MB. Đã lưu nội dung chữ lên Cloud và lưu file âm thanh an toàn tại máy (Local Storage).',
+        error: 'File âm thanh bài nghe >1MB. Đã lưu câu hỏi & kịch bản lên Cloud, lưu file âm thanh an toàn tại máy (IndexedDB).',
         lastSaved: Date.now()
       });
     } else {
@@ -255,7 +274,7 @@ async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
     console.error('Firestore sync error:', error);
     setSyncState({
       status: 'error',
-      error: `Lỗi lưu Cloud: ${error.message}. Dữ liệu đã lưu an toàn tại máy (Local Storage).`,
+      error: `Lỗi lưu Cloud: ${error.message}. Dữ liệu đã lưu an toàn tại máy (IndexedDB).`,
       lastSaved: Date.now()
     });
   }

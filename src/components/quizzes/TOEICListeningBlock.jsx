@@ -45,13 +45,11 @@ export default function TOEICListeningBlock({
               <Music size={15} /> Nguồn Âm Thanh & Kịch Bản
             </div>
 
-            {listeningObj.audioUrl ? (
-              <TOEICAudioPlayer src={listeningObj.audioUrl} title={listeningObj.audioName || listeningObj.title} />
-            ) : (
-              <div style={{ padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center' }}>
-                Chưa đính kèm file audio bài nghe
-              </div>
-            )}
+            <TOEICAudioPlayer 
+              src={listeningObj.audioUrl} 
+              passageId={listeningObj.id} 
+              title={listeningObj.audioName || listeningObj.title} 
+            />
 
             {listeningObj.images && listeningObj.images.length > 0 && (
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '6px 0' }}>
