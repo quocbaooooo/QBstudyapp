@@ -16,7 +16,7 @@ import { useAuth } from '../contexts/useAuth';
  * @param {string} collectionName - Name of the sub-collection (e.g., 'notes', 'decks', 'quizzes')
  * @param {string} localStorageKey - localStorage key for fallback/migration
  * @param {Array} defaultValue - Default empty value
- * @returns {[Array, Function]} - [items, setItems] similar to useState
+ * @returns {[Array, Function, Object]} - [items, setItems, syncState]
  */
 export function useFirestore(collectionName, localStorageKey, defaultValue = []) {
   const { user } = useAuth();
@@ -29,6 +29,13 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
       return defaultValue;
     }
   });
+
+  const [syncState, setSyncState] = useState({
+    status: 'synced', // 'synced' | 'saving' | 'local_only' | 'error'
+    error: null,
+    lastSaved: Date.now()
+  });
+
   const [firestoreReady, setFirestoreReady] = useState(false);
   const isUpdatingFromFirestore = useRef(false);
   const pendingWrites = useRef(false);
@@ -45,6 +52,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
   // Listen to Firestore changes (real-time sync)
   useEffect(() => {
     if (!user) {
+      setSyncState({ status: 'local_only', error: 'Chưa đăng nhập (Dữ liệu lưu tại máy)', lastSaved: Date.now() });
       return;
     }
 
@@ -54,13 +62,33 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     const unsubscribe = onSnapshot(colRef, (snapshot) => {
       if (pendingWrites.current) return; // Skip if we're writing
       
-      const firestoreItems = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const firestoreItems = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data
+        };
+      });
+
+      // Merge local audio data if firestore stripped it due to 1MB limit
+      const localDataMap = new Map((items || []).map(i => [i.id, i]));
+      const mergedItems = firestoreItems.map(fsItem => {
+        const localItem = localDataMap.get(fsItem.id);
+        if (localItem && localItem.listeningPassages && fsItem.listeningPassages) {
+          const mergedPassages = fsItem.listeningPassages.map((p, pIdx) => {
+            const localP = localItem.listeningPassages[pIdx];
+            if (localP && localP.audioUrl && (p.audioUrl === '[STORED_LOCALLY]' || !p.audioUrl)) {
+              return { ...p, audioUrl: localP.audioUrl, isLocalAudio: true };
+            }
+            return p;
+          });
+          return { ...fsItem, listeningPassages: mergedPassages };
+        }
+        return fsItem;
+      });
 
       // Sort by updatedAt descending (newest first)
-      firestoreItems.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      mergedItems.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
       isUpdatingFromFirestore.current = true;
       
@@ -69,31 +97,30 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
       
       const localHasRealData = initialLocalDataRef.current.length > 0 && initialLocalDataRef.current[0].id !== defaultValue[0]?.id;
 
-      // If we haven't migrated and have real local data, DON'T overwrite local state with firestore yet.
-      // The migration effect will merge them.
       if (!isMigrated && localHasRealData) {
-        // Just keep the local state for now until migration runs
-      } else if (firestoreItems.length === 0 && !isMigrated) {
-        // migration effect will handle pushing the default/local data
+        // Keep local state for migration
+      } else if (mergedItems.length === 0 && !isMigrated) {
+        // migration effect will handle pushing default/local data
       } else {
-        setItemsState(firestoreItems);
-        // Also update localStorage as cache
+        setItemsState(mergedItems);
         try {
-          window.localStorage.setItem(localStorageKey, JSON.stringify(firestoreItems));
+          window.localStorage.setItem(localStorageKey, JSON.stringify(mergedItems));
         } catch (e) {
           console.warn('Failed to cache to localStorage', e);
         }
       }
       
-      isFirestoreEmptyRef.current = firestoreItems.length === 0;
+      isFirestoreEmptyRef.current = mergedItems.length === 0;
       setFirestoreReady(true);
+      setSyncState({ status: 'synced', error: null, lastSaved: Date.now() });
       
       setTimeout(() => {
         isUpdatingFromFirestore.current = false;
       }, 100);
     }, (error) => {
       console.error(`Firestore listen error for ${collectionName}:`, error);
-      setFirestoreReady(true); // still mark ready so app works with localStorage data
+      setFirestoreReady(true);
+      setSyncState({ status: 'error', error: `Lỗi kết nối Firestore: ${error.message}`, lastSaved: Date.now() });
     });
 
     return unsubscribe;
@@ -110,32 +137,19 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     const hasLocalData = localData && localData.length > 0;
     const localHasRealData = hasLocalData && localData[0].id !== defaultValue[0]?.id;
 
-    // If Firestore is NOT empty and we DON'T have real local data, just skip migration
     if (!isFirestoreEmptyRef.current && !localHasRealData) {
       localStorage.setItem(migrationKey, 'true');
       return;
     }
 
     if (hasLocalData) {
-      // Migrate to Firestore
       const colRef = getCollectionRef();
       if (!colRef) return;
 
-      const batch = writeBatch(db);
-      localData.forEach(item => {
-        const docRef = doc(colRef, item.id);
-        batch.set(docRef, { ...item }, { merge: true });
-      });
-
-      batch.commit().then(() => {
+      setSyncState({ status: 'saving', error: null, lastSaved: Date.now() });
+      syncToFirestore(colRef, [], localData, setSyncState).then(() => {
         localStorage.setItem(migrationKey, 'true');
         console.log(`✅ Migrated ${localData.length} ${collectionName} to Firestore`);
-        // If we merged, update state to trigger a re-render with merged data
-        if (!isFirestoreEmptyRef.current && localHasRealData) {
-           // Merging is done in Firestore, the next onSnapshot will pull the merged data
-        }
-      }).catch(err => {
-        console.error(`Migration error for ${collectionName}:`, err);
       });
     } else {
       localStorage.setItem(migrationKey, 'true');
@@ -148,10 +162,12 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
       const newItems = typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn;
 
       // Always save to localStorage as backup
+      let localSaveOk = true;
       try {
         window.localStorage.setItem(localStorageKey, JSON.stringify(newItems));
       } catch (e) {
-        console.warn('localStorage write failed', e);
+        console.warn('localStorage write failed (Quota limit):', e);
+        localSaveOk = false;
       }
 
       // Write to Firestore if logged in (and this isn't triggered by Firestore listener)
@@ -159,35 +175,60 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
         const colRef = getCollectionRef();
         if (colRef) {
           pendingWrites.current = true;
-          syncToFirestore(colRef, prev, newItems).finally(() => {
+          setSyncState({ status: 'saving', error: null, lastSaved: Date.now() });
+          syncToFirestore(colRef, prev, newItems, setSyncState).finally(() => {
             pendingWrites.current = false;
           });
         }
+      } else if (!user) {
+        setSyncState({
+          status: localSaveOk ? 'local_only' : 'error',
+          error: localSaveOk ? 'Chưa đăng nhập (Đã lưu tại máy)' : 'Bộ nhớ trình duyệt đầy, không thể lưu!',
+          lastSaved: Date.now()
+        });
       }
 
       return newItems;
     });
   }, [user, localStorageKey, getCollectionRef]);
 
-  return [items, setItems];
+  return [items, setItems, syncState];
 }
 
 /**
  * Efficiently sync local state changes to Firestore using batch writes.
- * Only writes changed/new/deleted documents.
+ * Sanitizes items > 850KB (e.g. large audio Base64 strings) so Firestore 1MB doc limit is never broken.
  */
-async function syncToFirestore(colRef, oldItems, newItems) {
+async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
   try {
     const batch = writeBatch(db);
     const oldMap = new Map(oldItems.map(item => [item.id, item]));
     const newMap = new Map(newItems.map(item => [item.id, item]));
+    let hasOversizedDoc = false;
 
     // Add or update items
     for (const item of newItems) {
       const oldItem = oldMap.get(item.id);
       if (!oldItem || JSON.stringify(oldItem) !== JSON.stringify(item)) {
         const docRef = doc(colRef, item.id);
-        batch.set(docRef, { ...item }, { merge: true });
+        const itemJson = JSON.stringify(item);
+
+        if (itemJson.length > 850000) {
+          hasOversizedDoc = true;
+          // Sanitize item for Firestore document limit (<1MB)
+          const sanitizedItem = JSON.parse(itemJson);
+          if (sanitizedItem.listeningPassages) {
+            sanitizedItem.listeningPassages = sanitizedItem.listeningPassages.map(p => {
+              if (p.audioUrl && p.audioUrl.length > 300000) {
+                return { ...p, audioUrl: '[STORED_LOCALLY]', isLocalAudio: true };
+              }
+              return p;
+            });
+          }
+          batch.set(docRef, sanitizedItem, { merge: true });
+        } else {
+          batch.set(docRef, { ...item }, { merge: true });
+        }
       }
     }
 
@@ -200,7 +241,22 @@ async function syncToFirestore(colRef, oldItems, newItems) {
     }
 
     await batch.commit();
+
+    if (hasOversizedDoc) {
+      setSyncState({
+        status: 'local_only',
+        error: 'File âm thanh bài nghe >1MB. Đã lưu nội dung chữ lên Cloud và lưu file âm thanh an toàn tại máy (Local Storage).',
+        lastSaved: Date.now()
+      });
+    } else {
+      setSyncState({ status: 'synced', error: null, lastSaved: Date.now() });
+    }
   } catch (error) {
     console.error('Firestore sync error:', error);
+    setSyncState({
+      status: 'error',
+      error: `Lỗi lưu Cloud: ${error.message}. Dữ liệu đã lưu an toàn tại máy (Local Storage).`,
+      lastSaved: Date.now()
+    });
   }
 }

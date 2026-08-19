@@ -68,7 +68,7 @@ const DEMO_QUIZ = {
 
 export default function QuizzesView({ modeFilter = 'all' }) {
   const { user } = useAuth();
-  const [quizzes, setQuizzes] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
+  const [quizzes, setQuizzes, quizSyncState] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
   const [folders, setFolders] = useFirestore('quiz_folders', 'study_quiz_folders', []);
   const [selectedFolderId, setSelectedFolderId] = useState('all');
   const [folderActionModal, setFolderActionModal] = useState(null); // { type: 'create' | 'rename', id?: string, name?: string }
@@ -535,6 +535,66 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const translationTimeoutRef = useRef(null);
 
   const activeQuiz = quizzes.find(q => q.id === activeQuizId);
+
+  // Auto-recovery: If activeQuizId points to a missing quiz (e.g. sync error or deleted), return to grid view
+  useEffect(() => {
+    if (activeQuizId && !activeQuiz && !isCreatingAiQuiz && !isImporting) {
+      console.warn("activeQuizId not found in quizzes, resetting to grid view");
+      setActiveQuizId(null);
+    }
+  }, [activeQuizId, activeQuiz, isCreatingAiQuiz, isImporting]);
+
+  const renderSyncBadge = () => {
+    if (!quizSyncState) return null;
+    const { status, error } = quizSyncState;
+
+    if (status === 'saving') {
+      return (
+        <span style={{
+          padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+          background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)',
+          display: 'inline-flex', alignItems: 'center', gap: '6px'
+        }}>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid #60a5fa', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+          Đang lưu...
+        </span>
+      );
+    }
+
+    if (status === 'local_only') {
+      return (
+        <span title={error || 'Đã lưu an toàn tại máy (Local Storage)'} style={{
+          padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+          background: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.3)',
+          display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'help'
+        }}>
+          💾 Đã lưu máy Local (Audio &gt; 1MB)
+        </span>
+      );
+    }
+
+    if (status === 'error') {
+      return (
+        <span title={error || 'Lỗi kết nối Cloud'} style={{
+          padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+          background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)',
+          display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'help'
+        }}>
+          ⚠️ Lỗi lưu Cloud
+        </span>
+      );
+    }
+
+    return (
+      <span style={{
+        padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+        background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)',
+        display: 'inline-flex', alignItems: 'center', gap: '6px'
+      }}>
+        ☁️ Đã đồng bộ Cloud
+      </span>
+    );
+  };
 
   // ===== HELPERS: Render text with / separator and () hiding =====
 
@@ -2473,6 +2533,7 @@ ${questionsText}`;
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  {renderSyncBadge()}
                   {isMerging ? (
                     <>
                       <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-orange)' }}>Đã chọn {selectedQuizzesToMerge.length} bộ đề</span>
@@ -2832,7 +2893,8 @@ ${questionsText}`;
             </div>
 
             {activeQuiz && (
-              <div style={{ display: 'flex', gap: '8px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0, whiteSpace: 'nowrap', alignItems: 'center' }}>
+                {renderSyncBadge()}
                 {isTesting && (
                   <button 
                     className={`btn ${isShuffled ? 'btn-primary' : ''}`}
