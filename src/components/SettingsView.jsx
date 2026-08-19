@@ -8,7 +8,9 @@ export default function SettingsView({
   bgMusicVolume, 
   setBgMusicVolume, 
   bgMusicUrl, 
-  setBgMusicUrl 
+  setBgMusicUrl,
+  enviDictEnabled,
+  setEnviDictEnabled
 }) {
   const [apiKey, setApiKey] = useLocalStorage('gemini_api_key', '');
   const [apiModel, setApiModel] = useLocalStorage('gemini_api_model', 'gemini-1.5-flash-latest');
@@ -295,6 +297,34 @@ export default function SettingsView({
                 )}
               </div>
 
+            </div>
+          </section>
+
+          {/* Dịch thuật & Tra từ */}
+          <section>
+            <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-secondary mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px]">translate</span>
+              Dịch thuật & Tra từ
+            </h3>
+            <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all duration-300 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-white text-[14px]">Từ điển Anh-Việt ENVI (Popup tự động)</div>
+                  <div className="text-[12px] text-slate-400 mt-1 max-w-lg leading-relaxed">
+                    Tự động hiển thị popup tra từ nhanh của ENVI khi bôi đen từ/đoạn văn tiếng Anh trên màn hình.
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setEnviDictEnabled(!enviDictEnabled)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 ${
+                    enviDictEnabled 
+                      ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                      : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  {enviDictEnabled ? 'Đang bật' : 'Đã tắt'}
+                </button>
+              </div>
             </div>
           </section>
 

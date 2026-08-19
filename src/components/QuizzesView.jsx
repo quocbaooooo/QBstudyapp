@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useFirestore } from '../hooks/useFirestore';
-import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File, Volume2, Save, Copy, Folder, FolderPlus, Edit3, Plus, Share2 } from 'lucide-react';
+import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File, Volume2, Save, Copy, Folder, FolderPlus, Edit3, Plus, Share2, Headphones, Music, Eye, EyeOff } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportQuizToWord } from '../utils/exportWord';
 import Tesseract from 'tesseract.js';
@@ -14,6 +14,11 @@ import { useAuth } from '../contexts/useAuth';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+import TOEICAudioPlayer from './quizzes/TOEICAudioPlayer';
+import ResizableSplitPanel from './quizzes/ResizableSplitPanel';
+import TOEICListeningBlock from './quizzes/TOEICListeningBlock';
+
 const DEMO_QUIZ = {
   id: uuidv4(),
   title: '✨ Đề thi Demo: Hướng dẫn sử dụng',
@@ -61,7 +66,7 @@ const DEMO_QUIZ = {
   updatedAt: Date.now()
 };
 
-export default function QuizzesView() {
+export default function QuizzesView({ modeFilter = 'all' }) {
   const { user } = useAuth();
   const [quizzes, setQuizzes] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
   const [folders, setFolders] = useFirestore('quiz_folders', 'study_quiz_folders', []);
@@ -69,6 +74,27 @@ export default function QuizzesView() {
   const [folderActionModal, setFolderActionModal] = useState(null); // { type: 'create' | 'rename', id?: string, name?: string }
   const [moveQuizModal, setMoveQuizModal] = useState(null); // { quizId: string, folderId: string | null }
   const [activeQuizCardMenu, setActiveQuizCardMenu] = useState(null); // quizId of currently open card dropdown menu
+
+  const cardAccentColors = [
+    '#7c4dff', '#00e3fd', '#10b981', '#fbbf24', '#f472b6', '#a855f7'
+  ];
+
+  const filteredQuizzes = useMemo(() => {
+    let list = quizzes;
+    if (modeFilter === 'toeic') {
+      list = quizzes.filter(q => (q.listeningPassages && q.listeningPassages.length > 0)
+        || (q.readingPassages && q.readingPassages.length > 0)
+        || /toeic|listening|reading|part/i.test(q.title || ''));
+    } else if (modeFilter === 'general') {
+      list = quizzes.filter(q => !(q.listeningPassages && q.listeningPassages.length > 0)
+        && !(q.readingPassages && q.readingPassages.length > 0)
+        && !/toeic|listening|reading/i.test(q.title || ''));
+    }
+
+    if (selectedFolderId === 'all') return list;
+    if (selectedFolderId === 'uncategorized') return list.filter(q => !q.folderId);
+    return list.filter(q => q.folderId === selectedFolderId);
+  }, [quizzes, selectedFolderId, modeFilter]);
   
   // Sharing states
   const [shareQuizModal, setShareQuizModal] = useState(null); // { quiz: Object, link: string, isGenerating: boolean, error: string }
@@ -374,15 +400,25 @@ export default function QuizzesView() {
   const [openaiKey] = useLocalStorage('openai_api_key', '');
   const [openaiModel] = useLocalStorage('openai_api_model', 'gpt-4o-mini');
   const [appSoundEnabled] = useLocalStorage('app_sound_enabled', true);
+  const [enviDictEnabled] = useLocalStorage('envi_dict_enabled', true);
 
   const [decks, setDecks] = useFirestore('decks', 'study_decks', []);
   const [activeQuizId, setActiveQuizId] = useState(null);
   const [targetDeckId, setTargetDeckId] = useState('');
   const [importText, setImportText] = useState('');
-  const [importMode, setImportMode] = useState('normal'); // 'normal' | 'reading'
+  const [importMode, setImportMode] = useState('normal'); // 'normal' | 'reading' | 'listening'
+  const [toeicPart, setToeicPart] = useState('part34'); // 'part1' | 'part2' | 'part34'
+  const [listeningAudio, setListeningAudio] = useState(null); // { data, name }
+  const [listeningAudioUrl, setListeningAudioUrl] = useState('');
+  const [bulkAudioFiles, setBulkAudioFiles] = useState([]); // [{ id, name, data, startNum, endNum, rangeStr }]
+  const [listeningImages, setListeningImages] = useState([]); // [{ id, data, name }]
+  const [showTranscriptMap, setShowTranscriptMap] = useState({});
+  const [showTranslationMap, setShowTranslationMap] = useState({});
+  const [activeLightboxImage, setActiveLightboxImage] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
   const [previewQuestions, setPreviewQuestions] = useState(null);
   const [previewReadingPassage, setPreviewReadingPassage] = useState(null); // { id, title, content, blankNumbers }
+  const [previewListeningPassages, setPreviewListeningPassages] = useState(null); // array of listening block objects
   const [importTargetQuizId, setImportTargetQuizId] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
   const [testMode, setTestMode] = useState('all'); // 'all' or 'starred'
@@ -547,6 +583,7 @@ export default function QuizzesView() {
   };
 
   const handleTextSelection = useCallback((e, questionId = null, field = null) => {
+    if (enviDictEnabled) return;
     e.stopPropagation();
     if (translationTimeoutRef.current) clearTimeout(translationTimeoutRef.current);
     translationTimeoutRef.current = setTimeout(() => {
@@ -604,6 +641,7 @@ export default function QuizzesView() {
 
     const questionToDelete = activeQuiz.questions.find(q => q.id === qId);
     const deletedReadingGroupId = questionToDelete?.readingGroupId || null;
+    const deletedListeningGroupId = questionToDelete?.listeningGroupId || null;
 
     const newQuestions = activeQuiz.questions.filter(q => q.id !== qId);
 
@@ -616,9 +654,17 @@ export default function QuizzesView() {
       }
     }
 
+    let newListeningPassages = activeQuiz.listeningPassages || [];
+    if (deletedListeningGroupId) {
+      const groupStillHasQuestion = newQuestions.some(q => q.listeningGroupId === deletedListeningGroupId);
+      if (!groupStillHasQuestion) {
+        newListeningPassages = newListeningPassages.filter(p => p.id !== deletedListeningGroupId);
+      }
+    }
+
     setQuizzes(
       quizzes.map(q => q.id === activeQuizId
-        ? { ...q, questions: newQuestions, readingPassages: newReadingPassages, updatedAt: Date.now() }
+        ? { ...q, questions: newQuestions, readingPassages: newReadingPassages, listeningPassages: newListeningPassages, updatedAt: Date.now() }
         : q
       )
     );
@@ -895,7 +941,217 @@ export default function QuizzesView() {
     }
   };
 
+  function extractQuestionRangeFromFilename(filename = '') {
+    const nameWithoutExt = filename.replace(/\.[a-z0-9]+$/i, '').trim();
+    const parts = nameWithoutExt.split(/[\s_]+/);
+    const lastSeg = parts[parts.length - 1] || '';
+    
+    const rangeMatch = lastSeg.match(/^(\d{1,3})\s*[-_–~to]+\s*(\d{1,3})$/i)
+      || nameWithoutExt.match(/(?:^|[\s_])(\d{1,3})\s*[-_–~to]+\s*(\d{1,3})$/i);
+
+    if (rangeMatch) {
+      const startNum = parseInt(rangeMatch[1], 10);
+      const endNum = parseInt(rangeMatch[2], 10);
+      if (startNum <= endNum) {
+        return { startNum, endNum, rangeStr: `${startNum}-${endNum}` };
+      }
+    }
+
+    const singleMatch = lastSeg.match(/^(\d{1,3})$/);
+    if (singleMatch) {
+      const num = parseInt(singleMatch[1], 10);
+      return { startNum: num, endNum: num, rangeStr: `${num}` };
+    }
+
+    return null;
+  }
+
+  const handleBulkAudioUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const audioFiles = files.filter(f => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(f.name));
+    if (!audioFiles.length) {
+      alert('Vui lòng chọn các file âm thanh (.mp3, .wav, .m4a,...) hợp lệ.');
+      return;
+    }
+
+    audioFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+    const readPromises = audioFiles.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const rangeInfo = extractQuestionRangeFromFilename(file.name);
+          resolve({
+            id: uuidv4(),
+            name: file.name,
+            data: ev.target.result,
+            startNum: rangeInfo ? rangeInfo.startNum : null,
+            endNum: rangeInfo ? rangeInfo.endNum : null,
+            rangeStr: rangeInfo ? rangeInfo.rangeStr : null,
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(readPromises).then(results => {
+      setBulkAudioFiles(prev => [...prev, ...results]);
+    });
+
+    e.target.value = '';
+  };
+
+  const handleListeningAudioUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) {
+      alert('File âm thanh quá lớn (tối đa 50MB). Vui lòng dán đường dẫn Audio URL.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setListeningAudio({
+        data: event.target.result,
+        name: file.name
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleListeningImagesUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    
+    files.forEach(file => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setListeningImages(prev => [
+          ...prev,
+          {
+            id: uuidv4(),
+            data: event.target.result,
+            name: file.name
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  function parsePart34ListeningText(text, bulkAudios = [], imagesArr = [], defaultAudioObj = null) {
+    const parsedQuestions = parseQuizText(text);
+    if (parsedQuestions.length === 0) return null;
+
+    let transcriptText = '';
+    let translationText = '';
+    
+    const transMatch = text.match(/(?:TRANSCRIPT|KỊCH\s*BẢN)\s*[:.]\s*([\s\S]*?)(?=(?:DỊCH|TRANSLATION|Câu|\d+[.)]|$))/i);
+    if (transMatch) transcriptText = transMatch[1].trim();
+
+    const dichMatch = text.match(/(?:TRANSLATION|BẢN\s*DỊCH|DỊCH)\s*[:.]\s*([\s\S]*?)(?=(?:Câu|\d+[.)]|$))/i);
+    if (dichMatch) translationText = dichMatch[1].trim();
+
+    const listeningPassages = [];
+    const questionsWithGroups = [];
+
+    const chunkSize = 3;
+    let blockIndex = 0;
+
+    for (let i = 0; i < parsedQuestions.length; i += chunkSize) {
+      const chunkQuestions = parsedQuestions.slice(i, i + chunkSize);
+      const listeningGroupId = uuidv4();
+      
+      let startNum = chunkQuestions[0]?.blankNumber;
+      let endNum = chunkQuestions[chunkQuestions.length - 1]?.blankNumber;
+
+      let matchedAudio = null;
+      if (bulkAudios.length > 0) {
+        if (startNum && endNum) {
+          const numStart = parseInt(startNum, 10);
+          matchedAudio = bulkAudios.find(a => (a.startNum && Math.abs(a.startNum - numStart) <= 1) || a.rangeStr === `${startNum}-${endNum}`);
+        }
+        if (!matchedAudio) {
+          matchedAudio = bulkAudios[blockIndex] || bulkAudios[0];
+        }
+      } else if (defaultAudioObj) {
+        matchedAudio = defaultAudioObj;
+      }
+
+      if (!startNum) {
+        startNum = matchedAudio?.startNum ? String(matchedAudio.startNum) : String(i + 1);
+      }
+      if (!endNum) {
+        endNum = matchedAudio?.endNum ? String(matchedAudio.endNum) : String(i + chunkQuestions.length);
+      }
+
+      const passageObj = {
+        id: listeningGroupId,
+        type: 'listening',
+        title: `Part 3/4 (Câu ${startNum}-${endNum})`,
+        transcript: transcriptText,
+        transcriptTranslation: translationText,
+        audioUrl: matchedAudio?.data || matchedAudio?.url || '',
+        audioName: matchedAudio?.name || '',
+        images: imagesArr || [],
+      };
+
+      listeningPassages.push(passageObj);
+
+      chunkQuestions.forEach((q, idx) => {
+        let qNum = q.blankNumber;
+        if (!qNum) {
+          if (matchedAudio?.startNum) {
+            qNum = String(matchedAudio.startNum + idx);
+          } else {
+            qNum = String(i + idx + 1);
+          }
+        }
+
+        questionsWithGroups.push({
+          ...q,
+          listeningGroupId,
+          blankNumber: qNum,
+        });
+      });
+
+      blockIndex++;
+    }
+
+    return {
+      passages: listeningPassages,
+      questions: questionsWithGroups,
+    };
+  }
+
   const handleParseImport = () => {
+    if (importMode === 'listening') {
+      const audioObj = listeningAudio || (listeningAudioUrl.trim() ? { url: listeningAudioUrl.trim(), name: 'Link Audio' } : null);
+      if (toeicPart === 'part34') {
+        const parsedP34 = parsePart34ListeningText(importText, bulkAudioFiles, listeningImages, audioObj);
+        if (parsedP34 && parsedP34.questions.length > 0) {
+          setPreviewQuestions(parsedP34.questions);
+          setPreviewListeningPassages(parsedP34.passages);
+          setPreviewReadingPassage(parsedP34.passages[0] || null);
+          return;
+        }
+      }
+
+      const parsedListening = parseListeningQuizText(importText, audioObj, listeningImages);
+      if (parsedListening && parsedListening.questions.length > 0) {
+        setPreviewQuestions(parsedListening.questions);
+        setPreviewReadingPassage(parsedListening.passage);
+        setPreviewListeningPassages([parsedListening.passage]);
+      } else {
+        alert('Không tìm thấy dữ liệu LISTENING hợp lệ. Hãy nhập kịch bản/câu hỏi có các lựa chọn A/B/C/D hoặc đính kèm audio/hình ảnh.');
+      }
+      return;
+    }
+
     if (importMode === 'reading') {
       const parsedReading = parseReadingQuizText(importText);
       if (parsedReading && parsedReading.questions.length > 0) {
@@ -920,6 +1176,7 @@ export default function QuizzesView() {
     if (!previewQuestions || previewQuestions.length === 0) return;
 
     const isReadingImport = importMode === 'reading';
+    const isListeningImport = importMode === 'listening';
 
     if (importTargetQuizId) {
       // Import into currently opened quiz
@@ -928,6 +1185,19 @@ export default function QuizzesView() {
       }
       const newQuizzes = quizzes.map(q => {
         if (q.id !== importTargetQuizId) return q;
+
+        if (isListeningImport) {
+          const newPassagesToAppend = previewListeningPassages && previewListeningPassages.length > 0
+            ? previewListeningPassages
+            : (previewReadingPassage ? [previewReadingPassage] : []);
+
+          return {
+            ...q,
+            questions: [...q.questions, ...previewQuestions],
+            listeningPassages: [...(q.listeningPassages || []), ...newPassagesToAppend],
+            updatedAt: Date.now(),
+          };
+        }
 
         if (isReadingImport) {
           // User approved rule 1: always create a NEW reading block for each reading import
@@ -948,25 +1218,32 @@ export default function QuizzesView() {
 
       setQuizzes(newQuizzes);
       setActiveQuizId(importTargetQuizId);
-      if (isReadingImport && previewQuestions[0]?.id) {
+      if ((isReadingImport || isListeningImport) && previewQuestions[0]?.id) {
         setSelectedReadingQuestionId(previewQuestions[0].id);
       }
     } else {
       // Import from grid: create new quiz
-      const quizTitle = isReadingImport
+      const quizTitle = isListeningImport
+        ? `Đề LISTENING TOEIC (${previewQuestions.length} câu)`
+        : isReadingImport
         ? `Đề READING (${previewQuestions.length} câu)`
         : `Đề import (${previewQuestions.length} câu)`;
+
+      const newPassagesToAppend = previewListeningPassages && previewListeningPassages.length > 0
+        ? previewListeningPassages
+        : (previewReadingPassage ? [previewReadingPassage] : []);
 
       const newQuiz = {
         id: uuidv4(),
         title: quizTitle,
         questions: previewQuestions,
         readingPassages: isReadingImport && previewReadingPassage ? [previewReadingPassage] : [],
+        listeningPassages: isListeningImport ? newPassagesToAppend : [],
         updatedAt: Date.now(),
       };
       setQuizzes([newQuiz, ...quizzes]);
       setActiveQuizId(newQuiz.id);
-      if (isReadingImport && previewQuestions[0]?.id) {
+      if ((isReadingImport || isListeningImport) && previewQuestions[0]?.id) {
         setSelectedReadingQuestionId(previewQuestions[0].id);
       }
     }
@@ -975,9 +1252,14 @@ export default function QuizzesView() {
     setIsImporting(false);
     setPreviewQuestions(null);
     setPreviewReadingPassage(null);
+    setPreviewListeningPassages(null);
     setImportTargetQuizId(null);
     setImportText('');
     setImportMode('normal');
+    setListeningAudio(null);
+    setListeningAudioUrl('');
+    setBulkAudioFiles([]);
+    setListeningImages([]);
   };
 
   const handleWordUpload = async (e) => {
@@ -1128,8 +1410,11 @@ export default function QuizzesView() {
     const explainRe = /^\s*(?:Giải thích|Explanation|Giải Thích)\s*[:.]\s*(.*)/i;
 
     function flushQuestion() {
-      let q = currentQuestion.trim();
-      q = q.replace(/^(?:Câu|Question|Q|Bài)\s*\d+\s*[.):]*\s*/i, '');
+      let rawQ = currentQuestion.trim();
+      const numMatch = rawQ.match(/^(?:Câu|Question|Q|Bài)?\s*(\d{1,4})\s*[.):]*/i);
+      const blankNumber = numMatch ? numMatch[1] : '';
+
+      let q = rawQ.replace(/^(?:Câu|Question|Q|Bài)\s*\d+\s*[.):]*\s*/i, '');
       q = q.replace(/^\d+\s*[.)]\s+/, '');
       q = q.trim();
 
@@ -1141,6 +1426,7 @@ export default function QuizzesView() {
         questions.push({
           id: uuidv4(),
           question: q,
+          blankNumber: blankNumber,
           options: cleanedOptions,
           answer: currentAnswer,
           explanation: currentExplanation.trim(),
@@ -1322,6 +1608,77 @@ export default function QuizzesView() {
         title: passageTitle,
         content: cleanedPassage,
         blankNumbers: effectiveBlankNumbers,
+      },
+      questions: mappedQuestions,
+    };
+  }
+
+  /**
+   * LISTENING parser: Audio/Images + Transcript/Script + mapped questions.
+   * Output:
+   * {
+   *   passage: { id, type: 'listening', title, transcript, audioUrl, audioName, images: [] },
+   *   questions: [{...mcq, blankNumber, listeningGroupId }]
+   * }
+   */
+  function parseListeningQuizText(text, audioObj = null, imagesArr = []) {
+    const normalized = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    const questionStartRe = /^\s*(?:Câu|Question|Q)?\s*\d+\s*[):.]/i;
+
+    let firstQuestionLineIdx = lines.findIndex(line => questionStartRe.test(line.trim()));
+
+    let transcriptRaw = '';
+    let questionsRaw = text || '';
+
+    if (firstQuestionLineIdx !== -1) {
+      transcriptRaw = lines.slice(0, firstQuestionLineIdx).join('\n').trim();
+      questionsRaw = lines.slice(firstQuestionLineIdx).join('\n').trim();
+    }
+
+    const cleanedTranscript = transcriptRaw
+      .replace(/^\s*(?:LISTENING|TRANSCRIPT|BÀI\s*NGHE|AUDIO|SCRIPT)\s*[:-]?\s*/i, '')
+      .trim();
+
+    const parsedQuestions = parseQuizText(questionsRaw);
+    
+    // If no text questions found but audio or images are provided, create dummy question shell
+    if (parsedQuestions.length === 0 && !audioObj && (!imagesArr || imagesArr.length === 0)) {
+      return null;
+    }
+
+    const listeningGroupId = uuidv4();
+    const mappedQuestions = (parsedQuestions.length > 0 ? parsedQuestions : [
+      {
+        id: uuidv4(),
+        question: 'Nghe bài phát và chọn đáp án đúng nhất:',
+        options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+        answer: 'A',
+        explanation: 'Nghe lại audio để xác nhận.',
+        userAnswer: null
+      }
+    ]).map((item, idx) => {
+      const blankFromQuestionText = item.question.match(/^\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[):.]?/i)?.[1] || '';
+      return {
+        ...item,
+        listeningGroupId,
+        blankNumber: item.blankNumber || blankFromQuestionText || String(idx + 1),
+      };
+    });
+
+    const passageTitle = cleanedTranscript 
+      ? (cleanedTranscript.split('\n')[0].slice(0, 50) || 'Bài nghe TOEIC') 
+      : (audioObj?.name || 'Bài nghe TOEIC Listening');
+
+    return {
+      passage: {
+        id: listeningGroupId,
+        type: 'listening',
+        title: passageTitle,
+        transcript: cleanedTranscript,
+        audioUrl: audioObj?.data || audioObj?.url || '',
+        audioName: audioObj?.name || '',
+        images: imagesArr || [],
       },
       questions: mappedQuestions,
     };
@@ -1745,6 +2102,24 @@ ${optionsText}`;
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, readingPassages: newReadingPassages } : q));
   };
 
+  const handleUpdateListeningPassageProp = (passageId, prop, value) => {
+    if (!activeQuiz) return;
+    const listeningPassages = activeQuiz.listeningPassages || [];
+    const readingPassages = activeQuiz.readingPassages || [];
+
+    if (listeningPassages.some(p => p.id === passageId)) {
+      const newListeningPassages = listeningPassages.map(p => 
+        p.id === passageId ? { ...p, [prop]: value } : p
+      );
+      setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, listeningPassages: newListeningPassages } : q));
+    } else if (readingPassages.some(p => p.id === passageId)) {
+      const newReadingPassages = readingPassages.map(p => 
+        p.id === passageId ? { ...p, [prop]: value } : p
+      );
+      setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, readingPassages: newReadingPassages } : q));
+    }
+  };
+
   const playFeedbackSound = (isCorrect) => {
     if (!appSoundEnabled) return;
     try {
@@ -1955,16 +2330,6 @@ ${questionsText}`;
     'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(139,92,246,0.10))',
   ];
 
-  const cardAccentColors = [
-    '#7c4dff', '#00e3fd', '#10b981', '#fbbf24', '#f472b6', '#a855f7'
-  ];
-
-  const filteredQuizzes = useMemo(() => {
-    if (selectedFolderId === 'all') return quizzes;
-    if (selectedFolderId === 'uncategorized') return quizzes.filter(q => !q.folderId);
-    return quizzes.filter(q => q.folderId === selectedFolderId);
-  }, [quizzes, selectedFolderId]);
-
   const folderCounts = useMemo(() => {
     const counts = {};
     quizzes.forEach(q => {
@@ -2090,17 +2455,21 @@ ${questionsText}`;
                     fontSize: '24px', 
                     fontWeight: 800, 
                     margin: 0,
-                    background: 'linear-gradient(135deg, #c59aff, #00e3fd)',
+                    background: modeFilter === 'toeic' ? 'linear-gradient(135deg, #f472b6, #00e3fd)' : 'linear-gradient(135deg, #c59aff, #00e3fd)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text'
                   }}>
-                    {selectedFolderId === 'all' ? 'Bộ đề trắc nghiệm' : 
-                     selectedFolderId === 'uncategorized' ? 'Bộ đề chưa phân loại' : 
-                     (folders.find(f => f.id === selectedFolderId)?.name || 'Bộ đề trắc nghiệm')}
+                    {modeFilter === 'toeic'
+                      ? '🎧 Luyện Thi TOEIC (Listening & Reading)'
+                      : (selectedFolderId === 'all' ? 'Bộ đề trắc nghiệm' : 
+                         selectedFolderId === 'uncategorized' ? 'Bộ đề chưa phân loại' : 
+                         (folders.find(f => f.id === selectedFolderId)?.name || 'Bộ đề trắc nghiệm'))}
                   </h2>
                   <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
-                    {filteredQuizzes.length} bộ đề · Chọn một bộ đề để bắt đầu ôn tập
+                    {modeFilter === 'toeic'
+                      ? `${filteredQuizzes.length} đề thi TOEIC · Chọn một đề thi để luyện tập chia đôi màn hình ETS`
+                      : `${filteredQuizzes.length} bộ đề · Chọn một bộ đề để bắt đầu ôn tập`}
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -2161,17 +2530,24 @@ ${questionsText}`;
                         <PlusIcon /> Tạo đề trống
                       </button>
                       <button
-                        onClick={() => { setIsImporting(true); setImportTargetQuizId(null); setIsCreatingAiQuiz(false); setActiveQuizId(null); }}
+                        onClick={() => {
+                          setIsImporting(true);
+                          setImportTargetQuizId(null);
+                          setIsCreatingAiQuiz(false);
+                          setActiveQuizId(null);
+                          if (modeFilter === 'toeic') setImportMode('listening');
+                        }}
                         style={{
                           padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
                           border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
-                          background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
+                          background: modeFilter === 'toeic' ? 'rgba(236,72,153,0.22)' : 'rgba(var(--glass-rgb),0.04)',
+                          color: modeFilter === 'toeic' ? '#f472b6' : 'var(--text-main)',
                           display: 'flex', alignItems: 'center', gap: '6px',
                           transition: 'all 0.2s'
                         }}
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>description</span>
-                        Nhập từ Word
+                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>{modeFilter === 'toeic' ? 'headphones' : 'description'}</span>
+                        {modeFilter === 'toeic' ? 'Nhập đề TOEIC' : 'Nhập từ Word'}
                       </button>
                       <button
                         onClick={() => jsonFileInputRef.current?.click()}
@@ -2723,6 +3099,78 @@ ${questionsText}`;
                     <h3>Xem Trước ({previewQuestions.length} câu)</h3>
                     <div style={{ flex: 1, overflowY: 'auto', background: 'rgba(var(--glass-rgb),0.02)', borderRadius: '8px', padding: '16px', border: '1px solid rgba(var(--glass-rgb),0.06)', marginTop: '16px' }}>
                       {(() => {
+                        if (importMode === 'listening' && (previewListeningPassages?.length > 0 || previewReadingPassage)) {
+                          const passagesToDisplay = previewListeningPassages && previewListeningPassages.length > 0
+                            ? previewListeningPassages
+                            : [previewReadingPassage];
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                              {passagesToDisplay.map((passage, pIdx) => {
+                                const blockQuestions = previewQuestions.filter(q => q.listeningGroupId === passage.id);
+                                const displayQuestions = blockQuestions.length > 0 ? blockQuestions : previewQuestions;
+
+                                return (
+                                  <div key={passage.id || pIdx} style={{ background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.3)', borderRadius: '12px', padding: '16px' }}>
+                                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#f472b6', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <Headphones size={16} /> LISTENING BLOCK {pIdx + 1}: {passage.title || 'Bài nghe'}
+                                    </div>
+
+                                    {passage.audioUrl && (
+                                      <TOEICAudioPlayer src={passage.audioUrl} title={passage.audioName || passage.title} />
+                                    )}
+
+                                    {passage.images && passage.images.length > 0 && (
+                                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0' }}>
+                                        {passage.images.map(img => (
+                                          <img
+                                            key={img.id}
+                                            src={img.data || img.url}
+                                            alt={img.name}
+                                            onClick={() => setActiveLightboxImage(img.data || img.url)}
+                                            style={{ width: '120px', height: '90px', objectFit: 'cover', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer' }}
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {passage.transcript && (
+                                      <div style={{ marginTop: '10px', background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(236,72,153,0.2)', fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                                        <strong style={{ color: '#f472b6', display: 'block', marginBottom: '4px' }}>📝 Kịch bản (Transcript):</strong>
+                                        {passage.transcript}
+                                      </div>
+                                    )}
+
+                                    <div style={{ marginTop: '14px' }}>
+                                      <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#d8ccff', marginBottom: '8px' }}>
+                                        Questions / Câu hỏi ({displayQuestions.length} câu)
+                                      </div>
+                                      {displayQuestions.map((q, qIdx) => (
+                                        <div key={q.id || qIdx} style={{ marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px dashed rgba(var(--glass-rgb),0.08)' }}>
+                                          <div style={{ fontWeight: '600', marginBottom: '6px', fontSize: '14px', color: '#fff' }}>
+                                            Câu {q.blankNumber || (qIdx + 1)}: {q.question}
+                                          </div>
+                                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                                            {Object.keys(q.options).map(optKey => (
+                                              <div key={optKey}>{optKey}. {q.options[optKey]}</div>
+                                            ))}
+                                          </div>
+                                          {(q.answer || q.explanation) && (
+                                            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '6px 10px', borderRadius: '6px' }}>
+                                              {q.answer && <span style={{ fontWeight: 'bold', marginRight: '8px' }}>✓ Đáp án: {q.answer}</span>}
+                                              {q.explanation && <span>📝 GT: {q.explanation}</span>}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+
                         const readingPreview = importMode === 'reading' && previewReadingPassage
                           ? {
                               isReading: true,
@@ -2783,7 +3231,7 @@ ${questionsText}`;
 
                         return previewQuestions.map((q, i) => (
                           <div key={i} style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px dashed rgba(var(--glass-rgb),0.06)' }}>
-                            <div style={{ fontWeight: '500', marginBottom: '8px', fontSize: '15px' }}>Câu {i + 1}: {q.question}</div>
+                            <div style={{ fontWeight: '500', marginBottom: '8px', fontSize: '15px' }}>Câu {q.blankNumber || (i + 1)}: {q.question}</div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
                               {Object.keys(q.options).map(optKey => (
                                 <div key={optKey}>{optKey}. {q.options[optKey]}</div>
@@ -2802,7 +3250,7 @@ ${questionsText}`;
                     <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                       <button className="btn" onClick={() => setPreviewQuestions(null)}>Quay lại chỉnh sửa</button>
                       <button className="btn btn-primary" onClick={handleConfirmImport}>
-                        Xác nhận {(importTargetQuizId && importMode !== 'reading') ? 'Thêm' : 'Khởi tạo Đề'}
+                        Xác nhận {(importTargetQuizId && importMode !== 'reading' && importMode !== 'listening') ? 'Thêm' : 'Khởi tạo Đề'}
                       </button>
                     </div>
                   </>
@@ -2833,6 +3281,19 @@ ${questionsText}`;
                       >
                         READING (1 đoạn + nhiều câu)
                       </button>
+                      <button
+                        onClick={() => setImportMode('listening')}
+                        style={{
+                          padding: '7px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700,
+                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                          background: importMode === 'listening' ? 'rgba(236,72,153,0.22)' : 'rgba(var(--glass-rgb),0.04)',
+                          color: importMode === 'listening' ? '#f472b6' : 'var(--text-muted)',
+                          display: 'flex', alignItems: 'center', gap: '6px'
+                        }}
+                      >
+                        <Headphones size={14} />
+                        LISTENING TOEIC (Audio + Ảnh)
+                      </button>
                       <div style={{ flex: 1 }}></div>
                       <label style={{
                           padding: '7px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700,
@@ -2846,20 +3307,208 @@ ${questionsText}`;
                       </label>
                     </div>
 
+                    {importMode === 'listening' && (
+                      <div style={{
+                        background: 'rgba(236,72,153,0.06)',
+                        border: '1px solid rgba(236,72,153,0.25)',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        marginBottom: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '14px'
+                      }}>
+                        {/* Sub-Part Selector */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ fontWeight: 700, fontSize: '13px', color: '#f472b6', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Headphones size={16} /> Chọn Phần Thi TOEIC Listening:
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setToeicPart('part1')}
+                              style={{
+                                padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, border: 'none', cursor: 'pointer',
+                                background: toeicPart === 'part1' ? '#f472b6' : 'rgba(255,255,255,0.08)',
+                                color: toeicPart === 'part1' ? '#000' : 'var(--text-muted)'
+                              }}
+                            >
+                              Part 1 (Ảnh + 1 câu)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setToeicPart('part2')}
+                              style={{
+                                padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, border: 'none', cursor: 'pointer',
+                                background: toeicPart === 'part2' ? '#f472b6' : 'rgba(255,255,255,0.08)',
+                                color: toeicPart === 'part2' ? '#000' : 'var(--text-muted)'
+                              }}
+                            >
+                              Part 2 (Audio + 3 đáp án)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setToeicPart('part34')}
+                              style={{
+                                padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, border: 'none', cursor: 'pointer',
+                                background: toeicPart === 'part34' ? '#f472b6' : 'rgba(255,255,255,0.08)',
+                                color: toeicPart === 'part34' ? '#000' : 'var(--text-muted)'
+                              }}
+                            >
+                              Part 3,4 (Gom 3 câu/block)
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Part 3,4 Bulk Audio Upload */}
+                        {toeicPart === 'part34' ? (
+                          <div style={{ background: 'rgba(0,0,0,0.25)', padding: '12px', borderRadius: '10px', border: '1px dashed rgba(236,72,153,0.35)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#8eefff' }}>
+                                🎵 Tải Nhiều File Âm Thanh Bài Nghe Hàng Loạt (Bulk Audio Upload):
+                              </div>
+                              <label style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px',
+                                background: 'linear-gradient(135deg, #7c4dff, #ec4899)', borderRadius: '6px', fontSize: '12px',
+                                color: '#fff', cursor: 'pointer', fontWeight: 700
+                              }}>
+                                <Upload size={14} /> Chọn nhiều file MP3...
+                                <input type="file" accept="audio/*" multiple style={{ display: 'none' }} onChange={handleBulkAudioUpload} />
+                              </label>
+                            </div>
+
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                              💡 Tên file dạng <code style={{ color: '#f472b6' }}>Test 01_Part 3_32-34.mp3</code> sẽ tự động nhận diện và ghép đúng vào <strong>Câu 32-34</strong>!
+                            </div>
+
+                            {bulkAudioFiles.length > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto', paddingRight: '4px' }}>
+                                {bulkAudioFiles.map((file) => (
+                                  <div key={file.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.05)', padding: '6px 10px', borderRadius: '6px', fontSize: '12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                                      <Music size={14} color="#f472b6" />
+                                      <span style={{ color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                                      {file.rangeStr && (
+                                        <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(0,227,253,0.2)', color: '#8eefff', fontSize: '10px', fontWeight: 700 }}>
+                                          Câu {file.rangeStr}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setBulkAudioFiles(bulkAudioFiles.filter(x => x.id !== file.id))}
+                                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px' }}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => setBulkAudioFiles([])}
+                                  style={{ alignSelf: 'flex-end', background: 'none', border: 'none', color: '#ef4444', fontSize: '11px', cursor: 'pointer', marginTop: '4px' }}
+                                >
+                                  Xóa tất cả {bulkAudioFiles.length} file audio
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '10px' }}>
+                                Chưa chọn file audio hàng loạt nào. Bạn cũng có thể chọn 1 file lẻ bên dưới.
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px', border: '1px dashed rgba(236,72,153,0.3)' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                              🎵 File Âm Thanh (.mp3, .wav, .m4a):
+                            </div>
+                            {listeningAudio ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ flex: 1, fontSize: '12px', color: '#8eefff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  ✓ {listeningAudio.name}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setListeningAudio(null)}
+                                  style={{ background: 'rgba(239,68,68,0.2)', border: 'none', color: '#ef4444', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', cursor: 'pointer' }}
+                                >
+                                  Xóa
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <label style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                  background: 'rgba(124,77,255,0.2)', borderRadius: '6px', fontSize: '12px',
+                                  color: '#d8ccff', cursor: 'pointer', fontWeight: 600, width: 'fit-content'
+                                }}>
+                                  <Upload size={14} /> Chọn File Audio...
+                                  <input type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleListeningAudioUpload} />
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Hoặc dán URL Audio (https://...)"
+                                  value={listeningAudioUrl}
+                                  onChange={e => setListeningAudioUrl(e.target.value)}
+                                  style={{ padding: '6px 10px', fontSize: '12px', borderRadius: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                                />
+                              </div>
+                            )}
+                           </div>
+                        )}
+
+                        {/* Images Upload */}
+                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px', border: '1px dashed rgba(236,72,153,0.3)' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                            🖼️ Hình Ảnh Đính Kèm (Part 1 Photo / Sơ đồ Part 3-4):
+                          </div>
+                          <label style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                            background: 'rgba(0,227,253,0.15)', borderRadius: '6px', fontSize: '12px',
+                            color: '#8eefff', cursor: 'pointer', fontWeight: 600, width: 'fit-content'
+                          }}>
+                            <ImageIcon size={14} /> Tải Ảnh Lên...
+                            <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleListeningImagesUpload} />
+                          </label>
+
+                          {listeningImages.length > 0 && (
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                              {listeningImages.map(img => (
+                                <div key={img.id} style={{ position: 'relative', width: '50px', height: '50px', borderRadius: '6px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
+                                  <img src={img.data} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  <button
+                                    type="button"
+                                    onClick={() => setListeningImages(listeningImages.filter(x => x.id !== img.id))}
+                                    style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff', borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  >
+                                    X
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <p style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '14px' }}>
-                      {importMode === 'reading'
+                      {importMode === 'listening'
+                        ? <>Dán theo mẫu: <strong>LISTENING: [Nội dung kịch bản Transcript (tùy chọn)]\n\nCâu 1: [câu hỏi] A...B...C...D...</strong>. Chọn file audio hoặc ảnh đính kèm nếu có.</>
+                        : importMode === 'reading'
                         ? <>Dán theo mẫu: <strong>READING: [tiêu đề + passage có blank number như (135), 136...]\n\n135. [câu hỏi] A...B...C...D...</strong>. Passage được lưu 1 block và câu hỏi map theo số.</>
                         : <>Copy và Paste trực tiếp từ Word. Định dạng yêu cầu: <strong>"Câu 1: [đề] A. [đáp án] B. [đáp án] C. [đáp án] D. [đáp án]"</strong>. (Tùy chọn ghi thêm "Đáp án: A", "Giải thích: ...")</>}
                     </p>
                     <textarea 
                       style={{ flex: 1, resize: 'none', fontFamily: 'monospace' }} 
                       value={importText} onChange={e => setImportText(e.target.value)}
-                      placeholder={importMode === 'reading'
+                      placeholder={importMode === 'listening'
+                        ? "LISTENING:\nWoman: Excuse me, where can I find the train schedule?\nMan: You can check the information board near gate 3.\n\nCâu 1: What is the woman asking about?\nA. A train schedule\nB. A flight ticket\nC. A hotel room\nD. A taxicab"
+                        : importMode === 'reading'
                         ? "READING:\nBiggs, CEO and founder of BiggsGraphics...\n\nCâu 1: Từ (131) phù hợp nhất là gì?\nA. seek\nB. to seek\nC. seeking\nD. are seeking"
                         : "Câu 1: 1 + 1 bằng mấy?\nA. 1\nB. 2\nC. 3\nD. 4"}
                     />
                     <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                      <button className="btn" onClick={() => { setIsImporting(false); setImportTargetQuizId(null); setPreviewQuestions(null); setPreviewReadingPassage(null); setImportMode('normal'); }}>Hủy</button>
+                      <button className="btn" onClick={() => { setIsImporting(false); setImportTargetQuizId(null); setPreviewQuestions(null); setPreviewReadingPassage(null); setImportMode('normal'); setListeningAudio(null); setListeningAudioUrl(''); setListeningImages([]); }}>Hủy</button>
                       <button className="btn btn-primary" onClick={handleParseImport}>Xem trước</button>
                     </div>
                   </>
@@ -3157,7 +3806,8 @@ ${questionsText}`;
 
                   {(() => {
                     const readingPassageMap = new Map((activeQuiz?.readingPassages || []).map(p => [p.id, p]));
-                    const firstNormalQuestionIndex = questionsForDisplay.findIndex(item => !item.readingGroupId);
+                    const listeningPassageMap = new Map((activeQuiz?.listeningPassages || []).map(p => [p.id, p]));
+                    const firstNormalQuestionIndex = questionsForDisplay.findIndex(item => !item.readingGroupId && !item.listeningGroupId);
                     const selectedReadingQuestion = questionsForDisplay.find(item => item.id === selectedReadingQuestionId);
                     const activeReadingBlankNumber = selectedReadingQuestion?.blankNumber || null;
 
@@ -3174,11 +3824,52 @@ ${questionsText}`;
                         ? questionsForDisplay.findIndex(item => item.readingGroupId === q.readingGroupId)
                         : -1;
                       const showReadingGroupHeader = !!q.readingGroupId && firstQuestionInGroupIndex === i;
-                      const showNormalHeader = !q.readingGroupId && firstNormalQuestionIndex === i;
+                      const showNormalHeader = !q.readingGroupId && !q.listeningGroupId && firstNormalQuestionIndex === i;
 
                       const passageObj = q.readingGroupId ? readingPassageMap.get(q.readingGroupId) : null;
                       const isSameSelectedGroup = !!selectedReadingQuestion?.readingGroupId
                         && selectedReadingQuestion.readingGroupId === q.readingGroupId;
+
+                      if (q.listeningGroupId) {
+                        const firstQuestionInListeningGroup = questionsForDisplay.findIndex(item => item.listeningGroupId === q.listeningGroupId);
+                        const showListeningGroupHeader = firstQuestionInListeningGroup === i;
+                        const listeningObj = listeningPassageMap.get(q.listeningGroupId) || (activeQuiz?.readingPassages || []).find(p => p.id === q.listeningGroupId);
+
+                        if (!showListeningGroupHeader || !listeningObj) {
+                          return null;
+                        }
+
+                        const groupQuestions = questionsForDisplay.filter(item => item.listeningGroupId === listeningObj.id);
+
+                        return (
+                          <TOEICListeningBlock
+                            key={`listening-test-group-${listeningObj.id}`}
+                            listeningObj={listeningObj}
+                            groupQuestions={groupQuestions}
+                            questionsForDisplay={questionsForDisplay}
+                            isTesting={isTesting}
+                            showTranscriptMap={showTranscriptMap}
+                            setShowTranscriptMap={setShowTranscriptMap}
+                            showTranslationMap={showTranslationMap}
+                            setShowTranslationMap={setShowTranslationMap}
+                            setActiveLightboxImage={setActiveLightboxImage}
+                            copiedQuestionId={copiedQuestionId}
+                            handleCopyQuestionToClipboard={handleCopyQuestionToClipboard}
+                            handleToggleBookmark={handleToggleBookmark}
+                            handleDeleteQuestion={handleDeleteQuestion}
+                            handleUpdateQuestionProp={handleUpdateQuestionProp}
+                            handleUpdateOptionProp={handleUpdateOptionProp}
+                            handleUpdateListeningPassageProp={handleUpdateListeningPassageProp}
+                            handleSelectAnswer={handleSelectAnswer}
+                            handleCallAI={handleCallAI}
+                            aiLoading={aiLoading}
+                            shuffledOptions={shuffledOptions}
+                            isShuffled={isShuffled}
+                            renderQuizText={renderQuizText}
+                            TiptapEditor={TiptapEditor}
+                          />
+                        );
+                      }
 
                       if (isTesting && q.readingGroupId) {
                         if (!showReadingGroupHeader || !passageObj) {
@@ -3326,7 +4017,7 @@ ${questionsText}`;
                           <div style={{ fontWeight: '500', fontSize: '16px', flex: 1 }}>
                             {!isTesting ? (
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                                <span style={{ paddingTop: '8px' }}>Câu {i + 1}:</span>
+                                <span style={{ paddingTop: '8px' }}>Câu {q.blankNumber || (i + 1)}:</span>
                                 <textarea 
                                   value={q.question} onChange={e => handleUpdateQuestionProp(q.id, 'question', e.target.value)}
                                   onMouseUp={(e) => handleTextSelection(e, q.id, 'question')}
@@ -3339,7 +4030,7 @@ ${questionsText}`;
                                   handleTextSelection(e, q.id, 'question');
                                 }
                               }}>
-                                Câu {i + 1}{q.readingGroupId && q.blankNumber ? ` (${q.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
+                                Câu {q.blankNumber || (i + 1)}{q.readingGroupId && q.blankNumber ? ` (${q.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
                                 {isTesting && q.allowMultipleAnswers && (
                                   <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(234,179,8,0.15)', color: '#facc15', border: '1px solid rgba(234,179,8,0.3)', fontWeight: 'normal', display: 'inline-block', verticalAlign: 'middle', marginTop: '-2px' }}>
                                     Đây là câu chọn nhiều đáp án
@@ -4088,6 +4779,39 @@ ${questionsText}`;
           }} />
           <div style={{ color: 'white', fontSize: '15px', fontWeight: 600 }}>
             Đang tải bộ đề được chia sẻ...
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal */}
+      {activeLightboxImage && (
+        <div
+          onClick={() => setActiveLightboxImage(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            <img src={activeLightboxImage} alt="Phóng to ảnh" style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.7)', objectFit: 'contain' }} />
+            <button
+              onClick={() => setActiveLightboxImage(null)}
+              style={{
+                position: 'absolute', top: '-14px', right: '-14px', background: '#ef4444', color: '#fff',
+                border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer',
+                fontWeight: 'bold', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.4)'
+              }}
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}

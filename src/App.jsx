@@ -209,6 +209,18 @@ function AppContent() {
   const [bgMusicVolume, setBgMusicVolume] = useLocalStorage('bg_music_volume', 30);
   const [bgMusicUrl, setBgMusicUrl] = useLocalStorage('bg_music_url', 'https://youtu.be/Ys7-6_t7OEQ');
 
+  // ENVI Dictionary State
+  const [enviDictEnabled, setEnviDictEnabled] = useLocalStorage('envi_dict_enabled', true);
+
+  // Sync ENVI Dictionary state to document.body class list
+  useEffect(() => {
+    if (enviDictEnabled) {
+      document.body.classList.remove('envidictionary-off');
+    } else {
+      document.body.classList.add('envidictionary-off');
+    }
+  }, [enviDictEnabled]);
+
   const [activeTab, setActiveTab] = useState('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -442,6 +454,14 @@ function AppContent() {
             <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'quizzes' ? "'FILL' 1" : undefined }}>quiz</span>
             <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Trắc nghiệm</span>
           </button>
+
+          <button
+            onClick={() => handleTabChange('toeic')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'toeic' ? 'bg-white/10 text-pink-400 border-l-3 border-pink-400 shadow-[0_0_15px_rgba(244,114,182,0.35)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+          >
+            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'toeic' ? "'FILL' 1" : undefined }}>headphones</span>
+            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Luyện thi TOEIC</span>
+          </button>
           
           <button
             onClick={() => handleTabChange('settings')}
@@ -523,7 +543,8 @@ function AppContent() {
           {activeTab === 'home' && <HomeView pomodoroState={pomodoroState} />}
           {activeTab === 'notes' && <NotesView />}
           {activeTab === 'flashcards' && <DecksView />}
-          {activeTab === 'quizzes' && <QuizzesView />}
+          {activeTab === 'quizzes' && <QuizzesView modeFilter="general" />}
+          {activeTab === 'toeic' && <QuizzesView modeFilter="toeic" />}
           {activeTab === 'settings' && (
             <SettingsView 
               bgMusicEnabled={bgMusicEnabled} 
@@ -532,6 +553,8 @@ function AppContent() {
               setBgMusicVolume={setBgMusicVolume}
               bgMusicUrl={bgMusicUrl}
               setBgMusicUrl={setBgMusicUrl}
+              enviDictEnabled={enviDictEnabled}
+              setEnviDictEnabled={setEnviDictEnabled}
             />
           )}
         </main>
