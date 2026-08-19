@@ -1,37 +1,53 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function ResizableSplitPanel({ leftContent, rightContent, defaultLeftPercent = 42 }) {
   const [leftWidthPercent, setLeftWidthPercent] = useState(defaultLeftPercent);
-  const isDraggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef(null);
 
-  const handleMouseDown = (e) => {
+  const handlePointerDown = (e) => {
     e.preventDefault();
-    isDraggingRef.current = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-
-    const handleMouseMove = (moveEvent) => {
-      if (!isDraggingRef.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const offsetX = moveEvent.clientX - rect.left;
-      let newPercent = (offsetX / rect.width) * 100;
-      if (newPercent < 20) newPercent = 20;
-      if (newPercent > 80) newPercent = 80;
-      setLeftWidthPercent(newPercent);
-    };
-
-    const handleMouseUp = () => {
-      isDraggingRef.current = false;
-      document.body.style.cursor = 'default';
-      document.body.style.userSelect = 'auto';
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDragging(true);
   };
+
+  const handlePointerMove = (e) => {
+    if (!isDragging || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    let newPercent = (offsetX / rect.width) * 100;
+    if (newPercent < 18) newPercent = 18;
+    if (newPercent > 82) newPercent = 82;
+    setLeftWidthPercent(newPercent);
+  };
+
+  const handlePointerUp = (e) => {
+    if (isDragging) {
+      setIsDragging(false);
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // Fallback cleanup if pointer capture released automatically
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging]);
 
   return (
     <div
@@ -40,40 +56,50 @@ export default function ResizableSplitPanel({ leftContent, rightContent, default
         display: 'flex',
         width: '100%',
         position: 'relative',
-        alignItems: 'stretch'
+        alignItems: 'stretch',
+        touchAction: 'none'
       }}
     >
       {/* Left Column */}
-      <div style={{ width: `${leftWidthPercent}%`, minWidth: '200px', flexShrink: 0, paddingRight: '8px' }}>
+      <div style={{ width: `${leftWidthPercent}%`, minWidth: '180px', flexShrink: 0, paddingRight: '8px' }}>
         {leftContent}
       </div>
 
       {/* Resizer bar */}
       <div
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         style={{
-          width: '16px',
+          width: '18px',
           cursor: 'col-resize',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
           userSelect: 'none',
-          zIndex: 10
+          touchAction: 'none',
+          zIndex: 20
         }}
         title="Kéo thanh này để thay đổi kích thước 2 bên"
       >
         <div style={{
-          width: '4px',
-          height: '56px',
+          width: isDragging ? '6px' : '4px',
+          height: '60px',
           borderRadius: '4px',
-          background: 'linear-gradient(180deg, #f472b6, #00e3fd)',
-          boxShadow: '0 0 10px rgba(236,72,153,0.55)'
+          background: isDragging 
+            ? 'linear-gradient(180deg, #00e3fd, #f472b6)' 
+            : 'linear-gradient(180deg, #f472b6, #00e3fd)',
+          boxShadow: isDragging 
+            ? '0 0 16px rgba(0,227,253,0.9), 0 0 8px rgba(236,72,153,0.8)' 
+            : '0 0 10px rgba(236,72,153,0.55)',
+          transition: 'width 0.15s ease, boxShadow 0.15s ease'
         }} />
       </div>
 
       {/* Right Column */}
-      <div style={{ flex: 1, minWidth: '260px', paddingLeft: '8px' }}>
+      <div style={{ flex: 1, minWidth: '240px', paddingLeft: '8px' }}>
         {rightContent}
       </div>
     </div>
