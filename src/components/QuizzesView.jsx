@@ -69,7 +69,7 @@ const DEMO_QUIZ = {
 
 export default function QuizzesView({ modeFilter = 'all' }) {
   const { user } = useAuth();
-  const [quizzes, setQuizzes, quizSyncState] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
+  const [quizzes, setQuizzes, quizSyncState, saveQuizzesToCloud, hasUnsavedQuizChanges] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
   const [folders, setFolders] = useFirestore('quiz_folders', 'study_quiz_folders', []);
   const [selectedFolderId, setSelectedFolderId] = useState('all');
   const [folderActionModal, setFolderActionModal] = useState(null); // { type: 'create' | 'rename', id?: string, name?: string }
@@ -614,19 +614,39 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     if (status === 'saving') {
       return (
         <span style={{
-          padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+          padding: '5px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
           background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)',
           display: 'inline-flex', alignItems: 'center', gap: '6px'
         }}>
           <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid #60a5fa', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-          Đang lưu...
+          Đang lưu Cloud...
         </span>
+      );
+    }
+
+    if (status === 'has_unsaved' || hasUnsavedQuizChanges) {
+      return (
+        <button
+          type="button"
+          onClick={() => saveQuizzesToCloud()}
+          style={{
+            padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
+            background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000',
+            border: 'none', cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            boxShadow: '0 2px 10px rgba(245,158,11,0.4)',
+            transition: 'all 0.2s'
+          }}
+          title="Bấm để đồng bộ dữ liệu vừa sửa lên Cloud"
+        >
+          <Save size={13} /> Lưu lên Cloud (Có thay đổi)
+        </button>
       );
     }
 
     if (status === 'local_only') {
       return (
-        <span title={error || 'Đã lưu an toàn tại máy (Local Storage)'} style={{
+        <span title={error || 'Đã lưu an toàn tại máy (Local Storage / IndexedDB)'} style={{
           padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
           background: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.3)',
           display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'help'
@@ -638,24 +658,34 @@ export default function QuizzesView({ modeFilter = 'all' }) {
 
     if (status === 'error') {
       return (
-        <span title={error || 'Lỗi kết nối Cloud'} style={{
-          padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-          background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)',
-          display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'help'
-        }}>
-          ⚠️ Lỗi lưu Cloud
-        </span>
+        <button
+          type="button"
+          onClick={() => saveQuizzesToCloud()}
+          title={error || 'Lỗi kết nối Cloud. Bấm để thử lại.'}
+          style={{
+            padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+            background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)',
+            display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer'
+          }}
+        >
+          ⚠️ Lỗi lưu Cloud (Thử lại)
+        </button>
       );
     }
 
     return (
-      <span style={{
-        padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-        background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)',
-        display: 'inline-flex', alignItems: 'center', gap: '6px'
-      }}>
+      <button
+        type="button"
+        onClick={() => saveQuizzesToCloud()}
+        title="Dữ liệu đã đồng bộ Cloud. Nhấp để lưu lại bất kỳ lúc nào."
+        style={{
+          padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+          background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)',
+          display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer'
+        }}
+      >
         ☁️ Đã đồng bộ Cloud
-      </span>
+      </button>
     );
   };
 
@@ -758,6 +788,15 @@ export default function QuizzesView({ modeFilter = 'all' }) {
             popupY = Math.min(window.innerHeight - 180, rect.bottom + 10);
             isAbove = false;
           }
+          const getAttr = (el, attrName) => {
+            if (!el) return null;
+            if (el.getAttribute && el.getAttribute(attrName)) return el.getAttribute(attrName);
+            const parent = el.closest ? el.closest(`[${attrName}]`) : null;
+            return parent ? parent.getAttribute(attrName) : null;
+          };
+
+          const qId = getAttr(target, 'data-question-id') || getAttr(e.target, 'data-question-id');
+          const fld = getAttr(target, 'data-field') || getAttr(e.target, 'data-field');
 
           lastPopupTimeRef.current = Date.now();
           setTranslationPopup({
@@ -765,8 +804,8 @@ export default function QuizzesView({ modeFilter = 'all' }) {
             y: popupY,
             isAbove,
             text: selectedText,
-            questionId: target.getAttribute ? target.getAttribute('data-question-id') : null,
-            field: target.getAttribute ? target.getAttribute('data-field') : null,
+            questionId: qId,
+            field: fld,
             selStart,
             selEnd
           });
@@ -924,40 +963,75 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     }
   };
 
-  // Insert translation as (text) into the question/option
+  // Insert translation as (text) into the question/option/active input
   const handleInsertTranslation = () => {
     if (!translationPopup || !translatedText) return;
     const { questionId, field, selStart, selEnd, text } = translationPopup;
+    const insertString = ` (${translatedText})`;
 
-    const q = activeQuiz?.questions.find(x => x.id === questionId);
-    if (!q) return;
+    // 1. Try active form element directly
+    const activeEl = document.activeElement;
+    const isFormEl = activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT');
 
-    let originalText = '';
-    if (field === 'question') {
-      originalText = q.question;
-    } else if (field.startsWith('option_')) {
-      const optKey = field.replace('option_', '');
-      originalText = q.options[optKey];
-    } else {
+    if (isFormEl) {
+      const val = activeEl.value || '';
+      let insertPos = (selEnd !== undefined && selEnd > 0) ? selEnd : (val.indexOf(text) !== -1 ? val.indexOf(text) + text.length : val.length);
+      const newVal = val.substring(0, insertPos) + insertString + val.substring(insertPos);
+
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value'
+      )?.set || Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value'
+      )?.set;
+
+      if (nativeSetter) {
+        nativeSetter.call(activeEl, newVal);
+        activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        activeEl.value = newVal;
+      }
+
+      if (questionId && field) {
+        if (field === 'question') {
+          handleUpdateQuestionProp(questionId, 'question', newVal);
+        } else if (field.startsWith('option_')) {
+          const optKey = field.replace('option_', '');
+          handleUpdateOptionProp(questionId, optKey, newVal);
+        }
+      }
+
+      setTranslationPopup(null);
+      setTranslatedText('');
+      setEnrichedData(null);
       return;
     }
 
-    // Use selStart/selEnd if available, otherwise fallback to indexOf (though form elements now provide selStart/selEnd)
-    let newText = '';
-    if (selStart !== undefined && selEnd !== undefined && selStart !== selEnd) {
-      newText = originalText.substring(0, selEnd) + ` (${translatedText})` + originalText.substring(selEnd);
-    } else {
-      const insertionIdx = originalText.indexOf(text);
-      if (insertionIdx === -1) return;
-      const afterIdx = insertionIdx + text.length;
-      newText = originalText.substring(0, afterIdx) + ` (${translatedText})` + originalText.substring(afterIdx);
-    }
+    // 2. Fallback using questionId & field
+    if (questionId && field) {
+      const q = activeQuiz?.questions.find(x => x.id === questionId);
+      if (q) {
+        let originalText = '';
+        if (field === 'question') {
+          originalText = q.question;
+        } else if (field.startsWith('option_')) {
+          const optKey = field.replace('option_', '');
+          originalText = q.options[optKey];
+        }
 
-    if (field === 'question') {
-      handleUpdateQuestionProp(questionId, 'question', newText);
-    } else if (field.startsWith('option_')) {
-      const optKey = field.replace('option_', '');
-      handleUpdateOptionProp(questionId, optKey, newText);
+        if (originalText) {
+          let insertPos = (selEnd !== undefined && selEnd > 0) ? selEnd : (originalText.indexOf(text) !== -1 ? originalText.indexOf(text) + text.length : originalText.length);
+          const newText = originalText.substring(0, insertPos) + insertString + originalText.substring(insertPos);
+
+          if (field === 'question') {
+            handleUpdateQuestionProp(questionId, 'question', newText);
+          } else if (field.startsWith('option_')) {
+            const optKey = field.replace('option_', '');
+            handleUpdateOptionProp(questionId, optKey, newText);
+          }
+        }
+      }
     }
 
     setTranslationPopup(null);
@@ -4178,11 +4252,11 @@ ${questionsText}`;
                               {saveSuccess ? 'Đã lưu' : (enrichedData ? 'Lưu thẻ đầy đủ' : 'Lưu thẻ')}
                             </button>
 
-                            {translationPopup.questionId && translationPopup.field && (
                             <button
                               type="button"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={handleInsertTranslation}
+                              title="Chèn nghĩa tiếng Việt vào sau đoạn văn bản"
                               style={{
                                 padding: '6px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
                                 background: 'linear-gradient(135deg, #7c4dff, #536dfe)',
@@ -4193,7 +4267,6 @@ ${questionsText}`;
                             >
                               <Sparkles size={12} /> Chèn
                             </button>
-                            )}
                           </>
                         )}
                       </div>

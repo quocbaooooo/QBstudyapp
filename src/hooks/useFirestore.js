@@ -20,7 +20,8 @@ import { saveAudioToIDB } from '../utils/audioStorage';
  * @param {Array} defaultValue - Default empty value
  * @returns {[Array, Function, Object]} - [items, setItems, syncState]
  */
-export function useFirestore(collectionName, localStorageKey, defaultValue = []) {
+export function useFirestore(collectionName, localStorageKey, defaultValue = [], options = {}) {
+  const { autoSync = false } = options;
   const { user } = useAuth();
   const [items, setItemsState] = useState(() => {
     // Initialize from localStorage
@@ -32,8 +33,9 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     }
   });
 
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [syncState, setSyncState] = useState({
-    status: 'synced', // 'synced' | 'saving' | 'local_only' | 'error'
+    status: 'synced', // 'synced' | 'has_unsaved' | 'saving' | 'local_only' | 'error'
     error: null,
     lastSaved: Date.now()
   });
@@ -42,6 +44,11 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
   const isUpdatingFromFirestore = useRef(false);
   const pendingWrites = useRef(false);
   const isFirestoreEmptyRef = useRef(true);
+  const currentItemsRef = useRef(items);
+
+  useEffect(() => {
+    currentItemsRef.current = items;
+  }, [items]);
 
   // Get Firestore collection reference for current user
   const getCollectionRef = useCallback(() => {
@@ -84,31 +91,35 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
       } else if (firestoreItems.length === 0 && !isMigrated) {
         // migration effect will handle pushing default/local data
       } else {
-        setItemsState(firestoreItems);
-        
-        // Save clean version to localStorage (sanitize large audio Base64 to prevent QuotaExceededError)
-        try {
-          const sanitizedForLocalStorage = firestoreItems.map(item => {
-            if (!item.listeningPassages) return item;
-            return {
-              ...item,
-              listeningPassages: item.listeningPassages.map(p => {
-                if (p.audioUrl && p.audioUrl.length > 200000) {
-                  return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]' };
-                }
-                return p;
-              })
-            };
-          });
-          window.localStorage.setItem(localStorageKey, JSON.stringify(sanitizedForLocalStorage));
-        } catch (e) {
-          console.warn('Failed to cache to localStorage:', e);
+        if (!hasUnsavedChanges) {
+          setItemsState(firestoreItems);
+          
+          // Save clean version to localStorage (sanitize large audio Base64)
+          try {
+            const sanitizedForLocalStorage = firestoreItems.map(item => {
+              if (!item.listeningPassages) return item;
+              return {
+                ...item,
+                listeningPassages: item.listeningPassages.map(p => {
+                  if (p.audioUrl && p.audioUrl.length > 200000) {
+                    return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]' };
+                  }
+                  return p;
+                })
+              };
+            });
+            window.localStorage.setItem(localStorageKey, JSON.stringify(sanitizedForLocalStorage));
+          } catch (e) {
+            console.warn('Failed to cache to localStorage:', e);
+          }
         }
       }
       
       isFirestoreEmptyRef.current = firestoreItems.length === 0;
       setFirestoreReady(true);
-      setSyncState({ status: 'synced', error: null, lastSaved: Date.now() });
+      if (!hasUnsavedChanges) {
+        setSyncState({ status: 'synced', error: null, lastSaved: Date.now() });
+      }
       
       setTimeout(() => {
         isUpdatingFromFirestore.current = false;
@@ -120,7 +131,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     });
 
     return unsubscribe;
-  }, [user, collectionName, getCollectionRef, localStorageKey]);
+  }, [user, collectionName, getCollectionRef, localStorageKey, hasUnsavedChanges]);
 
   // Migrate localStorage data to Firestore on first login
   useEffect(() => {
@@ -152,7 +163,32 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
     }
   }, [user, firestoreReady, collectionName, localStorageKey, getCollectionRef]);
 
-  // Wrapper setItems that writes to both Firestore, localStorage, and IndexedDB
+  // Manual save function to push current state to Firestore
+  const saveToCloud = useCallback(async (customItems = null) => {
+    const itemsToSave = customItems || currentItemsRef.current;
+    if (!user) {
+      setSyncState({ status: 'local_only', error: 'Chưa đăng nhập (Đã lưu tại máy IndexedDB)', lastSaved: Date.now() });
+      return;
+    }
+
+    const colRef = getCollectionRef();
+    if (!colRef) return;
+
+    pendingWrites.current = true;
+    setSyncState({ status: 'saving', error: null, lastSaved: Date.now() });
+
+    try {
+      await syncToFirestore(colRef, [], itemsToSave, setSyncState);
+      setHasUnsavedChanges(false);
+      setSyncState({ status: 'synced', error: null, lastSaved: Date.now() });
+    } catch (err) {
+      setSyncState({ status: 'error', error: `Lỗi lưu Cloud: ${err.message}`, lastSaved: Date.now() });
+    } finally {
+      pendingWrites.current = false;
+    }
+  }, [user, getCollectionRef]);
+
+  // Wrapper setItems that writes to localStorage and IndexedDB immediately, and flags unsaved changes for Cloud
   const setItems = useCallback((newValueOrFn) => {
     setItemsState(prev => {
       const newItems = typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn;
@@ -168,7 +204,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
         }
       });
 
-      // Save to localStorage as backup (sanitize audio Base64 if large)
+      // Save to localStorage as backup
       let localSaveOk = true;
       try {
         const sanitizedForLocalStorage = newItems.map(item => {
@@ -189,29 +225,33 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [])
         localSaveOk = false;
       }
 
-      // Write to Firestore if logged in (and this isn't triggered by Firestore listener)
-      if (user && !isUpdatingFromFirestore.current) {
-        const colRef = getCollectionRef();
-        if (colRef) {
-          pendingWrites.current = true;
-          setSyncState({ status: 'saving', error: null, lastSaved: Date.now() });
-          syncToFirestore(colRef, prev, newItems, setSyncState).finally(() => {
-            pendingWrites.current = false;
+      if (!isUpdatingFromFirestore.current) {
+        setHasUnsavedChanges(true);
+        if (user) {
+          if (autoSync) {
+            pendingWrites.current = true;
+            setSyncState({ status: 'saving', error: null, lastSaved: Date.now() });
+            syncToFirestore(getCollectionRef(), prev, newItems, setSyncState).finally(() => {
+              pendingWrites.current = false;
+              setHasUnsavedChanges(false);
+            });
+          } else {
+            setSyncState({ status: 'has_unsaved', error: null, lastSaved: Date.now() });
+          }
+        } else {
+          setSyncState({
+            status: localSaveOk ? 'local_only' : 'error',
+            error: localSaveOk ? 'Chưa đăng nhập (Đã lưu tại máy IndexedDB)' : 'Bộ nhớ trình duyệt đầy!',
+            lastSaved: Date.now()
           });
         }
-      } else if (!user) {
-        setSyncState({
-          status: localSaveOk ? 'local_only' : 'error',
-          error: localSaveOk ? 'Chưa đăng nhập (Đã lưu tại máy IndexedDB)' : 'Bộ nhớ trình duyệt đầy!',
-          lastSaved: Date.now()
-        });
       }
 
       return newItems;
     });
-  }, [user, localStorageKey, getCollectionRef]);
+  }, [user, localStorageKey, getCollectionRef, autoSync]);
 
-  return [items, setItems, syncState];
+  return [items, setItems, syncState, saveToCloud, hasUnsavedChanges];
 }
 
 /**
