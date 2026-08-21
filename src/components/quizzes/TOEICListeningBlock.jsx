@@ -302,8 +302,13 @@ export default function TOEICListeningBlock({
                         </div>
                       )}
                       {item.explanation && (
-                        <div style={{ color: 'var(--text-main)', background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.2)' }}>
-                          📝 <strong>Giải thích:</strong> {renderQuizText(item.explanation, true)}
+                        <div style={{ color: 'var(--text-main)', background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.2)', marginTop: '6px' }}>
+                          <strong style={{ color: 'var(--accent-orange)', display: 'block', marginBottom: '4px' }}>📝 Giải thích:</strong>
+                          {TiptapEditor ? (
+                            <TiptapEditor content={item.explanation} readOnly={true} variant="mini" onChange={() => {}} />
+                          ) : (
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{item.explanation}</div>
+                          )}
                         </div>
                       )}
                     </div>

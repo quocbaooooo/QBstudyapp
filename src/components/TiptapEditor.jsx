@@ -342,10 +342,13 @@ export default function TiptapEditor({ title, content, onChange = () => {}, vari
     },
   });
 
-  // Keep editor content perfectly synced if selected a different note from outside
+  // Keep editor content perfectly synced if content prop changes from outside (e.g. translation insert)
   useEffect(() => {
-    if (editor && content !== editor.getHTML() && !editor.isFocused) {
-      editor.commands.setContent(content || '');
+    if (editor && content !== undefined) {
+      const currentHtml = editor.getHTML();
+      if (content !== currentHtml) {
+        editor.commands.setContent(content || '', false);
+      }
     }
   }, [content, editor]);
 

@@ -691,13 +691,28 @@ export default function QuizzesView({ modeFilter = 'all' }) {
 
   // ===== HELPERS: Render text with / separator and () hiding =====
 
+  // Finds the index of a quiz / separator (ignoring HTML closing tags like </p>, </div>, </span>)
+  const findSlashIndex = (str) => {
+    if (!str || typeof str !== 'string') return -1;
+    for (let i = 0; i < str.length; i++) {
+      if (str[i] === '/') {
+        if (i > 0 && str[i - 1] === '<') continue; // Ignore </p>
+        const openBefore = str.lastIndexOf('<', i);
+        const closeBefore = str.lastIndexOf('>', i);
+        if (openBefore > closeBefore) continue; // Ignore inside <... >
+        return i;
+      }
+    }
+    return -1;
+  };
+
   // Renders text: hides content after / and content in () during test mode
   // showHidden = true means show everything (answer revealed or edit mode)
   const renderQuizText = (text, showHidden = false) => {
     if (!text) return text;
 
-    // Split by / — first part is visible, rest is explanation
-    const slashIdx = text.indexOf('/');
+    // Split by / — ignoring HTML closing tags like </p>
+    const slashIdx = findSlashIndex(text);
     let visiblePart = slashIdx !== -1 ? text.substring(0, slashIdx).trimEnd() : text;
     const hiddenPart = slashIdx !== -1 ? text.substring(slashIdx + 1).trimStart() : '';
 
@@ -807,7 +822,8 @@ export default function QuizzesView({ modeFilter = 'all' }) {
             questionId: qId,
             field: fld,
             selStart,
-            selEnd
+            selEnd,
+            targetEl: isFormElement ? target : null
           });
           setTranslatedText('');
           setEnrichedData(null);
@@ -833,8 +849,14 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       let selStart = 0, selEnd = 0;
 
       const target = e.target;
-      const qId = questionId || (target.getAttribute ? target.getAttribute('data-question-id') : null);
-      const fld = field || (target.getAttribute ? target.getAttribute('data-field') : null);
+      const getAttr = (el, attrName) => {
+        if (!el) return null;
+        if (el.getAttribute && el.getAttribute(attrName)) return el.getAttribute(attrName);
+        const parent = el.closest ? el.closest(`[${attrName}]`) : null;
+        return parent ? parent.getAttribute(attrName) : null;
+      };
+      const qId = questionId || getAttr(target, 'data-question-id');
+      const fld = field || getAttr(target, 'data-field');
 
       if (target.closest && target.closest('.translation-popup')) return;
 
@@ -868,7 +890,8 @@ export default function QuizzesView({ modeFilter = 'all' }) {
           questionId: qId,
           field: fld,
           selStart,
-          selEnd
+          selEnd,
+          targetEl: isFormElement ? target : null
         });
         setTranslatedText('');
         setEnrichedData(null);
@@ -966,66 +989,134 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   // Insert translation as (text) into the question/option/active input
   const handleInsertTranslation = () => {
     if (!translationPopup || !translatedText) return;
-    const { questionId, field, selStart, selEnd, text } = translationPopup;
+    const { questionId, field, selStart, selEnd, text, targetEl } = translationPopup;
     const insertString = ` (${translatedText})`;
 
-    // 1. Try active form element directly
+    // 1. Try saved targetEl or active form element directly
     const activeEl = document.activeElement;
-    const isFormEl = activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT');
+    const formEl = (targetEl && document.body.contains(targetEl))
+      ? targetEl
+      : (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT') ? activeEl : null);
 
-    if (isFormEl) {
-      const val = activeEl.value || '';
-      let insertPos = (selEnd !== undefined && selEnd > 0) ? selEnd : (val.indexOf(text) !== -1 ? val.indexOf(text) + text.length : val.length);
+    let handled = false;
+
+    if (formEl) {
+      const val = formEl.value || '';
+      let insertPos = -1;
+      if (selEnd !== undefined && selEnd > 0) {
+        insertPos = selEnd;
+      } else if (text) {
+        const idx = val.indexOf(text);
+        if (idx !== -1) {
+          insertPos = idx + text.length;
+        } else {
+          const lowerVal = val.toLowerCase();
+          const lowerText = text.toLowerCase();
+          const lowerIdx = lowerVal.indexOf(lowerText);
+          insertPos = lowerIdx !== -1 ? lowerIdx + text.length : val.length;
+        }
+      } else {
+        insertPos = val.length;
+      }
+
       const newVal = val.substring(0, insertPos) + insertString + val.substring(insertPos);
 
+      const isTextArea = formEl.tagName === 'TEXTAREA';
       const nativeSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
+        isTextArea ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
         'value'
-      )?.set || Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value'
-      )?.set;
+      )?.set || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
 
       if (nativeSetter) {
-        nativeSetter.call(activeEl, newVal);
-        activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+        nativeSetter.call(formEl, newVal);
+        formEl.dispatchEvent(new Event('input', { bubbles: true }));
+        formEl.dispatchEvent(new Event('change', { bubbles: true }));
       } else {
-        activeEl.value = newVal;
+        formEl.value = newVal;
       }
 
-      if (questionId && field) {
-        if (field === 'question') {
-          handleUpdateQuestionProp(questionId, 'question', newVal);
-        } else if (field.startsWith('option_')) {
-          const optKey = field.replace('option_', '');
-          handleUpdateOptionProp(questionId, optKey, newVal);
+      const qId = questionId || formEl.getAttribute('data-question-id') || formEl.closest?.('[data-question-id]')?.getAttribute('data-question-id');
+      const fld = field || formEl.getAttribute('data-field') || formEl.closest?.('[data-field]')?.getAttribute('data-field');
+
+      if (qId && fld) {
+        if (fld === 'question') {
+          handleUpdateQuestionProp(qId, 'question', newVal);
+        } else if (fld === 'explanation') {
+          handleUpdateQuestionProp(qId, 'explanation', newVal);
+        } else if (fld.startsWith('option_')) {
+          const optKey = fld.replace('option_', '');
+          handleUpdateOptionProp(qId, optKey, newVal);
         }
       }
-
-      setTranslationPopup(null);
-      setTranslatedText('');
-      setEnrichedData(null);
-      return;
+      handled = true;
     }
 
-    // 2. Fallback using questionId & field
-    if (questionId && field) {
+    // 2. Fallback using questionId & field (supports question, explanation, AND options!)
+    if (!handled && questionId && field) {
       const q = activeQuiz?.questions.find(x => x.id === questionId);
       if (q) {
         let originalText = '';
         if (field === 'question') {
-          originalText = q.question;
+          originalText = q.question || '';
+        } else if (field === 'explanation') {
+          originalText = q.explanation || '';
         } else if (field.startsWith('option_')) {
           const optKey = field.replace('option_', '');
-          originalText = q.options[optKey];
+          originalText = q.options[optKey] || '';
         }
 
-        if (originalText) {
-          let insertPos = (selEnd !== undefined && selEnd > 0) ? selEnd : (originalText.indexOf(text) !== -1 ? originalText.indexOf(text) + text.length : originalText.length);
-          const newText = originalText.substring(0, insertPos) + insertString + originalText.substring(insertPos);
+        if (originalText !== undefined) {
+          const insertIntoHtmlOrText = (originalStr, textToFind, insertStr, selEndPos) => {
+            if (!originalStr) return `<p>${insertStr.trim()}</p>`;
+
+            if (/<[a-z][\s\S]*>/i.test(originalStr)) {
+              if (textToFind) {
+                const idx = originalStr.indexOf(textToFind);
+                if (idx !== -1) {
+                  const afterPos = idx + textToFind.length;
+                  return originalStr.substring(0, afterPos) + insertStr + originalStr.substring(afterPos);
+                }
+                const lowerOrig = originalStr.toLowerCase();
+                const lowerFind = textToFind.toLowerCase();
+                const lowerIdx = lowerOrig.indexOf(lowerFind);
+                if (lowerIdx !== -1) {
+                  const afterPos = lowerIdx + textToFind.length;
+                  return originalStr.substring(0, afterPos) + insertStr + originalStr.substring(afterPos);
+                }
+              }
+              const lastCloseTagIdx = originalStr.lastIndexOf('</');
+              if (lastCloseTagIdx !== -1) {
+                return originalStr.substring(0, lastCloseTagIdx) + insertStr + originalStr.substring(lastCloseTagIdx);
+              }
+              return originalStr + insertStr;
+            }
+
+            let pos = -1;
+            if (selEndPos !== undefined && selEndPos > 0 && selEndPos <= originalStr.length) {
+              pos = selEndPos;
+            } else if (textToFind) {
+              const idx = originalStr.indexOf(textToFind);
+              if (idx !== -1) {
+                pos = idx + textToFind.length;
+              } else {
+                const lowerOrig = originalStr.toLowerCase();
+                const lowerFind = textToFind.toLowerCase();
+                const lowerIdx = lowerOrig.indexOf(lowerFind);
+                pos = lowerIdx !== -1 ? lowerIdx + textToFind.length : originalStr.length;
+              }
+            } else {
+              pos = originalStr.length;
+            }
+
+            return originalStr.substring(0, pos) + insertStr + originalStr.substring(pos);
+          };
+
+          const newText = insertIntoHtmlOrText(originalText, text, insertString, selEnd);
 
           if (field === 'question') {
             handleUpdateQuestionProp(questionId, 'question', newText);
+          } else if (field === 'explanation') {
+            handleUpdateQuestionProp(questionId, 'explanation', newText);
           } else if (field.startsWith('option_')) {
             const optKey = field.replace('option_', '');
             handleUpdateOptionProp(questionId, optKey, newText);
@@ -3452,7 +3543,7 @@ ${questionsText}`;
                                           {(q.answer || q.explanation) && (
                                             <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '6px 10px', borderRadius: '6px' }}>
                                               {q.answer && <span style={{ fontWeight: 'bold', marginRight: '8px' }}>✓ Đáp án: {q.answer}</span>}
-                                              {q.explanation && <span>📝 GT: {q.explanation}</span>}
+                                              {q.explanation && <span>📝 GT: {q.explanation.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}</span>}
                                             </div>
                                           )}
                                         </div>
@@ -3513,7 +3604,7 @@ ${questionsText}`;
                                     {(q.answer || q.explanation) && (
                                       <div style={{ marginTop: '10px', fontSize: '13px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '8px', borderRadius: '6px' }}>
                                         {q.answer && <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>✓ Đáp án: {q.answer}</div>}
-                                        {q.explanation && <div style={{ color: 'var(--text-main)' }}>📝 GT: {q.explanation}</div>}
+                                        {q.explanation && <div style={{ color: 'var(--text-main)' }}>📝 GT: {q.explanation.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}</div>}
                                       </div>
                                     )}
                                   </div>
@@ -3534,7 +3625,7 @@ ${questionsText}`;
                             {(q.answer || q.explanation) && (
                               <div style={{ marginTop: '10px', fontSize: '13px', color: 'var(--accent-green)', background: 'rgba(16,185,129,0.1)', padding: '8px', borderRadius: '6px' }}>
                                 {q.answer && <div style={{ marginBottom: '4px', fontWeight: 'bold' }}>✓ Đáp án: {q.answer}</div>}
-                                {q.explanation && <div style={{ color: 'var(--text-main)' }}>📝 GT: {q.explanation}</div>}
+                                {q.explanation && <div style={{ color: 'var(--text-main)' }}>📝 GT: {q.explanation.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}</div>}
                               </div>
                             )}
                           </div>
@@ -4679,7 +4770,12 @@ ${questionsText}`;
                                     {aiLoading === q.id ? 'Đang hỏi AI...' : <><Sparkles size={16}/> {q.answer ? 'Hỏi lại AI' : 'Hỏi AI Đáp Án & Giải Thích'}</>}
                                   </button>
                                 </div>
-                                <div style={{ marginTop: '8px' }}>
+                                <div
+                                  data-question-id={q.id}
+                                  data-field="explanation"
+                                  onMouseUp={(e) => handleTextSelection(e, q.id, 'explanation')}
+                                  style={{ marginTop: '8px' }}
+                                >
                                   <TiptapEditor
                                     variant="mini"
                                     title="Giải thích"
@@ -4699,12 +4795,14 @@ ${questionsText}`;
                                 {/* Show the hidden /explanation parts for question & options */}
                                 {(() => {
                                   const hiddenParts = [];
-                                  if (q.question?.includes('/')) {
-                                    hiddenParts.push({ label: 'Câu hỏi', text: q.question.substring(q.question.indexOf('/') + 1).trim() });
+                                  const qSlashIdx = findSlashIndex(q.question);
+                                  if (qSlashIdx !== -1) {
+                                    hiddenParts.push({ label: 'Câu hỏi', text: q.question.substring(qSlashIdx + 1).trim() });
                                   }
-                                  Object.keys(q.options).forEach(opt => {
-                                    if (q.options[opt]?.includes('/')) {
-                                      hiddenParts.push({ label: `Đáp án ${opt}`, text: q.options[opt].substring(q.options[opt].indexOf('/') + 1).trim() });
+                                  Object.keys(q.options || {}).forEach(opt => {
+                                    const optSlashIdx = findSlashIndex(q.options[opt]);
+                                    if (optSlashIdx !== -1) {
+                                      hiddenParts.push({ label: `Đáp án ${opt}`, text: q.options[opt].substring(optSlashIdx + 1).trim() });
                                     }
                                   });
 
@@ -4727,13 +4825,14 @@ ${questionsText}`;
                                 })()}
 
                                 {q.explanation && (
-                                  <div style={{ color: 'var(--text-muted)', whiteSpace: /<[a-z][\s\S]*>/i.test(q.explanation) ? 'normal' : 'pre-wrap', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}>
+                                  <div
+                                    data-question-id={q.id}
+                                    data-field="explanation"
+                                    onMouseUp={(e) => handleTextSelection(e, q.id, 'explanation')}
+                                    style={{ color: 'var(--text-muted)', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}
+                                  >
                                     <strong style={{ color: 'var(--accent-orange)', display: 'block', marginBottom: '8px' }}>📝 Giải thích:</strong>
-                                    {/<[a-z][\s\S]*>/i.test(q.explanation) ? (
-                                      <TiptapEditor content={q.explanation} readOnly={true} onChange={() => {}} />
-                                    ) : (
-                                      <div>{q.explanation}</div>
-                                    )}
+                                    <TiptapEditor content={q.explanation} readOnly={true} variant="mini" onChange={() => {}} />
                                   </div>
                                 )}
                               </div>
