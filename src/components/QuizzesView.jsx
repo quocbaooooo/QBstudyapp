@@ -547,10 +547,15 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         }
       });
 
+      const isPart2 = targetNum >= 7 && targetNum <= 31;
+      const defaultOpts = isPart2
+        ? { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C' }
+        : { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' };
+
       parsedQuestions.push({
         blankNumber: targetNum,
         question: qText || '',
-        options: Object.keys(options).length > 0 ? options : { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+        options: Object.keys(options).length > 0 ? options : defaultOpts,
         answer: answer || 'A'
       });
     });
@@ -1596,7 +1601,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     const readingPassages = [];
     const questions = [];
 
-    // Part 1 – Photographs: Câu 1–6 (Mỗi câu 1 bức ảnh & 1 file audio riêng, 3 đáp án: A, B, C)
+    // Part 1 – Photographs: Câu 1–6 (Mỗi câu 1 bức ảnh & 1 file audio riêng, 4 đáp án: A, B, C, D)
     for (let i = 1; i <= 6; i++) {
       const pId = uuidv4();
       listeningPassages.push({
@@ -1614,7 +1619,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         id: uuidv4(),
         blankNumber: i,
         question: '',
-        options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C' },
+        options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
         answer: 'A',
         explanation: '',
         listeningGroupId: pId,
@@ -1622,7 +1627,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       });
     }
 
-    // Part 2 – Question–Response: Câu 7–31 (Mỗi câu 1 file audio riêng, 4 đáp án: A, B, C, D)
+    // Part 2 – Question–Response: Câu 7–31 (Mỗi câu 1 file audio riêng, 3 đáp án: A, B, C)
     for (let i = 7; i <= 31; i++) {
       const pId = uuidv4();
       listeningPassages.push({
@@ -1640,7 +1645,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         id: uuidv4(),
         blankNumber: i,
         question: '',
-        options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+        options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C' },
         answer: 'A',
         explanation: '',
         listeningGroupId: pId,
