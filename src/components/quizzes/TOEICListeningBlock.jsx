@@ -1,5 +1,6 @@
 import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
-import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash2, Sparkles, StickyNote } from 'lucide-react';
+import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash2, Sparkles, StickyNote, Upload, Image as ImageIcon } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
 import TOEICAudioPlayer from './TOEICAudioPlayer';
 import ResizableSplitPanel from './ResizableSplitPanel';
 
@@ -80,11 +81,11 @@ export default function TOEICListeningBlock({
   const activeShowNotesMap = showNotesMap || localShowNotes;
   const activeSetShowNotesMap = setShowNotesMap || setLocalShowNotes;
 
-  const startNumStr = groupQuestions[0]?.blankNumber || (questionsForDisplay.findIndex(x => x.id === groupQuestions[0]?.id) + 1);
-  const endNumStr = groupQuestions[groupQuestions.length - 1]?.blankNumber || (questionsForDisplay.findIndex(x => x.id === groupQuestions[groupQuestions.length - 1]?.id) + 1);
+  const startNumStr = groupQuestions?.[0]?.blankNumber || ((questionsForDisplay || []).findIndex(x => x?.id === groupQuestions?.[0]?.id) + 1);
+  const endNumStr = groupQuestions?.[groupQuestions?.length - 1]?.blankNumber || ((questionsForDisplay || []).findIndex(x => x?.id === groupQuestions?.[groupQuestions?.length - 1]?.id) + 1);
 
   return (
-    <div key={`listening-test-group-${listeningObj.id}`} className="glass-panel" style={{ padding: '16px', marginBottom: '20px', border: '1px solid rgba(236,72,153,0.35)', borderRadius: '16px' }}>
+    <div key={`listening-test-group-${listeningObj.id}`} id={`listening-block-${listeningObj.id}`} className="glass-panel" style={{ padding: '16px', marginBottom: '20px', border: '1px solid rgba(236,72,153,0.35)', borderRadius: '16px' }}>
       <div style={{ fontSize: '13px', fontWeight: 800, color: '#f472b6', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         <Headphones size={16} /> TOEIC LISTENING BLOCK (CÂU {startNumStr} - {endNumStr})
       </div>
@@ -238,6 +239,109 @@ export default function TOEICListeningBlock({
                     }}
                   />
                 </div>
+
+                {/* Image & Audio upload controls */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                  {/* Image Uploader */}
+                  <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px', borderRadius: '10px', border: '1px dashed rgba(0,227,253,0.3)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#8eefff', marginBottom: '6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <ImageIcon size={14} /> 🖼️ Hình Ảnh (Bức ảnh Part 1 / Sơ đồ Part 3-4):
+                    </div>
+                    <label style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px',
+                      background: 'rgba(0,227,253,0.18)', borderRadius: '6px', fontSize: '12px',
+                      color: '#8eefff', cursor: 'pointer', fontWeight: 700, width: 'fit-content'
+                    }}>
+                      <Upload size={13} /> Chọn ảnh cho câu/bài này...
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        style={{ display: 'none' }} 
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (!files.length) return;
+                          const readPromises = files.map(file => new Promise(resolve => {
+                            const reader = new FileReader();
+                            reader.onload = ev => resolve({ id: uuidv4(), name: file.name, data: ev.target.result });
+                            reader.readAsDataURL(file);
+                          }));
+                          Promise.all(readPromises).then(newImgs => {
+                            const existing = listeningObj.images || [];
+                            handleUpdateListeningPassageProp(listeningObj.id, 'images', [...existing, ...newImgs]);
+                          });
+                          e.target.value = '';
+                        }} 
+                      />
+                    </label>
+                    {listeningObj.images && listeningObj.images.length > 0 && (
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                        {listeningObj.images.map(img => (
+                          <div key={img.id} style={{ position: 'relative', width: '55px', height: '55px', borderRadius: '6px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
+                            <img src={img.data || img.url} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const remaining = (listeningObj.images || []).filter(x => x.id !== img.id);
+                                handleUpdateListeningPassageProp(listeningObj.id, 'images', remaining);
+                              }}
+                              style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff', borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Audio Uploader */}
+                  <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px', borderRadius: '10px', border: '1px dashed rgba(236,72,153,0.3)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#f472b6', marginBottom: '6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Music size={14} /> 🎵 File Âm Thanh Audio:
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px',
+                        background: 'rgba(236,72,153,0.2)', borderRadius: '6px', fontSize: '12px',
+                        color: '#f472b6', cursor: 'pointer', fontWeight: 700, width: 'fit-content'
+                      }}>
+                        <Upload size={13} /> Chọn file MP3 cho câu/bài này...
+                        <input 
+                          type="file" 
+                          accept="audio/*" 
+                          style={{ display: 'none' }} 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = ev => {
+                              handleUpdateListeningPassageProp(listeningObj.id, 'audioUrl', ev.target.result);
+                              handleUpdateListeningPassageProp(listeningObj.id, 'audioName', file.name);
+                            };
+                            reader.readAsDataURL(file);
+                            e.target.value = '';
+                          }} 
+                        />
+                      </label>
+                      {listeningObj.audioUrl && (
+                        <div style={{ fontSize: '11px', color: '#8eefff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>✓ {listeningObj.audioName || 'File audio đã tải lên'}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUpdateListeningPassageProp(listeningObj.id, 'audioUrl', '');
+                              handleUpdateListeningPassageProp(listeningObj.id, 'audioName', '');
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '11px' }}
+                          >
+                            Xóa
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -250,7 +354,7 @@ export default function TOEICListeningBlock({
               const displayQuestionText = item.question;
 
               return (
-                <div key={`listening-inline-card-${item.id}`} id={`question-card-${item.id}`} style={{
+                <div key={`listening-inline-card-${item.id}`} id={`question-card-${item.id}`} data-blank-number={item.blankNumber || (itemIndex + 1)} style={{
                   borderRadius: '12px',
                   border: '1px solid rgba(148,163,184,0.22)',
                   background: 'rgba(2,6,23,0.35)',

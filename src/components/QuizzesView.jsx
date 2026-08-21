@@ -435,9 +435,214 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [isShuffled, setIsShuffled] = useState(false);
   const [shuffledIds, setShuffledIds] = useState(null);
   const [shuffledOptions, setShuffledOptions] = useState(null);
+  const [activePartId, setActivePartId] = useState('part1');
+  const [showPartQuickInput, setShowPartQuickInput] = useState(true);
+  const [partQuickText, setPartQuickText] = useState('');
+  const [partQuickPreviewData, setPartQuickPreviewData] = useState(null);
+
+  const handleJumpToPart = (startNum) => {
+    if (!activeQuiz || !activeQuiz.questions) return;
+    if (testMode === 'starred') setTestMode('all');
+
+    let partId = 'part1';
+    if (startNum >= 147) partId = 'part7';
+    else if (startNum >= 131) partId = 'part6';
+    else if (startNum >= 101) partId = 'part5';
+    else if (startNum >= 71) partId = 'part4';
+    else if (startNum >= 32) partId = 'part3';
+    else if (startNum >= 7) partId = 'part2';
+    
+    setActivePartId(partId);
+
+    setTimeout(() => {
+      let el = document.querySelector(`[data-blank-number="${startNum}"]`);
+
+      if (!el) {
+        const targetQ = activeQuiz.questions.find(q => Number(q.blankNumber) === startNum) ||
+                         activeQuiz.questions.find(q => Number(q.blankNumber) >= startNum) ||
+                         activeQuiz.questions[startNum - 1];
+
+        if (targetQ) {
+          el = document.getElementById(`question-card-${targetQ.id}`) ||
+               document.getElementById(`section-item-${targetQ.id}`) ||
+               document.getElementById(`listening-block-${targetQ.listeningGroupId}`) ||
+               document.getElementById(`reading-block-${targetQ.readingGroupId}`);
+        }
+      }
+
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Fallback for nested scroll container
+        const parent = el.closest('[style*="overflow"]') || document.querySelector('.glass-panel');
+        if (parent) {
+          const parentRect = parent.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          const offset = elRect.top - parentRect.top;
+          if (Math.abs(offset) > 50) {
+            parent.scrollBy({ top: offset - 80, behavior: 'smooth' });
+          }
+        }
+      }
+    }, 80);
+  };
 
   const [showUnsavedExitModal, setShowUnsavedExitModal] = useState(false);
   const [pendingExitAction, setPendingExitAction] = useState(null);
+
+  const handlePreviewPartQuickText = () => {
+    if (!partQuickText.trim() || !activeQuiz) return;
+
+    let text = partQuickText.trim();
+    let transcriptText = '';
+    
+    const listeningMatch = text.match(/(?:LISTENING|TRANSCRIPT|KỊCH BẢN):\s*([\s\S]*?)(?=\n\s*(?:Câu|Question|\d+)[\s\.\:]|$)/i);
+    if (listeningMatch) {
+      transcriptText = listeningMatch[1].trim();
+      text = text.replace(listeningMatch[0], '').trim();
+    }
+
+    const questionBlocks = text.split(/(?=\n\s*(?:Câu|Question|\d+)[\s\.\:])/i).filter(b => b.trim());
+
+    if (questionBlocks.length === 0 && !transcriptText) {
+      alert('Không tìm thấy câu hỏi hợp lệ theo mẫu! Vui lòng kiểm tra lại định dạng.');
+      return;
+    }
+
+    const currentPart = [
+      { id: 'part1', start: 1, end: 6, label: 'Part 1' },
+      { id: 'part2', start: 7, end: 31, label: 'Part 2' },
+      { id: 'part3', start: 32, end: 70, label: 'Part 3' },
+      { id: 'part4', start: 71, end: 100, label: 'Part 4' },
+      { id: 'part5', start: 101, end: 130, label: 'Part 5' },
+      { id: 'part6', start: 131, end: 146, label: 'Part 6' },
+      { id: 'part7', start: 147, end: 200, label: 'Part 7' }
+    ].find(p => p.id === activePartId);
+
+    let defaultBlankNum = currentPart ? currentPart.start : 1;
+    const parsedQuestions = [];
+
+    questionBlocks.forEach((block, idx) => {
+      const numMatch = block.match(/(?:Câu|Question|\d+)\s*(\d+)[\s\.\:]/i);
+      let targetNum = numMatch ? parseInt(numMatch[1], 10) : (defaultBlankNum + idx);
+
+      const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+      let qText = lines[0] ? lines[0] : '';
+      qText = qText.replace(/^(?:(?:Câu|Question)\s*\d*[\s\:\.\-]*)+/gi, '').replace(/^(?:\d+[\s\:\.\-]*)+/g, '').trim();
+
+      const options = {};
+      let answer = null;
+
+      lines.slice(1).forEach(line => {
+        const optMatch = line.match(/^(\*?)([A-D])[\.\:\)]\s*(.*)/i);
+        if (optMatch) {
+          const isMarkedAnswer = !!optMatch[1];
+          const letter = optMatch[2].toUpperCase();
+          const optContent = optMatch[3].trim();
+          options[letter] = optContent;
+          if (isMarkedAnswer) answer = letter;
+        } else {
+          const ansMatch = line.match(/^(?:Đáp án|Answer|Ans)[\.\:]*\s*([A-D])/i);
+          if (ansMatch) answer = ansMatch[1].toUpperCase();
+        }
+      });
+
+      parsedQuestions.push({
+        blankNumber: targetNum,
+        question: qText || '',
+        options: Object.keys(options).length > 0 ? options : { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+        answer: answer || 'A'
+      });
+    });
+
+    setPartQuickPreviewData({
+      currentPart,
+      transcriptText,
+      parsedQuestions
+    });
+  };
+
+  const confirmApplyPartQuickText = () => {
+    if (!partQuickPreviewData || !activeQuiz) return;
+    const { currentPart, transcriptText, parsedQuestions } = partQuickPreviewData;
+
+    let updatedQuestions = [...(activeQuiz.questions || [])];
+    let updatedListeningPassages = [...(activeQuiz.listeningPassages || [])];
+    let updatedCount = 0;
+
+    parsedQuestions.forEach(qItem => {
+      const cleanQText = (qItem.question || '')
+        .replace(/^(?:(?:Câu|Question)\s*\d*[\s\:\.\-]*)+/gi, '')
+        .replace(/^(?:\d+[\s\:\.\-]*)+/g, '')
+        .trim();
+
+      const targetQIdx = updatedQuestions.findIndex(q => Number(q.blankNumber) === qItem.blankNumber);
+      if (targetQIdx !== -1) {
+        const existingQ = updatedQuestions[targetQIdx];
+        updatedQuestions[targetQIdx] = {
+          ...existingQ,
+          question: cleanQText || existingQ.question,
+          options: Object.keys(qItem.options).length > 0 ? { ...existingQ.options, ...qItem.options } : existingQ.options,
+          answer: qItem.answer || existingQ.answer
+        };
+        updatedCount++;
+      } else {
+        updatedQuestions.push({
+          id: uuidv4(),
+          blankNumber: qItem.blankNumber,
+          question: cleanQText,
+          options: qItem.options,
+          answer: qItem.answer,
+          userAnswer: null
+        });
+        updatedCount++;
+      }
+    });
+
+    if (transcriptText) {
+      const firstTargetNum = parsedQuestions[0]?.blankNumber || (currentPart ? currentPart.start : 1);
+
+      let targetPassage = updatedListeningPassages.find(p => {
+        if (p.rangeStr) {
+          const parts = p.rangeStr.split(/[-_–~to]+/);
+          if (parts.length === 2) {
+            const s = parseInt(parts[0], 10);
+            const e = parseInt(parts[1], 10);
+            return firstTargetNum >= s && firstTargetNum <= e;
+          }
+        }
+        return false;
+      });
+
+      if (!targetPassage && currentPart) {
+        targetPassage = updatedListeningPassages.find(p => {
+          if (p.rangeStr) {
+            const parts = p.rangeStr.split(/[-_–~to]+/);
+            if (parts.length === 2) {
+              const s = parseInt(parts[0], 10);
+              return s >= currentPart.start && s <= currentPart.end;
+            }
+          }
+          return false;
+        });
+      }
+
+      if (targetPassage) {
+        targetPassage.transcript = transcriptText;
+      }
+    }
+
+    setQuizzes(prev => prev.map(q => q.id === activeQuiz.id ? {
+      ...q,
+      questions: updatedQuestions,
+      listeningPassages: updatedListeningPassages,
+      updatedAt: Date.now()
+    } : q));
+
+    alert(`🎉 Đã nạp thành công ${updatedCount} câu hỏi${transcriptText ? ' & kịch bản transcript' : ''} vào ${currentPart ? currentPart.label : 'Part'}!`);
+    setPartQuickText('');
+    setPartQuickPreviewData(null);
+  };
 
   const requestExitQuiz = useCallback((exitActionFn) => {
     if (activeQuizId && hasUnsavedQuizChanges) {
@@ -660,6 +865,14 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   };
 
   const activeQuiz = quizzes.find(q => q.id === activeQuizId);
+
+  const activeQuizStats = useMemo(() => {
+    if (!activeQuiz || !activeQuiz.questions) return { total: 0, answered: 0, correct: 0 };
+    const total = activeQuiz.questions.length;
+    const answered = activeQuiz.questions.filter(q => q.userAnswer != null).length;
+    const correct = activeQuiz.questions.filter(q => q.answer && q.userAnswer === q.answer).length;
+    return { total, answered, correct };
+  }, [activeQuiz]);
 
   // Auto-recovery: If activeQuizId points to a missing quiz (e.g. sync error or deleted), return to grid view
   useEffect(() => {
@@ -1378,6 +1591,212 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     setIsImporting(false);
   };
 
+  const handleCreateTOEICFullQuiz = () => {
+    const listeningPassages = [];
+    const readingPassages = [];
+    const questions = [];
+
+    // Part 1 – Photographs: Câu 1–6 (Mỗi câu 1 bức ảnh & 1 file audio riêng, 3 đáp án: A, B, C)
+    for (let i = 1; i <= 6; i++) {
+      const pId = uuidv4();
+      listeningPassages.push({
+        id: pId,
+        type: 'listening',
+        part: 'part1',
+        title: `Part 1 – Bức Ảnh Câu ${i}`,
+        rangeStr: `${i}`,
+        audioUrl: '',
+        audioName: '',
+        transcript: '',
+        images: []
+      });
+      questions.push({
+        id: uuidv4(),
+        blankNumber: i,
+        question: '',
+        options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C' },
+        answer: 'A',
+        explanation: '',
+        listeningGroupId: pId,
+        userAnswer: null
+      });
+    }
+
+    // Part 2 – Question–Response: Câu 7–31 (Mỗi câu 1 file audio riêng, 4 đáp án: A, B, C, D)
+    for (let i = 7; i <= 31; i++) {
+      const pId = uuidv4();
+      listeningPassages.push({
+        id: pId,
+        type: 'listening',
+        part: 'part2',
+        title: `Part 2 – Audio Câu ${i}`,
+        rangeStr: `${i}`,
+        audioUrl: '',
+        audioName: '',
+        transcript: '',
+        images: []
+      });
+      questions.push({
+        id: uuidv4(),
+        blankNumber: i,
+        question: '',
+        options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+        answer: 'A',
+        explanation: '',
+        listeningGroupId: pId,
+        userAnswer: null
+      });
+    }
+
+    // Part 3 – Conversations: Câu 32–70 (13 conversation blocks of 3 questions)
+    for (let start = 32; start <= 70; start += 3) {
+      const end = Math.min(start + 2, 70);
+      const passageId = uuidv4();
+      listeningPassages.push({
+        id: passageId,
+        type: 'listening',
+        part: 'part34',
+        title: `Part 3 – Conversation (Câu ${start}–${end})`,
+        rangeStr: `${start}-${end}`,
+        audioUrl: '',
+        audioName: '',
+        transcript: '',
+        images: []
+      });
+      for (let i = start; i <= end; i++) {
+        questions.push({
+          id: uuidv4(),
+          blankNumber: i,
+          question: '',
+          options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+          answer: 'A',
+          explanation: '',
+          listeningGroupId: passageId,
+          userAnswer: null
+        });
+      }
+    }
+
+    // Part 4 – Talks: Câu 71–100 (10 talk blocks of 3 questions)
+    for (let start = 71; start <= 100; start += 3) {
+      const end = Math.min(start + 2, 100);
+      const passageId = uuidv4();
+      listeningPassages.push({
+        id: passageId,
+        type: 'listening',
+        part: 'part34',
+        title: `Part 4 – Talk (Câu ${start}–${end})`,
+        rangeStr: `${start}-${end}`,
+        audioUrl: '',
+        audioName: '',
+        transcript: '',
+        images: []
+      });
+      for (let i = start; i <= end; i++) {
+        questions.push({
+          id: uuidv4(),
+          blankNumber: i,
+          question: '',
+          options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+          answer: 'A',
+          explanation: '',
+          listeningGroupId: passageId,
+          userAnswer: null
+        });
+      }
+    }
+
+    // Part 5 – Incomplete Sentences: Câu 101–130
+    for (let i = 101; i <= 130; i++) {
+      questions.push({
+        id: uuidv4(),
+        blankNumber: i,
+        question: '',
+        options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+        answer: 'A',
+        explanation: '',
+        userAnswer: null
+      });
+    }
+
+    // Part 6 – Text Completion: Câu 131–146 (4 reading blocks of 4 questions)
+    for (let start = 131; start <= 146; start += 4) {
+      const end = Math.min(start + 3, 146);
+      const passageId = uuidv4();
+      const blankNumbers = [];
+      for (let i = start; i <= end; i++) blankNumbers.push(i);
+
+      readingPassages.push({
+        id: passageId,
+        title: `Part 6 – Text Completion (Câu ${start}–${end})`,
+        content: `Nội dung đoạn văn câu ${start}-${end}...`,
+        blankNumbers
+      });
+      for (let i = start; i <= end; i++) {
+        questions.push({
+          id: uuidv4(),
+          blankNumber: i,
+          question: '',
+          _questionOnly: '',
+          options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+          answer: 'A',
+          explanation: '',
+          readingGroupId: passageId,
+          userAnswer: null
+        });
+      }
+    }
+
+    // Part 7 – Reading Comprehension: Câu 147–200
+    const p7Ranges = [
+      [147, 148], [149, 150], [151, 152], [153, 155], [156, 157], [158, 160],
+      [161, 163], [164, 167], [168, 171], [172, 175], [176, 180], [181, 185],
+      [186, 190], [191, 195], [196, 200]
+    ];
+    p7Ranges.forEach(([start, end]) => {
+      const passageId = uuidv4();
+      const blankNumbers = [];
+      for (let i = start; i <= end; i++) blankNumbers.push(i);
+
+      readingPassages.push({
+        id: passageId,
+        title: `Part 7 – Reading Passage (Câu ${start}–${end})`,
+        content: `Nội dung đoạn văn đọc hiểu câu ${start}-${end}...`,
+        blankNumbers
+      });
+      for (let i = start; i <= end; i++) {
+        questions.push({
+          id: uuidv4(),
+          blankNumber: i,
+          question: '',
+          _questionOnly: '',
+          options: { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' },
+          answer: 'A',
+          explanation: '',
+          readingGroupId: passageId,
+          userAnswer: null
+        });
+      }
+    });
+
+    const newQuiz = {
+      id: uuidv4(),
+      title: 'Đề thi TOEIC Full (200 câu)',
+      questions,
+      listeningPassages,
+      readingPassages,
+      updatedAt: Date.now()
+    };
+
+    setQuizzes(prev => [newQuiz, ...prev]);
+    setActiveQuizId(newQuiz.id);
+    setIsTesting(false);
+    setTestMode('all');
+    setIsCreatingAiQuiz(false);
+    setIsImporting(false);
+    alert('🎉 Đã tự động khởi tạo bộ đề TOEIC 200 câu chuẩn (Part 1 -> Part 7)!');
+  };
+
   const handleDeleteQuiz = async (e, id) => {
     e.stopPropagation();
     if(window.confirm('Bạn có chắc chắn muốn xóa đề trắc nghiệm này không?')) {
@@ -1396,12 +1815,9 @@ export default function QuizzesView({ modeFilter = 'all' }) {
 
   function extractQuestionRangeFromFilename(filename = '') {
     const nameWithoutExt = filename.replace(/\.[a-z0-9]+$/i, '').trim();
-    const parts = nameWithoutExt.split(/[\s_]+/);
-    const lastSeg = parts[parts.length - 1] || '';
-    
-    const rangeMatch = lastSeg.match(/^(\d{1,3})\s*[-_–~to]+\s*(\d{1,3})$/i)
-      || nameWithoutExt.match(/(?:^|[\s_])(\d{1,3})\s*[-_–~to]+\s*(\d{1,3})$/i);
 
+    // 1. Check for explicit Part + Range e.g. "Part 3_32-34", "Part 4_71-73", "32-34", "32~34" (dash/hyphen/to only, NOT underscore)
+    const rangeMatch = nameWithoutExt.match(/(?:Part\s*\d*[\s_]*)?(\d{1,3})\s*[\-–~to]+\s*(\d{1,3})/i);
     if (rangeMatch) {
       const startNum = parseInt(rangeMatch[1], 10);
       const endNum = parseInt(rangeMatch[2], 10);
@@ -1410,14 +1826,117 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       }
     }
 
-    const singleMatch = lastSeg.match(/^(\d{1,3})$/);
-    if (singleMatch) {
-      const num = parseInt(singleMatch[1], 10);
+    // 2. Check for explicit Part + Single Question Number e.g. "Test 04_Part 1_1", "Test 01_Part 1_6", "Part 2_7", "Part 2_31"
+    const partSingleMatch = nameWithoutExt.match(/(?:Part\s*\d*|Câu|Question|Q)[\s_]+(\d{1,3})$/i)
+      || nameWithoutExt.match(/[\s_]+(\d{1,3})$/i);
+    if (partSingleMatch) {
+      const num = parseInt(partSingleMatch[1], 10);
       return { startNum: num, endNum: num, rangeStr: `${num}` };
+    }
+
+    // 3. Fallback for whole Part files without question numbers e.g. "Part 1.mp3"
+    if (/^Part\s*1$/i.test(nameWithoutExt)) {
+      return { startNum: 1, endNum: 6, rangeStr: '1-6' };
+    }
+    if (/^Part\s*2$/i.test(nameWithoutExt)) {
+      return { startNum: 7, endNum: 31, rangeStr: '7-31' };
     }
 
     return null;
   }
+
+  const applyBulkAudiosToActiveQuiz = (audios) => {
+    if (!activeQuiz || !audios || !audios.length) return;
+
+    let updatedPassages = [...(activeQuiz.listeningPassages || [])];
+    let updatedQuestions = [...(activeQuiz.questions || [])];
+    let changed = false;
+
+    audios.forEach(audio => {
+      const range = audio.startNum ? { startNum: audio.startNum, endNum: audio.endNum } : extractQuestionRangeFromFilename(audio.name);
+      if (!range) return;
+
+      const isSingleQuestion = range.startNum === range.endNum;
+
+      if (isSingleQuestion) {
+        const qIdx = updatedQuestions.findIndex(q => Number(q.blankNumber) === range.startNum);
+        if (qIdx !== -1) {
+          const targetQ = updatedQuestions[qIdx];
+          
+          let passage = updatedPassages.find(p => p.id === targetQ.listeningGroupId && (p.rangeStr === `${range.startNum}` || updatedQuestions.filter(x => x.listeningGroupId === p.id).length === 1));
+
+          if (passage) {
+            updatedPassages = updatedPassages.map(p => 
+              p.id === passage.id ? { ...p, audioUrl: audio.data || audio.url, audioName: audio.name } : p
+            );
+          } else {
+            const newPassageId = uuidv4();
+            const partLabel = range.startNum <= 6 ? 'Part 1' : (range.startNum <= 31 ? 'Part 2' : (range.startNum <= 70 ? 'Part 3' : 'Part 4'));
+            const newPassage = {
+              id: newPassageId,
+              type: 'listening',
+              part: range.startNum <= 6 ? 'part1' : (range.startNum <= 31 ? 'part2' : 'part34'),
+              title: `${partLabel} – Audio Câu ${range.startNum}`,
+              rangeStr: `${range.startNum}`,
+              audioUrl: audio.data || audio.url,
+              audioName: audio.name,
+              transcript: '',
+              images: []
+            };
+            updatedPassages.push(newPassage);
+            updatedQuestions[qIdx] = { ...targetQ, listeningGroupId: newPassageId };
+          }
+          changed = true;
+        }
+      } else {
+        let matchedPassage = updatedPassages.find(p => {
+          if (p.rangeStr === `${range.startNum}-${range.endNum}`) return true;
+          const groupQs = updatedQuestions.filter(q => q.listeningGroupId === p.id);
+          return groupQs.some(q => Number(q.blankNumber) >= range.startNum && Number(q.blankNumber) <= range.endNum);
+        });
+
+        if (matchedPassage) {
+          updatedPassages = updatedPassages.map(p => 
+            p.id === matchedPassage.id ? { ...p, audioUrl: audio.data || audio.url, audioName: audio.name } : p
+          );
+          changed = true;
+        } else {
+          const newPassageId = uuidv4();
+          const partLabel = range.startNum <= 70 ? 'Part 3' : 'Part 4';
+          const newPassage = {
+            id: newPassageId,
+            type: 'listening',
+            part: 'part34',
+            title: `${partLabel} – Audio Câu ${range.startNum}-${range.endNum}`,
+            rangeStr: `${range.startNum}-${range.endNum}`,
+            audioUrl: audio.data || audio.url,
+            audioName: audio.name,
+            transcript: '',
+            images: []
+          };
+          updatedPassages.push(newPassage);
+
+          updatedQuestions = updatedQuestions.map(q => {
+            const bNum = Number(q.blankNumber);
+            if (bNum >= range.startNum && bNum <= range.endNum) {
+              return { ...q, listeningGroupId: newPassageId };
+            }
+            return q;
+          });
+          changed = true;
+        }
+      }
+    });
+
+    if (changed) {
+      setQuizzes(quizzes.map(q => q.id === activeQuizId ? {
+        ...q,
+        listeningPassages: updatedPassages,
+        questions: updatedQuestions,
+        updatedAt: Date.now()
+      } : q));
+    }
+  };
 
   const handleBulkAudioUpload = (e) => {
     const files = Array.from(e.target.files || []);
@@ -2984,6 +3503,21 @@ ${questionsText}`;
                         <PlusIcon /> Tạo đề trống
                       </button>
                       <button
+                        onClick={handleCreateTOEICFullQuiz}
+                        style={{
+                          padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
+                          border: '1px solid rgba(236,72,153,0.35)', cursor: 'pointer',
+                          background: 'linear-gradient(135deg, rgba(236,72,153,0.22), rgba(124,77,255,0.22))',
+                          color: '#f472b6',
+                          display: 'flex', alignItems: 'center', gap: '6px',
+                          transition: 'all 0.2s',
+                          boxShadow: '0 4px 15px rgba(236,72,153,0.2)'
+                        }}
+                        title="Tự động khởi tạo cấu trúc 200 câu TOEIC chuẩn (Part 1 - Part 7)"
+                      >
+                        <Headphones size={15} /> Khởi tạo đề TOEIC (200 câu)
+                      </button>
+                      <button
                         onClick={() => {
                           setIsImporting(true);
                           setImportTargetQuizId(null);
@@ -3817,8 +4351,8 @@ ${questionsText}`;
                           </div>
                         </div>
 
-                        {/* Part 3,4 Bulk Audio Upload */}
-                        {toeicPart === 'part34' ? (
+                        {/* Bulk Audio Upload for Part 1, Part 2, Part 3, 4 */}
+                        {true ? (
                           <div style={{ background: 'rgba(0,0,0,0.25)', padding: '12px', borderRadius: '10px', border: '1px dashed rgba(236,72,153,0.35)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                               <div style={{ fontSize: '12px', fontWeight: 700, color: '#8eefff' }}>
@@ -3972,10 +4506,169 @@ ${questionsText}`;
                 )}
               </div>
             ) : activeQuiz ? (
-              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              (() => {
+                const toeicParts = [
+                  { id: 'part1', label: 'Part 1', start: 1, end: 6, title: 'Photographs (Câu 1–6)' },
+                  { id: 'part2', label: 'Part 2', start: 7, end: 31, title: 'Question–Response (Câu 7–31)' },
+                  { id: 'part3', label: 'Part 3', start: 32, end: 70, title: 'Conversations (Câu 32–70)' },
+                  { id: 'part4', label: 'Part 4', start: 71, end: 100, title: 'Talks (Câu 71–100)' },
+                  { id: 'part5', label: 'Part 5', start: 101, end: 130, title: 'Incomplete Sentences (Câu 101–130)' },
+                  { id: 'part6', label: 'Part 6', start: 131, end: 146, title: 'Text Completion (Câu 131–146)' },
+                  { id: 'part7', label: 'Part 7', start: 147, end: 200, title: 'Reading Comprehension (Câu 147–200)' },
+                  { id: 'all', label: 'Tất cả', start: 1, end: 200, title: 'Toàn bộ 200 câu (1–200)' }
+                ];
 
+                const currentPartInfo = toeicParts.find(p => p.id === activePartId) || toeicParts[0];
+
+                let rawQuestions = activeQuiz?.questions || [];
+                if (isTesting && testMode === 'starred') {
+                  rawQuestions = rawQuestions.filter(q => q.isStarred);
+                }
+
+                const questionsForDisplay = (activePartId === 'all' || !activePartId)
+                  ? rawQuestions
+                  : rawQuestions.filter(q => {
+                      const num = Number(q.blankNumber);
+                      return num >= currentPartInfo.start && num <= currentPartInfo.end;
+                    });
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+                    {/* TOEIC Part Classification Navigation Bar */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justify: 'space-between',
+                      gap: '12px',
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      backdropFilter: 'blur(12px)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '14px',
+                      padding: '8px 14px',
+                      marginBottom: '14px',
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 100,
+                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
+                      flexWrap: 'wrap'
+                    }}>
+                      <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px', scrollbarWidth: 'none', flex: 1, minWidth: 0 }}>
+                        {toeicParts.map(p => {
+                          const isActive = activePartId === p.id;
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => setActivePartId(p.id)}
+                              title={`${p.label}: ${p.title}`}
+                              style={{
+                                padding: '6px 14px',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                border: 'none',
+                                cursor: 'pointer',
+                                background: isActive ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(255, 255, 255, 0.08)',
+                                color: isActive ? '#ffffff' : 'var(--text-muted)',
+                                boxShadow: isActive ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+                                transition: 'all 0.2s ease',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
+                      Câu <strong style={{ color: '#60a5fa', fontSize: '15px' }}>
+                        {(activeQuiz?.questions || []).findIndex(q => q && q.userAnswer === null) !== -1 
+                          ? (activeQuiz?.questions || []).findIndex(q => q && q.userAnswer === null) + 1 
+                          : 1}
+                      </strong>/{activeQuizStats.total}
+                    </div>
+
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '4px 10px',
+                      borderRadius: '8px',
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#34d399',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      fontSize: '12px',
+                      fontWeight: 700
+                    }}>
+                      <CheckCircle size={14} />
+                      {activeQuizStats.correct}/{activeQuizStats.answered}
+                    </div>
+                  </div>
+                </div>
 
                 <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+
+                  {/* Bulk Audio Manager for Edit Mode (Part 1, 2, 3, 4) */}
+                  {!isTesting && (
+                    <div style={{
+                      background: 'rgba(236,72,153,0.06)',
+                      border: '1px solid rgba(236,72,153,0.25)',
+                      borderRadius: '12px',
+                      padding: '14px 18px',
+                      marginBottom: '20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#f472b6', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Headphones size={16} /> 🎵 Tải Nhiều File Âm Thanh Bài Nghe Hàng Loạt (Bulk Audio Upload):
+                        </div>
+                        <label style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 14px',
+                          background: 'linear-gradient(135deg, #7c4dff, #ec4899)', borderRadius: '8px', fontSize: '12px',
+                          color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 2px 10px rgba(236,72,153,0.3)'
+                        }}>
+                          <Upload size={14} /> Chọn nhiều file Audio MP3 (Part 1, 2, 3, 4)...
+                          <input type="file" accept="audio/*" multiple style={{ display: 'none' }} onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (!files.length) return;
+                            const audioFiles = files.filter(f => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(f.name));
+                            if (!audioFiles.length) return;
+                            audioFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+                            const readPromises = audioFiles.map(file => new Promise((resolve) => {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const rangeInfo = extractQuestionRangeFromFilename(file.name);
+                                resolve({
+                                  id: uuidv4(),
+                                  name: file.name,
+                                  data: ev.target.result,
+                                  startNum: rangeInfo ? rangeInfo.startNum : null,
+                                  endNum: rangeInfo ? rangeInfo.endNum : null,
+                                  rangeStr: rangeInfo ? rangeInfo.rangeStr : null,
+                                });
+                              };
+                              reader.readAsDataURL(file);
+                            }));
+
+                            Promise.all(readPromises).then(results => {
+                              applyBulkAudiosToActiveQuiz(results);
+                              alert(`🎉 Đã tải lên và gán thành công ${results.length} file audio vào các bài nghe TOEIC (Part 1 - Part 4)!`);
+                            });
+                            e.target.value = '';
+                          }} />
+                        </label>
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        💡 File tên dạng <code style={{ color: '#f472b6' }}>Part 1_1-6.mp3</code>, <code style={{ color: '#f472b6' }}>Part 2_7-31.mp3</code>, hoặc <code style={{ color: '#f472b6' }}>32-34.mp3</code> sẽ tự động nhận diện và ghép đúng vào <strong>Part 1, Part 2, Part 3, Part 4</strong>!
+                      </div>
+                    </div>
+                  )}
                   <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '24px', position: 'relative', overflow: 'hidden' }}>
                     <div 
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', opacity: activeQuiz.keyTakeaways ? 1 : 0.8 }}
@@ -4201,7 +4894,7 @@ ${questionsText}`;
                     </div>
                   )}
 
-                  {questionsToRender.length === 0 && isTesting && testMode === 'starred' && (
+                  {questionsForDisplay.length === 0 && isTesting && testMode === 'starred' && (
                     <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
                       <Star size={40} style={{ opacity: 0.2, margin: '0 auto 16px auto', display: 'block' }} />
                       <p>Bạn chưa đánh dấu câu hỏi nào để ôn tập.</p>
@@ -4460,6 +5153,136 @@ ${questionsText}`;
                     document.body
                   )}
 
+                  {/* Quick Part Text Input Box */}
+                  {!isTesting && (
+                    <div className="glass-panel" style={{
+                      padding: '16px',
+                      marginBottom: '20px',
+                      border: '1px solid rgba(124,77,255,0.35)',
+                      borderRadius: '12px',
+                      background: 'rgba(124,77,255,0.05)'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#d8ccff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <FileText size={16} /> 📝 Dán theo mẫu để điền / sửa nhanh nội dung cho {currentPartInfo?.label} (Câu {currentPartInfo?.start}–{currentPartInfo?.end}):
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowPartQuickInput(!showPartQuickInput)}
+                          style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {showPartQuickInput ? 'Thu gọn ▲' : 'Mở rộng ▼'}
+                        </button>
+                      </div>
+
+                      {showPartQuickInput && (
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: '1.5' }}>
+                            💡 <strong>Dán theo mẫu:</strong> <code style={{ color: '#8eefff' }}>LISTENING: [Nội dung kịch bản Transcript (tùy chọn)]\n\nCâu {currentPartInfo?.start}: [Nội dung câu hỏi]\nA. [Đáp án A]\nB. [Đáp án B]\nC. [Đáp án C]\nD. [Đáp án D]</code>
+                          </div>
+                          <textarea
+                            value={partQuickText}
+                            onChange={(e) => setPartQuickText(e.target.value)}
+                            placeholder={`Dán nội dung câu hỏi cho ${currentPartInfo?.label} tại đây...\n\nVí dụ:\nLISTENING:\n[Nội dung kịch bản Transcript (tùy chọn)]\n\nCâu ${currentPartInfo?.start}: What is the woman asking about?\nA. A train schedule\nB. A flight ticket\nC. A hotel room`}
+                            rows={5}
+                            style={{
+                              width: '100%',
+                              background: 'rgba(0,0,0,0.35)',
+                              color: 'var(--text-main)',
+                              border: '1px solid rgba(255,255,255,0.15)',
+                              borderRadius: '8px',
+                              padding: '10px 12px',
+                              fontSize: '13px',
+                              fontFamily: 'monospace',
+                              resize: 'vertical',
+                              marginBottom: '10px'
+                            }}
+                          />
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={handlePreviewPartQuickText}
+                              style={{ fontSize: '12px', padding: '6px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Eye size={14} /> Xem trước & Nạp vào {currentPartInfo?.label}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Preview Modal for Part Quick Input */}
+                  {partQuickPreviewData && (
+                    <div className="custom-modal-overlay">
+                      <div className="custom-modal-content" style={{ maxWidth: '680px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+                        <div className="custom-modal-header">
+                          <h3 className="custom-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8eefff' }}>
+                            <Eye size={18} /> Xem Trước Nội Dung Nạp Cho {partQuickPreviewData.currentPart?.label || 'Part'}
+                          </h3>
+                          <button className="custom-modal-close-btn" onClick={() => setPartQuickPreviewData(null)}>
+                            <X size={18} />
+                          </button>
+                        </div>
+
+                        <div className="custom-modal-body" style={{ overflowY: 'auto', flex: 1, paddingRight: '6px' }}>
+                          {partQuickPreviewData.transcriptText && (
+                            <div style={{
+                              background: 'rgba(236,72,153,0.1)',
+                              border: '1px solid rgba(236,72,153,0.3)',
+                              borderRadius: '10px',
+                              padding: '12px 14px',
+                              marginBottom: '16px'
+                            }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#f472b6', marginBottom: '6px', textTransform: 'uppercase' }}>
+                                📜 Kịch bản (Transcript) trích xuất được:
+                              </div>
+                              <div style={{ fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#fff' }}>
+                                {partQuickPreviewData.transcriptText}
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#d8ccff', marginBottom: '10px' }}>
+                            📝 Danh sách {partQuickPreviewData.parsedQuestions.length} câu hỏi sẽ được nạp:
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {partQuickPreviewData.parsedQuestions.map((q, idx) => (
+                              <div key={idx} style={{
+                                background: 'rgba(255,255,255,0.04)',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                borderRadius: '8px',
+                                padding: '10px 12px'
+                              }}>
+                                <div style={{ fontWeight: 700, fontSize: '14px', color: '#fff', marginBottom: '6px' }}>
+                                  Câu {q.blankNumber}: {q.question}
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                                  {Object.keys(q.options).map(optKey => (
+                                    <div key={optKey} style={{ color: q.answer === optKey ? '#34d399' : 'inherit', fontWeight: q.answer === optKey ? 700 : 400 }}>
+                                      {optKey}. {q.options[optKey]} {q.answer === optKey && '✓'}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="custom-modal-footer" style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                          <button type="button" className="btn" onClick={() => setPartQuickPreviewData(null)}>
+                            Hủy / Chỉnh sửa lại
+                          </button>
+                          <button type="button" className="btn btn-primary" onClick={confirmApplyPartQuickText}>
+                            <CheckCircle size={15} /> Xác nhận nạp vào {partQuickPreviewData.currentPart?.label || 'Part'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {(() => {
                     const readingPassageMap = new Map((activeQuiz?.readingPassages || []).map(p => [p.id, p]));
                     const listeningPassageMap = new Map((activeQuiz?.listeningPassages || []).map(p => [p.id, p]));
@@ -4561,7 +5384,7 @@ ${questionsText}`;
                                     && !(readingPassageMap.get(item.readingGroupId)?.blankNumbers || []).some(n => String(n) === String(item.blankNumber));
 
                                   return (
-                                    <div key={`reading-inline-card-${item.id}`} id={`question-card-${item.id}`} style={{
+                                    <div key={`reading-inline-card-${item.id}`} id={`question-card-${item.id}`} data-blank-number={item.blankNumber || (itemIndex + 1)} style={{
                                       borderRadius: '10px',
                                       border: '1px solid rgba(148,163,184,0.22)',
                                       background: 'rgba(2,6,23,0.25)',
@@ -5014,7 +5837,9 @@ ${questionsText}`;
                   )}
                 </div>
               </div>
-            ) : null}
+            );
+          })()
+        ) : null}
           </div>
         </div>
       )}
