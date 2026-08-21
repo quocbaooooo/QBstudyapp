@@ -260,7 +260,7 @@ export default function SettingsView({
                           onClick={() => setBgMusicUrl('https://www.youtube.com/watch?v=HaIjR05n1Vc&t=3008s')}
                           className={`px-3 py-2 rounded-lg text-xs font-medium text-left transition-all ${bgMusicUrl.includes('HaIjR05n1Vc') ? 'bg-primary/20 border border-primary/30 text-white' : 'bg-white/5 border border-transparent text-slate-400 hover:bg-white/10'}`}
                         >
-                          🎵 Lofi Study (Đoạn 5p yêu cầu)
+                          🎵 Lofi Study (Chill Beats)
                         </button>
                         <button 
                           onClick={() => setBgMusicUrl('https://www.youtube.com/watch?v=jfKfPfyJRdk')}

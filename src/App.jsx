@@ -275,7 +275,6 @@ function AppContent() {
     }
 
     const { videoId, startTime } = getYoutubeConfig(bgMusicUrl);
-    const endTime = startTime + 300; // 5 minutes
 
     if (!player) {
       window.onYouTubeIframeAPIReady = () => {
@@ -287,7 +286,6 @@ function AppContent() {
             autoplay: 1,
             controls: 0,
             start: startTime,
-            end: endTime,
             loop: 1,
             playlist: videoId
           },
@@ -318,8 +316,7 @@ function AppContent() {
         if (playerUrl && !playerUrl.includes(currentVideoId)) {
           player.loadVideoById({
             videoId: currentVideoId,
-            startSeconds: currentStartTime,
-            endSeconds: currentStartTime + 300
+            startSeconds: currentStartTime
           });
         }
       } catch (e) {}

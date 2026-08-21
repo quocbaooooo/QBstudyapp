@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   collection, 
   doc,
+  getDocs,
   onSnapshot,
   writeBatch
 } from 'firebase/firestore';
@@ -45,6 +46,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
   const pendingWrites = useRef(false);
   const isFirestoreEmptyRef = useRef(true);
   const currentItemsRef = useRef(items);
+  const lastSyncedItemsRef = useRef(items);
 
   useEffect(() => {
     currentItemsRef.current = items;
@@ -79,6 +81,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
       // Sort by updatedAt descending (newest first)
       firestoreItems.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
+      lastSyncedItemsRef.current = firestoreItems;
       isUpdatingFromFirestore.current = true;
       
       const migrationKey = `migrated_${collectionName}_${user.uid}`;
@@ -178,10 +181,21 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
     setSyncState({ status: 'saving', error: null, lastSaved: Date.now() });
 
     try {
-      await syncToFirestore(colRef, [], itemsToSave, setSyncState);
+      // Get all current documents in Firestore to detect deletions reliably
+      let oldItems = lastSyncedItemsRef.current || [];
+      try {
+        const snapshot = await getDocs(colRef);
+        oldItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch (e) {
+        console.warn('Could not fetch existing docs from Firestore before sync, using lastSyncedItemsRef:', e);
+      }
+
+      await syncToFirestore(colRef, oldItems, itemsToSave, setSyncState);
+      lastSyncedItemsRef.current = itemsToSave;
       setHasUnsavedChanges(false);
       setSyncState({ status: 'synced', error: null, lastSaved: Date.now() });
     } catch (err) {
+      console.error('Firestore save error:', err);
       setSyncState({ status: 'error', error: `Lỗi lưu Cloud: ${err.message}`, lastSaved: Date.now() });
     } finally {
       pendingWrites.current = false;

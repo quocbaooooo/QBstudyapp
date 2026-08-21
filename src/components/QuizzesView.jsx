@@ -9,7 +9,7 @@ import Tesseract from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import TiptapEditor from './TiptapEditor';
 import * as mammoth from 'mammoth';
-import { doc, getDoc, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/useAuth';
 
@@ -368,13 +368,20 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     setFolderActionModal(null);
   };
 
-  const handleDeleteFolder = (id) => {
+  const handleDeleteFolder = async (id) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa thư mục này? Các bộ đề bên trong sẽ được đưa ra mục "Chưa phân loại".')) {
       setFolders(prev => prev.filter(f => f.id !== id));
       // Move quizzes inside this folder to uncategorized (folderId: null)
       setQuizzes(prevQuizzes => prevQuizzes.map(q => q.folderId === id ? { ...q, folderId: null, updatedAt: Date.now() } : q));
       if (selectedFolderId === id) {
         setSelectedFolderId('all');
+      }
+      if (user) {
+        try {
+          await deleteDoc(doc(db, 'users', user.uid, 'quiz_folders', id));
+        } catch (err) {
+          console.warn('Direct folder delete from Firestore failed:', err);
+        }
       }
     }
   };
@@ -428,6 +435,30 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [isShuffled, setIsShuffled] = useState(false);
   const [shuffledIds, setShuffledIds] = useState(null);
   const [shuffledOptions, setShuffledOptions] = useState(null);
+
+  const [showUnsavedExitModal, setShowUnsavedExitModal] = useState(false);
+  const [pendingExitAction, setPendingExitAction] = useState(null);
+
+  const requestExitQuiz = useCallback((exitActionFn) => {
+    if (activeQuizId && hasUnsavedQuizChanges) {
+      setPendingExitAction(() => exitActionFn);
+      setShowUnsavedExitModal(true);
+    } else {
+      exitActionFn();
+    }
+  }, [activeQuizId, hasUnsavedQuizChanges]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (activeQuizId && hasUnsavedQuizChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeQuizId, hasUnsavedQuizChanges]);
 
   const shuffleArray = (source = []) => {
     const arr = [...source];
@@ -537,8 +568,10 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [enrichedData, setEnrichedData] = useState(null); // { pronunciation, wordType, example, synonyms }
   const translationTimeoutRef = useRef(null);
   const lastPopupTimeRef = useRef(0);
-  const [cheatSheetViewMode, setCheatSheetViewMode] = useState('grid'); // 'grid' | 'editor'
+  const [cheatSheetViewMode, setCheatSheetViewMode] = useState('grid'); // 'grid'
   const [copiedBlockIdx, setCopiedBlockIdx] = useState(null);
+  const [editingBlockIdx, setEditingBlockIdx] = useState(null);
+  const [editingBlockText, setEditingBlockText] = useState('');
 
   const parseTakeawaysToBlocks = useCallback((raw = '') => {
     if (!raw || !raw.trim()) return [];
@@ -558,7 +591,11 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     return items
       .filter(item => item && item.replace(/<[^>]+>/g, '').trim().length > 0)
       .map((item, idx) => {
-        const textContent = item.replace(/<[^>]+>/g, '').replace(/^[•\-\*\s]+/, '').trim();
+        const textContent = item
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .replace(/^[•\-\*\s]+/, '')
+          .trim();
         return {
           id: idx,
           rawHtml: item,
@@ -575,20 +612,45 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: newContent, updatedAt: Date.now() } : q));
   };
 
+  const handleUpdateTakeawayBlock = (idxToUpdate, newText) => {
+    if (!activeQuizId || !activeQuiz) return;
+    const cleanText = newText.trim();
+    if (!cleanText) {
+      handleDeleteTakeawayBlock(idxToUpdate);
+      setEditingBlockIdx(null);
+      return;
+    }
+
+    const blocks = parseTakeawaysToBlocks(activeQuiz.keyTakeaways || '');
+    const htmlFormatted = cleanText.replace(/\n/g, '<br/>');
+    const updated = blocks.map((b, idx) => {
+      if (idx === idxToUpdate) {
+        return `<p>• <strong>${htmlFormatted}</strong></p>`;
+      }
+      return `<p>${b.rawHtml}</p>`;
+    });
+
+    const newContent = updated.join('');
+    setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: newContent, updatedAt: Date.now() } : q));
+    setEditingBlockIdx(null);
+    setEditingBlockText('');
+  };
+
   const handleAddToTakeaways = (textToAdd) => {
     if (!activeQuizId || !textToAdd) return;
     const cleanText = textToAdd.trim();
     if (!cleanText) return;
 
+    const htmlFormatted = cleanText.replace(/\n/g, '<br/>');
     const existing = activeQuiz?.keyTakeaways || '';
     let newContent = '';
 
     if (/<[a-z][\s\S]*>/i.test(existing)) {
-      newContent = `${existing}<p>• <strong>${cleanText}</strong></p>`;
+      newContent = `${existing}<p>• <strong>${htmlFormatted}</strong></p>`;
     } else if (existing.trim()) {
-      newContent = `${existing}\n• ${cleanText}`;
+      newContent = `${existing}\n• ${htmlFormatted}`;
     } else {
-      newContent = `<p>• <strong>${cleanText}</strong></p>`;
+      newContent = `<p>• <strong>${htmlFormatted}</strong></p>`;
     }
 
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: newContent, updatedAt: Date.now() } : q));
@@ -1316,11 +1378,19 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     setIsImporting(false);
   };
 
-  const handleDeleteQuiz = (e, id) => {
+  const handleDeleteQuiz = async (e, id) => {
     e.stopPropagation();
     if(window.confirm('Bạn có chắc chắn muốn xóa đề trắc nghiệm này không?')) {
-      setQuizzes(quizzes.filter(q => q.id !== id));
+      const updatedQuizzes = quizzes.filter(q => q.id !== id);
+      setQuizzes(updatedQuizzes);
       if (activeQuizId === id) setActiveQuizId(null);
+      if (user) {
+        try {
+          await deleteDoc(doc(db, 'users', user.uid, 'quizzes', id));
+        } catch (err) {
+          console.warn('Direct delete from Firestore failed, saveToCloud will handle it:', err);
+        }
+      }
     }
   };
 
@@ -2766,7 +2836,7 @@ ${questionsText}`;
             <div className="folder-list">
               <div 
                 className={`folder-list-item ${selectedFolderId === 'all' ? 'active' : ''}`}
-                onClick={() => setSelectedFolderId('all')}
+                onClick={() => requestExitQuiz(() => setSelectedFolderId('all'))}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Folder size={16} />
@@ -2777,7 +2847,7 @@ ${questionsText}`;
 
               <div 
                 className={`folder-list-item ${selectedFolderId === 'uncategorized' ? 'active' : ''}`}
-                onClick={() => setSelectedFolderId('uncategorized')}
+                onClick={() => requestExitQuiz(() => setSelectedFolderId('uncategorized'))}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Folder size={16} style={{ opacity: 0.7 }} />
@@ -2792,7 +2862,7 @@ ${questionsText}`;
                 <div 
                   key={folder.id}
                   className={`folder-list-item ${selectedFolderId === folder.id ? 'active' : ''}`}
-                  onClick={() => setSelectedFolderId(folder.id)}
+                  onClick={() => requestExitQuiz(() => setSelectedFolderId(folder.id))}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={folder.name}>
                     <Folder size={16} style={{ color: selectedFolderId === folder.id ? '#22d3ee' : '#a78bfa' }} />
@@ -3149,17 +3219,19 @@ ${questionsText}`;
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
               <button
                 onClick={() => { 
-                  if (isImporting && importTargetQuizId) {
-                    setIsImporting(false); 
-                    setPreviewQuestions(null); 
-                    setImportTargetQuizId(null);
-                  } else {
-                    setActiveQuizId(null); 
-                    setIsCreatingAiQuiz(false); 
-                    setIsImporting(false); 
-                    setPreviewQuestions(null); 
-                    setImportTargetQuizId(null);
-                  }
+                  requestExitQuiz(() => {
+                    if (isImporting && importTargetQuizId) {
+                      setIsImporting(false); 
+                      setPreviewQuestions(null); 
+                      setImportTargetQuizId(null);
+                    } else {
+                      setActiveQuizId(null); 
+                      setIsCreatingAiQuiz(false); 
+                      setIsImporting(false); 
+                      setPreviewQuestions(null); 
+                      setImportTargetQuizId(null);
+                    }
+                  });
                 }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '8px',
@@ -3914,34 +3986,6 @@ ${questionsText}`;
                         <h4 style={{ margin: 0, fontWeight: 'bold', fontSize: '15px' }}>Kiến Thức Cốt Lõi (Cheat Sheet)</h4>
                       </div>
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        {/* Mode Switcher: Grid vs Editor */}
-                        <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '2px', border: '1px solid rgba(255,152,0,0.2)' }}>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setCheatSheetViewMode('grid'); setIsTakeawaysCollapsed(false); }}
-                            style={{
-                              padding: '3px 9px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, border: 'none', cursor: 'pointer',
-                              background: cheatSheetViewMode === 'grid' ? 'rgba(255,152,0,0.3)' : 'transparent',
-                              color: cheatSheetViewMode === 'grid' ? '#fbbf24' : 'var(--text-muted)',
-                              transition: 'all 0.15s'
-                            }}
-                          >
-                            Lưới Block
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setCheatSheetViewMode('editor'); setIsTakeawaysCollapsed(false); }}
-                            style={{
-                              padding: '3px 9px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, border: 'none', cursor: 'pointer',
-                              background: cheatSheetViewMode === 'editor' ? 'rgba(255,152,0,0.3)' : 'transparent',
-                              color: cheatSheetViewMode === 'editor' ? '#fbbf24' : 'var(--text-muted)',
-                              transition: 'all 0.15s'
-                            }}
-                          >
-                            Soạn thảo
-                          </button>
-                        </div>
-
                         {!isTesting && (
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleGenerateTakeaways(); }}
@@ -3957,22 +4001,24 @@ ${questionsText}`;
                     
                     {!isTakeawaysCollapsed && (
                       <div style={{ marginTop: '16px' }}>
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-                          <input
-                            type="text"
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', alignItems: 'flex-start' }}>
+                          <textarea
                             value={quickNoteInput}
                             onChange={(e) => setQuickNoteInput(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter' && quickNoteInput.trim()) {
+                              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && quickNoteInput.trim()) {
+                                e.preventDefault();
                                 handleAddToTakeaways(quickNoteInput);
                                 setQuickNoteInput('');
                               }
                             }}
-                            placeholder="Thêm ghi chú nhanh vào Kiến Thức Cốt Lõi rồi nhấn Enter..."
+                            placeholder="Thêm ghi chú nhanh vào Kiến Thức Cốt Lõi (Nhấn Enter để xuống dòng, Ctrl+Enter để thêm)..."
+                            rows={1}
                             style={{
                               flex: 1, background: 'rgba(0,0,0,0.3)', color: 'var(--text-main)',
                               border: '1px solid rgba(255,152,0,0.3)', borderRadius: '8px',
-                              padding: '8px 12px', fontSize: '13px', outline: 'none'
+                              padding: '8px 12px', fontSize: '13px', outline: 'none', resize: 'vertical',
+                              fontFamily: 'inherit', minHeight: '38px', fieldSizing: 'content'
                             }}
                           />
                           <button
@@ -3987,109 +4033,158 @@ ${questionsText}`;
                               padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
                               background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000',
                               border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
-                              boxShadow: '0 2px 10px rgba(245,158,11,0.3)'
+                              boxShadow: '0 2px 10px rgba(245,158,11,0.3)', height: '38px', flexShrink: 0
                             }}
                           >
                             <Plus size={14} /> Thêm ghi chú
                           </button>
                         </div>
 
-                        {cheatSheetViewMode === 'grid' ? (
-                          (() => {
-                            const blocks = parseTakeawaysToBlocks(activeQuiz.keyTakeaways || '');
-                            if (blocks.length === 0) {
-                              return (
-                                <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', background: 'rgba(0,0,0,0.15)', borderRadius: '10px', border: '1px dashed rgba(255,152,0,0.2)' }}>
-                                  Chưa có block ghi chú nào. Bôi đen từ vựng trong đề và chọn <strong>+ Cheat Sheet</strong> hoặc gõ vào ô phía trên để thêm block!
-                                </div>
-                              );
-                            }
+                        {(() => {
+                          const blocks = parseTakeawaysToBlocks(activeQuiz.keyTakeaways || '');
+                          if (blocks.length === 0) {
                             return (
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px', marginTop: '10px' }}>
-                                {blocks.map((block, idx) => (
-                                  <div
-                                    key={idx}
-                                    style={{
-                                      background: 'linear-gradient(135deg, rgba(255,152,0,0.08), rgba(251,191,36,0.03))',
-                                      border: '1px solid rgba(255,152,0,0.22)',
-                                      borderRadius: '12px',
-                                      padding: '12px 14px',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      justify: 'space-between',
-                                      gap: '8px',
-                                      boxShadow: '0 4px 14px rgba(0,0,0,0.2)',
-                                      transition: 'all 0.2s ease',
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                                      <span style={{ color: '#fbbf24', fontSize: '14px', marginTop: '2px', flexShrink: 0 }}>💡</span>
-                                      <div
-                                        style={{ flex: 1, fontSize: '13.5px', lineHeight: '1.55', color: 'var(--text-main)', wordBreak: 'break-word' }}
-                                        dangerouslySetInnerHTML={{ __html: block.rawHtml }}
-                                      />
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px', marginTop: '4px' }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSpeak(block.text)}
-                                        style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
-                                        title="Phát âm"
-                                      >
-                                        <Volume2 size={13} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(block.text);
-                                          setCopiedBlockIdx(idx);
-                                          setTimeout(() => setCopiedBlockIdx(null), 1500);
-                                        }}
-                                        style={{ background: 'none', border: 'none', color: copiedBlockIdx === idx ? 'var(--accent-green)' : 'var(--text-muted)', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
-                                        title="Sao chép"
-                                      >
-                                        {copiedBlockIdx === idx ? <CheckCircle size={13} /> : <Copy size={13} />}
-                                      </button>
-                                      {!isTesting && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteTakeawayBlock(idx)}
-                                          style={{ background: 'none', border: 'none', color: '#ef4444', opacity: 0.7, cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
-                                          title="Xóa block này"
-                                        >
-                                          <Trash2 size={13} />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
+                              <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-muted)', fontSize: '13px', background: 'rgba(0,0,0,0.15)', borderRadius: '10px', border: '1px dashed rgba(255,152,0,0.2)' }}>
+                                Chưa có block ghi chú nào. Bôi đen từ vựng trong đề và chọn <strong>+ Cheat Sheet</strong> hoặc gõ vào ô phía trên để thêm block!
                               </div>
                             );
-                          })()
-                        ) : (
-                          // Editor View Mode
-                          !isTesting ? (
-                            <div style={{ marginTop: '8px' }}>
-                              <TiptapEditor 
-                                content={activeQuiz.keyTakeaways || ''}
-                                onChange={content => setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, keyTakeaways: content } : q))}
-                                placeholder="Ghi chú các điểm ngữ pháp, từ vựng cần lưu ý ở đề này. Hoặc bấm 'AI Tổng hợp' để tự động quét..."
-                              />
+                          }
+                          return (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px', marginTop: '10px' }}>
+                              {blocks.map((block, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    background: 'linear-gradient(135deg, rgba(255,152,0,0.08), rgba(251,191,36,0.03))',
+                                    border: editingBlockIdx === idx ? '1px solid #fbbf24' : '1px solid rgba(255,152,0,0.22)',
+                                    borderRadius: '12px',
+                                    padding: '12px 14px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justify: 'space-between',
+                                    gap: '8px',
+                                    boxShadow: '0 4px 14px rgba(0,0,0,0.2)',
+                                    transition: 'all 0.2s ease',
+                                  }}
+                                >
+                                  {editingBlockIdx === idx ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase' }}>✏️ Sửa nội dung Block:</div>
+                                      <textarea
+                                        value={editingBlockText}
+                                        onChange={(e) => setEditingBlockText(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                            e.preventDefault();
+                                            handleUpdateTakeawayBlock(idx, editingBlockText);
+                                          } else if (e.key === 'Escape') {
+                                            setEditingBlockIdx(null);
+                                          }
+                                        }}
+                                        autoFocus
+                                        placeholder="Nhập nội dung block..."
+                                        style={{
+                                          width: '100%',
+                                          background: 'rgba(0,0,0,0.4)',
+                                          color: 'var(--text-main)',
+                                          border: '1px solid rgba(255,152,0,0.4)',
+                                          borderRadius: '6px',
+                                          padding: '8px',
+                                          fontSize: '13px',
+                                          fontFamily: 'inherit',
+                                          resize: 'vertical',
+                                          minHeight: '64px',
+                                          outline: 'none',
+                                          fieldSizing: 'content'
+                                        }}
+                                      />
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                                        <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Enter = xuống dòng | Ctrl+Enter = Lưu</span>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingBlockIdx(null)}
+                                            style={{
+                                              padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                                              background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)', border: 'none', cursor: 'pointer'
+                                            }}
+                                          >
+                                            Hủy
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateTakeawayBlock(idx, editingBlockText)}
+                                            style={{
+                                              padding: '4px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                                              background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000', border: 'none', cursor: 'pointer'
+                                            }}
+                                          >
+                                            Lưu
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                        <span style={{ color: '#fbbf24', fontSize: '14px', marginTop: '2px', flexShrink: 0 }}>💡</span>
+                                        <div
+                                          style={{ flex: 1, fontSize: '13.5px', lineHeight: '1.55', color: 'var(--text-main)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
+                                          dangerouslySetInnerHTML={{ __html: block.rawHtml }}
+                                        />
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px', marginTop: '4px' }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSpeak(block.text)}
+                                          style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                          title="Phát âm"
+                                        >
+                                          <Volume2 size={13} />
+                                        </button>
+                                        {!isTesting && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingBlockIdx(idx);
+                                              setEditingBlockText(block.text);
+                                            }}
+                                            style={{ background: 'none', border: 'none', color: '#fbbf24', opacity: 0.85, cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                            title="Sửa block này"
+                                          >
+                                            <Edit3 size={13} />
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(block.text);
+                                            setCopiedBlockIdx(idx);
+                                            setTimeout(() => setCopiedBlockIdx(null), 1500);
+                                          }}
+                                          style={{ background: 'none', border: 'none', color: copiedBlockIdx === idx ? 'var(--accent-green)' : 'var(--text-muted)', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                          title="Sao chép"
+                                        >
+                                          {copiedBlockIdx === idx ? <CheckCircle size={13} /> : <Copy size={13} />}
+                                        </button>
+                                        {!isTesting && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteTakeawayBlock(idx)}
+                                            style={{ background: 'none', border: 'none', color: '#ef4444', opacity: 0.7, cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                            title="Xóa block này"
+                                          >
+                                            <Trash2 size={13} />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          ) : (
-                            <div style={{ color: 'var(--text-main)', lineHeight: '1.7', background: 'rgba(var(--glass-rgb),0.03)', borderRadius: '8px', padding: '16px', border: '1px dashed rgba(255,152,0, 0.3)', fontSize: '14px' }}>
-                              {activeQuiz.keyTakeaways ? (
-                                /<[a-z][\s\S]*>/i.test(activeQuiz.keyTakeaways) ? (
-                                  <TiptapEditor content={activeQuiz.keyTakeaways} readOnly={true} onChange={() => {}} />
-                                ) : (
-                                  <div style={{ whiteSpace: 'pre-wrap' }}>{activeQuiz.keyTakeaways}</div>
-                                )
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)' }}>Chưa có tổng hợp kiến thức. Bấm Quay về sửa đề để thêm.</span>
-                              )}
-                            </div>
-                          )
-                        )}
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -5381,6 +5476,100 @@ ${questionsText}`;
             >
               ✕
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Unsaved Changes Exit Confirmation Modal */}
+      {showUnsavedExitModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 99999,
+          background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+        }}>
+          <div style={{
+            background: 'rgba(15,23,42,0.96)', border: '1px solid rgba(251,191,36,0.4)',
+            borderRadius: '20px', padding: '28px 30px', maxWidth: '440px', width: '100%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.6)', textAlign: 'center',
+            display: 'flex', flexDirection: 'column', gap: '16px'
+          }}>
+            <div style={{
+              width: '56px', height: '56px', borderRadius: '50%',
+              background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto'
+            }}>
+              <Save size={28} color="#fbbf24" />
+            </div>
+
+            <div>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 800, color: '#fbbf24' }}>
+                Bạn có muốn lưu thay đổi không?
+              </h3>
+              <p style={{ margin: 0, fontSize: '13.5px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+                Bộ đề này đang có những chỉnh sửa chưa được lưu lên Cloud. Nếu rời đi mà không lưu, các thay đổi vừa chỉnh sửa sẽ bị hủy.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowUnsavedExitModal(false);
+                  try {
+                    await saveQuizzesToCloud();
+                  } catch (err) {
+                    console.error('Lỗi khi lưu:', err);
+                  }
+                  if (pendingExitAction) {
+                    pendingExitAction();
+                    setPendingExitAction(null);
+                  }
+                }}
+                style={{
+                  padding: '12px 18px', borderRadius: '12px', fontSize: '13.5px', fontWeight: 700,
+                  background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000',
+                  border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  boxShadow: '0 4px 16px rgba(245,158,11,0.35)', transition: 'all 0.2s'
+                }}
+              >
+                <Save size={16} /> Lưu &amp; Quay lại
+              </button>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUnsavedExitModal(false);
+                    if (pendingExitAction) {
+                      pendingExitAction();
+                      setPendingExitAction(null);
+                    }
+                  }}
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600,
+                    background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)',
+                    cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                >
+                  Không lưu
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUnsavedExitModal(false);
+                    setPendingExitAction(null);
+                  }}
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600,
+                    background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.12)',
+                    cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                >
+                  Ở lại sửa tiếp
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
