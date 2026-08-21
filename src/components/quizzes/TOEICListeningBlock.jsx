@@ -1,7 +1,53 @@
-import React from 'react';
-import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash2, Sparkles } from 'lucide-react';
+import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
+import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash2, Sparkles, StickyNote } from 'lucide-react';
 import TOEICAudioPlayer from './TOEICAudioPlayer';
 import ResizableSplitPanel from './ResizableSplitPanel';
+
+function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 2, ...props }) {
+  const textareaRef = useRef(null);
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${Math.max(el.scrollHeight, 44)}px`;
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    adjustHeight();
+  }, [value, adjustHeight]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(e) => {
+        if (onChange) onChange(e);
+        adjustHeight();
+      }}
+      placeholder={placeholder}
+      rows={minRows}
+      style={{
+        width: '100%',
+        background: 'rgba(0,0,0,0.35)',
+        color: '#fff',
+        border: '1px solid rgba(236,72,153,0.3)',
+        borderRadius: '8px',
+        padding: '8px 10px',
+        fontSize: '12px',
+        fontFamily: 'inherit',
+        resize: 'none',
+        overflow: 'hidden',
+        lineHeight: '1.5',
+        boxSizing: 'border-box',
+        fieldSizing: 'content',
+        ...style
+      }}
+      {...props}
+    />
+  );
+}
 
 export default function TOEICListeningBlock({
   listeningObj,
@@ -12,6 +58,8 @@ export default function TOEICListeningBlock({
   setShowTranscriptMap,
   showTranslationMap,
   setShowTranslationMap,
+  showNotesMap,
+  setShowNotesMap,
   setActiveLightboxImage,
   copiedQuestionId,
   handleCopyQuestionToClipboard,
@@ -28,6 +76,10 @@ export default function TOEICListeningBlock({
   renderQuizText,
   TiptapEditor
 }) {
+  const [localShowNotes, setLocalShowNotes] = useState({});
+  const activeShowNotesMap = showNotesMap || localShowNotes;
+  const activeSetShowNotesMap = setShowNotesMap || setLocalShowNotes;
+
   const startNumStr = groupQuestions[0]?.blankNumber || (questionsForDisplay.findIndex(x => x.id === groupQuestions[0]?.id) + 1);
   const endNumStr = groupQuestions[groupQuestions.length - 1]?.blankNumber || (questionsForDisplay.findIndex(x => x.id === groupQuestions[groupQuestions.length - 1]?.id) + 1);
 
@@ -98,6 +150,20 @@ export default function TOEICListeningBlock({
                   Xem bản dịch
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => activeSetShowNotesMap(prev => ({ ...prev, [listeningObj.id]: !prev[listeningObj.id] }))}
+                style={{
+                  padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                  background: activeShowNotesMap[listeningObj.id] ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
+                  color: activeShowNotesMap[listeningObj.id] ? '#fbbf24' : 'var(--text-muted)',
+                  border: '1px solid rgba(251,191,36,0.35)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                {activeShowNotesMap[listeningObj.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                <StickyNote size={14} /> Xem ghi chú
+              </button>
             </div>
 
             {showTranscriptMap[listeningObj.id] && listeningObj.transcript && (
@@ -114,20 +180,28 @@ export default function TOEICListeningBlock({
               </div>
             )}
 
+            {activeShowNotesMap[listeningObj.id] && (
+              <div style={{ marginTop: '6px', padding: '12px', borderRadius: '10px', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(251,191,36,0.35)', fontSize: '13px', lineHeight: '1.65', whiteSpace: 'pre-wrap', color: '#fef08a' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#fbbf24', marginBottom: '6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <StickyNote size={13} /> Ghi Chú & Từ Vựng:
+                </div>
+                {listeningObj.notes || listeningObj.transcriptNotes || 'Chưa có ghi chú'}
+              </div>
+            )}
+
             {!isTesting && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
                 <div>
                   <div style={{ fontSize: '11px', fontWeight: 700, color: '#f472b6', marginBottom: '4px', textTransform: 'uppercase' }}>
                     📝 Kịch Bản (Transcript Tiếng Anh):
                   </div>
-                  <textarea
+                  <AutoResizeTextarea
                     value={listeningObj.transcript || ''}
                     onChange={e => handleUpdateListeningPassageProp(listeningObj.id, 'transcript', e.target.value)}
                     placeholder="Nhập kịch bản tiếng Anh bài nghe ở đây..."
                     style={{
-                      width: '100%', minHeight: '75px', background: 'rgba(0,0,0,0.35)', color: '#fff',
-                      border: '1px solid rgba(236,72,153,0.3)', borderRadius: '8px', padding: '8px', fontSize: '12px',
-                      fontFamily: 'inherit', resize: 'vertical'
+                      border: '1px solid rgba(236,72,153,0.3)',
+                      color: '#fff'
                     }}
                   />
                 </div>
@@ -136,14 +210,31 @@ export default function TOEICListeningBlock({
                   <div style={{ fontSize: '11px', fontWeight: 700, color: '#00e3fd', marginBottom: '4px', textTransform: 'uppercase' }}>
                     🇻🇳 Bản Dịch Kịch Bản (Tiếng Việt):
                   </div>
-                  <textarea
+                  <AutoResizeTextarea
                     value={listeningObj.transcriptTranslation || ''}
                     onChange={e => handleUpdateListeningPassageProp(listeningObj.id, 'transcriptTranslation', e.target.value)}
                     placeholder="Nhập bản dịch tiếng Việt ở đây..."
                     style={{
-                      width: '100%', minHeight: '75px', background: 'rgba(0,0,0,0.35)', color: '#8eefff',
-                      border: '1px solid rgba(0,227,253,0.3)', borderRadius: '8px', padding: '8px', fontSize: '12px',
-                      fontFamily: 'inherit', resize: 'vertical'
+                      border: '1px solid rgba(0,227,253,0.3)',
+                      color: '#8eefff'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#fbbf24', marginBottom: '4px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <StickyNote size={13} /> 📌 Ghi Chú & Từ Vựng (Notes):
+                  </div>
+                  <AutoResizeTextarea
+                    value={listeningObj.notes || listeningObj.transcriptNotes || ''}
+                    onChange={e => {
+                      handleUpdateListeningPassageProp(listeningObj.id, 'notes', e.target.value);
+                      handleUpdateListeningPassageProp(listeningObj.id, 'transcriptNotes', e.target.value);
+                    }}
+                    placeholder="Nhập ghi chú, từ vựng hoặc lưu ý thêm bài nghe ở đây..."
+                    style={{
+                      border: '1px solid rgba(251,191,36,0.35)',
+                      color: '#fef08a'
                     }}
                   />
                 </div>
@@ -169,14 +260,14 @@ export default function TOEICListeningBlock({
                     {!isTesting ? (
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', flex: 1 }}>
                         <span style={{ paddingTop: '6px', fontWeight: 700, fontSize: '14px' }}>Câu {item.blankNumber || (itemIndex + 1)}:</span>
-                        <textarea
+                        <AutoResizeTextarea
                           value={item.question}
                           onChange={e => handleUpdateQuestionProp(item.id, 'question', e.target.value)}
                           placeholder="Nhập câu hỏi..."
                           style={{
                             flex: 1, background: 'var(--bg-secondary)', color: 'var(--text-main)',
                             border: '1px solid var(--border-color)', borderRadius: '6px', padding: '6px 8px',
-                            fontSize: '14px', resize: 'vertical', minHeight: '48px'
+                            fontSize: '14px'
                           }}
                         />
                       </div>
