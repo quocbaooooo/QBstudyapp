@@ -19,6 +19,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 import TOEICAudioPlayer from './quizzes/TOEICAudioPlayer';
 import ResizableSplitPanel from './quizzes/ResizableSplitPanel';
 import TOEICListeningBlock from './quizzes/TOEICListeningBlock';
+import TOEICReadingBlock from './quizzes/TOEICReadingBlock';
 
 const DEMO_QUIZ = {
   id: uuidv4(),
@@ -493,21 +494,28 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const handlePreviewPartQuickText = () => {
     if (!partQuickText.trim() || !activeQuiz) return;
 
-    let text = partQuickText.trim();
+    let rawText = partQuickText.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     let transcriptText = '';
-    
-    const listeningMatch = text.match(/(?:LISTENING|TRANSCRIPT|KỊCH BẢN):\s*([\s\S]*?)(?=\n\s*(?:Câu|Question|\d+)[\s\.\:]|$)/i);
+
+    // 1. Check for explicit LISTENING tag
+    const listeningMatch = rawText.match(/(?:LISTENING|TRANSCRIPT|KỊCH BẢN):\s*([\s\S]*?)(?=\n\s*(?:Questions|Câu|Question|\d{1,4})[\s\.\:]|$)/i);
     if (listeningMatch) {
       transcriptText = listeningMatch[1].trim();
-      text = text.replace(listeningMatch[0], '').trim();
+      rawText = rawText.replace(listeningMatch[0], '').trim();
     }
 
-    const questionBlocks = text.split(/(?=\n\s*(?:Câu|Question|\d+)[\s\.\:])/i).filter(b => b.trim());
-
-    if (questionBlocks.length === 0 && !transcriptText) {
-      alert('Không tìm thấy câu hỏi hợp lệ theo mẫu! Vui lòng kiểm tra lại định dạng.');
-      return;
+    // 2. Check for explicit READING tag
+    let globalReadingText = '';
+    const readingMatch = rawText.match(/(?:READING|PASSAGE|ĐOẠN VĂN):\s*([\s\S]*?)(?=\n\s*(?:Questions|Câu|Question|\d{1,4})[\s\.\:]|$)/i);
+    if (readingMatch) {
+      globalReadingText = readingMatch[1].trim();
+      rawText = rawText.replace(readingMatch[0], '').trim();
     }
+
+    // 3. Split by multi-reading passage headers (e.g. "Questions 131-134 refer to...", "Questions 135-138 refer to...")
+    const rawPassageSections = rawText
+      .split(/(?=(?:^|\n)\s*(?:Questions|Câu)\s*\d{1,4}\s*[-_–~to\s]+\s*\d{1,4}\s*refer to)/i)
+      .filter(s => s.trim());
 
     const currentPart = [
       { id: 'part1', start: 1, end: 6, label: 'Part 1' },
@@ -519,60 +527,178 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       { id: 'part7', start: 147, end: 200, label: 'Part 7' }
     ].find(p => p.id === activePartId);
 
-    let defaultBlankNum = currentPart ? currentPart.start : 1;
     const parsedQuestions = [];
+    const parsedReadingBlocks = [];
 
-    questionBlocks.forEach((block, idx) => {
-      const numMatch = block.match(/(?:Câu|Question|\d+)\s*(\d+)[\s\.\:]/i);
-      let targetNum = numMatch ? parseInt(numMatch[1], 10) : (defaultBlankNum + idx);
+    // Helper to parse individual question blocks
+    const parseQuestionBlocksFromText = (qChunkText, defaultStartNum) => {
+      const qBlocks = qChunkText
+        .split(/(?=(?:^|\n)\s*(?:Câu|Question|Q)?\s*\d{1,4}\s*[\.\:\)]?\s*(?:\n|\s*[\(\[]?[A-D][\)\.\:]|\s*Answer))/i)
+        .filter(b => b.trim());
 
-      const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
-      let qText = lines[0] ? lines[0] : '';
-      qText = qText.replace(/^(?:(?:Câu|Question)\s*\d*[\s\:\.\-]*)+/gi, '').replace(/^(?:\d+[\s\:\.\-]*)+/g, '').trim();
+      qBlocks.forEach((block, idx) => {
+        const numMatch = block.match(/(?:Câu|Question|Q)?\s*(\d{1,4})\s*[\.\:\)]?/i);
+        let targetNum = numMatch ? parseInt(numMatch[1], 10) : (defaultStartNum + idx);
 
-      const options = {};
-      let answer = null;
-
-      lines.slice(1).forEach(line => {
-        const optMatch = line.match(/^(\*?)([A-D])[\.\:\)]\s*(.*)/i);
-        if (optMatch) {
-          const isMarkedAnswer = !!optMatch[1];
-          const letter = optMatch[2].toUpperCase();
-          const optContent = optMatch[3].trim();
-          options[letter] = optContent;
-          if (isMarkedAnswer) answer = letter;
+        const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+        let qText = lines[0] ? lines[0] : '';
+        if (/^\s*(?:Câu|Question|Q)?\s*\d{1,4}\s*[\.\:\)]?\s*$/i.test(qText)) {
+          qText = '';
         } else {
-          const ansMatch = line.match(/^(?:Đáp án|Answer|Ans)[\.\:]*\s*([A-D])/i);
-          if (ansMatch) answer = ansMatch[1].toUpperCase();
+          qText = qText.replace(/^(?:(?:Câu|Question|Q)\s*\d*[\s\:\.\-]*)+/gi, '').replace(/^(?:\d+[\s\:\.\-]*)+/g, '').trim();
         }
-      });
 
-      const isPart2 = targetNum >= 7 && targetNum <= 31;
-      const defaultOpts = isPart2
-        ? { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C' }
-        : { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' };
+        const options = {};
+        let answer = null;
 
-      parsedQuestions.push({
-        blankNumber: targetNum,
-        question: qText || '',
-        options: Object.keys(options).length > 0 ? options : defaultOpts,
-        answer: answer || 'A'
+        lines.forEach(line => {
+          const optMatch = line.match(/^\s*[\(\[]?\s*(\*?)\s*([A-D])\s*[\)\]\.\:\-]\s*(.*)/i);
+          if (optMatch) {
+            const isMarkedAnswer = !!optMatch[1];
+            const letter = optMatch[2].toUpperCase();
+            const optContent = optMatch[3].trim();
+            options[letter] = optContent;
+            if (isMarkedAnswer) answer = letter;
+          } else {
+            const ansMatch = line.match(/^(?:Đáp án|Answer|Ans)[\.\:]*\s*([A-D])/i);
+            if (ansMatch) answer = ansMatch[1].toUpperCase();
+          }
+        });
+
+        const isPart2 = targetNum >= 7 && targetNum <= 31;
+        const defaultOpts = isPart2
+          ? { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C' }
+          : { A: 'Đáp án A', B: 'Đáp án B', C: 'Đáp án C', D: 'Đáp án D' };
+
+        parsedQuestions.push({
+          blankNumber: targetNum,
+          question: qText || '',
+          options: Object.keys(options).length > 0 ? options : defaultOpts,
+          answer: answer || 'A'
+        });
       });
-    });
+    };
+
+    if (rawPassageSections.length > 1) {
+      // Multiple passages detected (e.g. 4 passages for Part 6)
+      rawPassageSections.forEach((sectionText) => {
+        const headerMatch = sectionText.match(/(?:Questions|Câu)\s*(\d{1,4})\s*[-_–~to\s]+\s*(\d{1,4})/i);
+        let startNum = headerMatch ? parseInt(headerMatch[1], 10) : 131;
+        let endNum = headerMatch ? parseInt(headerMatch[2], 10) : (startNum + 3);
+
+        const firstQMatch = sectionText.match(/(?:^|\n)\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[\.\:\)]?\s*(?=\n\s*[\(\[]?[A-D][\)\.\:]|\s*Answer)/i);
+        let passageBody = '';
+        let questionsBody = '';
+
+        if (firstQMatch && firstQMatch.index > 0) {
+          passageBody = sectionText.substring(0, firstQMatch.index).trim();
+          questionsBody = sectionText.substring(firstQMatch.index).trim();
+        } else {
+          passageBody = sectionText.trim();
+        }
+
+        const sectionQsStartIdx = parsedQuestions.length;
+        if (questionsBody) {
+          parseQuestionBlocksFromText(questionsBody, startNum);
+        }
+        const qsForThisBlock = parsedQuestions.slice(sectionQsStartIdx);
+
+        parsedReadingBlocks.push({
+          id: uuidv4(),
+          startNum,
+          endNum,
+          rangeStr: `${startNum} - ${endNum}`,
+          title: `Đoạn văn bài đọc (Câu ${startNum} - ${endNum})`,
+          readingContent: passageBody || globalReadingText || '',
+          questions: qsForThisBlock
+        });
+      });
+    } else {
+      // Single passage or standard input
+      let readingText = globalReadingText;
+      let text = rawText;
+
+      if (!readingText) {
+        const qFirstMatch = text.match(/(?:^|\n)\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[\.\:\)]?\s*(?=\n\s*[\(\[]?[A-D][\)\.\:]|\s*Answer)/i);
+        if (qFirstMatch && qFirstMatch.index > 0) {
+          const potentialPassage = text.substring(0, qFirstMatch.index).trim();
+          if (potentialPassage.length > 15) {
+            readingText = potentialPassage;
+            text = text.substring(qFirstMatch.index).trim();
+          }
+        }
+      }
+
+      parseQuestionBlocksFromText(text, currentPart ? currentPart.start : 1);
+
+      const rangeMatch = readingText.match(/(?:Questions|Câu)\s*(\d{1,4})\s*[-_–~to\s]+\s*(\d{1,4})/i);
+      let detectedStart = rangeMatch ? parseInt(rangeMatch[1], 10) : null;
+      let detectedEnd = rangeMatch ? parseInt(rangeMatch[2], 10) : null;
+
+      if (!detectedStart && parsedQuestions.length > 0) {
+        detectedStart = parsedQuestions[0].blankNumber;
+        detectedEnd = parsedQuestions[parsedQuestions.length - 1].blankNumber;
+      }
+
+      if (activePartId === 'part6') {
+        const part6Ranges = [
+          { start: 131, end: 134 },
+          { start: 135, end: 138 },
+          { start: 139, end: 142 },
+          { start: 143, end: 146 }
+        ];
+        part6Ranges.forEach(range => {
+          const qsInBlock = parsedQuestions.filter(q => q.blankNumber >= range.start && q.blankNumber <= range.end);
+          if (qsInBlock.length > 0 || (detectedStart && range.start === detectedStart)) {
+            parsedReadingBlocks.push({
+              id: uuidv4(),
+              startNum: range.start,
+              endNum: range.end,
+              rangeStr: `${range.start} - ${range.end}`,
+              title: `Đoạn văn bài đọc (Câu ${range.start} - ${range.end})`,
+              readingContent: readingText || '',
+              questions: qsInBlock
+            });
+          }
+        });
+      } else if (activePartId === 'part7' || readingText) {
+        if (parsedQuestions.length > 0 || readingText) {
+          const firstTargetNum = detectedStart || parsedQuestions[0]?.blankNumber || (currentPart ? currentPart.start : 147);
+          const lastTargetNum = detectedEnd || parsedQuestions[parsedQuestions.length - 1]?.blankNumber || (firstTargetNum + (parsedQuestions.length ? parsedQuestions.length - 1 : 3));
+          parsedReadingBlocks.push({
+            id: uuidv4(),
+            startNum: firstTargetNum,
+            endNum: lastTargetNum,
+            rangeStr: `${firstTargetNum} - ${lastTargetNum}`,
+            title: `Đoạn văn bài đọc (Câu ${firstTargetNum} - ${lastTargetNum})`,
+            readingContent: readingText || '',
+            questions: parsedQuestions
+          });
+        }
+      }
+    }
+
+    if (parsedQuestions.length === 0 && !transcriptText && parsedReadingBlocks.length === 0) {
+      alert('Không tìm thấy câu hỏi hoặc bài đọc hợp lệ theo mẫu! Vui lòng kiểm tra lại định dạng.');
+      return;
+    }
 
     setPartQuickPreviewData({
       currentPart,
       transcriptText,
-      parsedQuestions
+      readingText: globalReadingText,
+      parsedQuestions,
+      parsedReadingBlocks
     });
   };
 
   const confirmApplyPartQuickText = () => {
     if (!partQuickPreviewData || !activeQuiz) return;
-    const { currentPart, transcriptText, parsedQuestions } = partQuickPreviewData;
+    const { currentPart, transcriptText, parsedQuestions, parsedReadingBlocks } = partQuickPreviewData;
 
     let updatedQuestions = [...(activeQuiz.questions || [])];
     let updatedListeningPassages = [...(activeQuiz.listeningPassages || [])];
+    let updatedReadingPassages = [...(activeQuiz.readingPassages || [])];
     let updatedCount = 0;
 
     parsedQuestions.forEach(qItem => {
@@ -619,32 +745,48 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         return false;
       });
 
-      if (!targetPassage && currentPart) {
-        targetPassage = updatedListeningPassages.find(p => {
-          if (p.rangeStr) {
-            const parts = p.rangeStr.split(/[-_–~to]+/);
-            if (parts.length === 2) {
-              const s = parseInt(parts[0], 10);
-              return s >= currentPart.start && s <= currentPart.end;
-            }
-          }
-          return false;
-        });
-      }
-
       if (targetPassage) {
         targetPassage.transcript = transcriptText;
       }
+    }
+
+    if (parsedReadingBlocks && parsedReadingBlocks.length > 0) {
+      parsedReadingBlocks.forEach(block => {
+        let passageObj = updatedReadingPassages.find(p => p.rangeStr === block.rangeStr || (p.startNum === block.startNum && p.endNum === block.endNum));
+        if (!passageObj) {
+          passageObj = {
+            id: block.id,
+            title: block.title,
+            content: block.readingContent || '',
+            images: [],
+            startNum: block.startNum,
+            endNum: block.endNum,
+            rangeStr: block.rangeStr,
+            blankNumbers: Array.from({ length: block.endNum - block.startNum + 1 }, (_, i) => String(block.startNum + i))
+          };
+          updatedReadingPassages.push(passageObj);
+        } else if (block.readingContent) {
+          passageObj.content = block.readingContent;
+        }
+
+        block.questions.forEach(qItem => {
+          const targetQ = updatedQuestions.find(q => Number(q.blankNumber) === qItem.blankNumber);
+          if (targetQ) {
+            targetQ.readingGroupId = passageObj.id;
+          }
+        });
+      });
     }
 
     setQuizzes(prev => prev.map(q => q.id === activeQuiz.id ? {
       ...q,
       questions: updatedQuestions,
       listeningPassages: updatedListeningPassages,
+      readingPassages: updatedReadingPassages,
       updatedAt: Date.now()
     } : q));
 
-    alert(`🎉 Đã nạp thành công ${updatedCount} câu hỏi${transcriptText ? ' & kịch bản transcript' : ''} vào ${currentPart ? currentPart.label : 'Part'}!`);
+    alert(`🎉 Đã nạp thành công ${updatedCount} câu hỏi${parsedReadingBlocks?.length ? ` & ${parsedReadingBlocks.length} Reading Block` : ''} vào ${currentPart ? currentPart.label : 'Part'}!`);
     setPartQuickText('');
     setPartQuickPreviewData(null);
   };
@@ -3079,6 +3221,176 @@ ${optionsText}`;
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, readingPassages: newReadingPassages } : q));
   };
 
+  const handleUpdateReadingPassageRange = (passageId, startNum, endNum) => {
+    if (!activeQuiz || isNaN(startNum) || isNaN(endNum) || startNum > endNum) {
+      alert('Dải câu hỏi không hợp lệ!');
+      return;
+    }
+
+    const rangeStr = `${startNum} - ${endNum}`;
+    const newReadingPassages = (activeQuiz.readingPassages || []).map(p => {
+      if (p.id === passageId) {
+        return {
+          ...p,
+          startNum,
+          endNum,
+          rangeStr,
+          title: `Đoạn văn bài đọc (Câu ${rangeStr})`,
+          blankNumbers: Array.from({ length: endNum - startNum + 1 }, (_, i) => String(startNum + i))
+        };
+      }
+      return p;
+    });
+
+    const newQuestions = (activeQuiz.questions || []).map(item => {
+      const qNum = parseInt(item.blankNumber, 10);
+      if (!isNaN(qNum) && qNum >= startNum && qNum <= endNum) {
+        return { ...item, readingGroupId: passageId };
+      }
+      if (item.readingGroupId === passageId && (!qNum || qNum < startNum || qNum > endNum)) {
+        return { ...item, readingGroupId: null };
+      }
+      return item;
+    });
+
+    setQuizzes(prev => prev.map(q => q.id === activeQuizId ? {
+      ...q,
+      readingPassages: newReadingPassages,
+      questions: newQuestions,
+      updatedAt: Date.now()
+    } : q));
+  };
+
+  const handleDeleteReadingPassage = (passageId) => {
+    if (!activeQuiz) return;
+    if (!window.confirm('Bạn có chắc chắn muốn xóa Reading Block này? Các câu hỏi trong block sẽ trở thành câu hỏi thường.')) {
+      return;
+    }
+
+    const newReadingPassages = (activeQuiz.readingPassages || []).filter(p => p.id !== passageId);
+    const newQuestions = (activeQuiz.questions || []).map(item => {
+      if (item.readingGroupId === passageId) {
+        return { ...item, readingGroupId: null };
+      }
+      return item;
+    });
+
+    setQuizzes(prev => prev.map(q => q.id === activeQuizId ? {
+      ...q,
+      readingPassages: newReadingPassages,
+      questions: newQuestions,
+      updatedAt: Date.now()
+    } : q));
+  };
+
+  const handleAddNewReadingBlock = () => {
+    if (!activeQuiz) return;
+    const currentPart = [
+      { id: 'part1', start: 1, end: 6, label: 'Part 1' },
+      { id: 'part2', start: 7, end: 31, label: 'Part 2' },
+      { id: 'part3', start: 32, end: 70, label: 'Part 3' },
+      { id: 'part4', start: 71, end: 100, label: 'Part 4' },
+      { id: 'part5', start: 101, end: 130, label: 'Part 5' },
+      { id: 'part6', start: 131, end: 146, label: 'Part 6' },
+      { id: 'part7', start: 147, end: 200, label: 'Part 7' }
+    ].find(p => p.id === activePartId);
+
+    const startDefault = currentPart ? currentPart.start : 131;
+    const endDefault = currentPart ? Math.min(startDefault + 3, currentPart.end) : 134;
+
+    const newPassageId = uuidv4();
+    const rangeStr = `${startDefault} - ${endDefault}`;
+    const newPassage = {
+      id: newPassageId,
+      title: `Đoạn văn bài đọc (Câu ${rangeStr})`,
+      content: '',
+      images: [],
+      startNum: startDefault,
+      endNum: endDefault,
+      rangeStr: rangeStr,
+      blankNumbers: Array.from({ length: endDefault - startDefault + 1 }, (_, i) => String(startDefault + i))
+    };
+
+    const newReadingPassages = [...(activeQuiz.readingPassages || []), newPassage];
+    const newQuestions = (activeQuiz.questions || []).map(item => {
+      const qNum = parseInt(item.blankNumber, 10);
+      if (!isNaN(qNum) && qNum >= startDefault && qNum <= endDefault) {
+        return { ...item, readingGroupId: newPassageId };
+      }
+      return item;
+    });
+
+    setQuizzes(prev => prev.map(q => q.id === activeQuizId ? {
+      ...q,
+      readingPassages: newReadingPassages,
+      questions: newQuestions,
+      updatedAt: Date.now()
+    } : q));
+  };
+
+  const handleUploadReadingPassageImages = (passageId, files) => {
+    if (!activeQuiz) return;
+    const imageFiles = Array.from(files || []).filter(f => f.type.startsWith('image/'));
+    if (!imageFiles.length) return;
+
+    const readPromises = imageFiles.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          resolve({
+            id: uuidv4(),
+            name: file.name,
+            data: e.target.result
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(readPromises).then(newImages => {
+      setQuizzes(prev => prev.map(q => {
+        if (q.id !== activeQuizId) return q;
+        const newReadingPassages = (q.readingPassages || []).map(p => {
+          if (p.id === passageId) {
+            return {
+              ...p,
+              images: [...(p.images || []), ...newImages]
+            };
+          }
+          return p;
+        });
+
+        return {
+          ...q,
+          readingPassages: newReadingPassages,
+          updatedAt: Date.now()
+        };
+      }));
+    });
+  };
+
+  const handleDeleteReadingPassageImage = (passageId, imageId) => {
+    if (!activeQuiz) return;
+    setQuizzes(prev => prev.map(q => {
+      if (q.id !== activeQuizId) return q;
+      const newReadingPassages = (q.readingPassages || []).map(p => {
+        if (p.id === passageId) {
+          return {
+            ...p,
+            images: (p.images || []).filter(img => img.id !== imageId)
+          };
+        }
+        return p;
+      });
+
+      return {
+        ...q,
+        readingPassages: newReadingPassages,
+        updatedAt: Date.now()
+      };
+    }));
+  };
+
   const handleUpdateListeningPassageProp = (passageId, prop, value) => {
     if (!activeQuiz) return;
     const listeningPassages = activeQuiz.listeningPassages || [];
@@ -5183,12 +5495,12 @@ ${questionsText}`;
                       {showPartQuickInput && (
                         <div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: '1.5' }}>
-                            💡 <strong>Dán theo mẫu:</strong> <code style={{ color: '#8eefff' }}>LISTENING: [Nội dung kịch bản Transcript (tùy chọn)]\n\nCâu {currentPartInfo?.start}: [Nội dung câu hỏi]\nA. [Đáp án A]\nB. [Đáp án B]\nC. [Đáp án C]\nD. [Đáp án D]</code>
+                            💡 <strong>Dán theo mẫu:</strong> <code style={{ color: '#8eefff' }}>READING: [Nội dung đoạn văn (tùy chọn)]\n\nCâu {currentPartInfo?.start}: [Nội dung câu hỏi]\nA. [Đáp án A]\nB. [Đáp án B]\nC. [Đáp án C]\nD. [Đáp án D]</code>
                           </div>
                           <textarea
                             value={partQuickText}
                             onChange={(e) => setPartQuickText(e.target.value)}
-                            placeholder={`Dán nội dung câu hỏi cho ${currentPartInfo?.label} tại đây...\n\nVí dụ:\nLISTENING:\n[Nội dung kịch bản Transcript (tùy chọn)]\n\nCâu ${currentPartInfo?.start}: What is the woman asking about?\nA. A train schedule\nB. A flight ticket\nC. A hotel room`}
+                            placeholder={`Dán nội dung câu hỏi cho ${currentPartInfo?.label} tại đây...\n\nVí dụ cho Part 6/7:\nREADING:\n[Nội dung đoạn văn bài đọc...]\n\nCâu ${currentPartInfo?.start}: What is the main purpose of the email?\nA. To request information\nB. To confirm an order\nC. To schedule an interview\nD. To report an issue`}
                             rows={5}
                             style={{
                               width: '100%',
@@ -5246,6 +5558,32 @@ ${questionsText}`;
                               <div style={{ fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#fff' }}>
                                 {partQuickPreviewData.transcriptText}
                               </div>
+                            </div>
+                          )}
+
+                          {partQuickPreviewData.parsedReadingBlocks && partQuickPreviewData.parsedReadingBlocks.length > 0 && (
+                            <div style={{ marginBottom: '16px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#8eefff', marginBottom: '8px', textTransform: 'uppercase' }}>
+                                📚 Sẽ tạo {partQuickPreviewData.parsedReadingBlocks.length} Reading Block bài đọc:
+                              </div>
+                              {partQuickPreviewData.parsedReadingBlocks.map((blk, idx) => (
+                                <div key={idx} style={{
+                                  background: 'rgba(6,182,212,0.08)',
+                                  border: '1px solid rgba(6,182,212,0.25)',
+                                  borderRadius: '8px',
+                                  padding: '10px 12px',
+                                  marginBottom: '8px'
+                                }}>
+                                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#8eefff' }}>
+                                    Reading Block: Câu {blk.rangeStr} ({blk.questions.length} câu hỏi)
+                                  </div>
+                                  {blk.readingContent && (
+                                    <div style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '4px', whiteSpace: 'pre-wrap', maxHeight: '80px', overflowY: 'auto' }}>
+                                      {blk.readingContent}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           )}
 
@@ -5355,7 +5693,7 @@ ${questionsText}`;
                         );
                       }
 
-                      if (isTesting && q.readingGroupId) {
+                      if (q.readingGroupId) {
                         if (!showReadingGroupHeader || !passageObj) {
                           return null;
                         }
@@ -5363,132 +5701,41 @@ ${questionsText}`;
                         const groupQuestions = questionsForDisplay.filter(item => item.readingGroupId === passageObj.id);
 
                         return (
-                          <div key={`reading-test-group-${passageObj.id}`} className="glass-panel" style={{ padding: '14px', marginBottom: '14px', border: '1px solid rgba(6,182,212,0.35)' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 800, color: '#8eefff', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                              Reading Block
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(360px, 1.2fr)', gap: '12px', alignItems: 'start' }}>
-                              <div style={{
-                                whiteSpace: 'pre-wrap',
-                                lineHeight: '1.72',
-                                fontSize: '14px',
-                                background: 'rgba(15,23,42,0.28)',
-                                border: '1px solid rgba(148,163,184,0.2)',
-                                borderRadius: '10px',
-                                padding: '12px'
-                              }}>
-                                {renderPassageWithBlankHighlights(passageObj.content || '', isSameSelectedGroup ? activeReadingBlankNumber : null)}
-                              </div>
-
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                {groupQuestions.map(item => {
-                                  const itemIndex = questionsForDisplay.findIndex(x => x.id === item.id);
-                                  const answerRevealed = !!item.userAnswer;
-                                  const displayQuestionText = item._questionOnly || item.question;
-                                  const blankNotFoundInPassage = item.blankNumber
-                                    && !(readingPassageMap.get(item.readingGroupId)?.blankNumbers || []).some(n => String(n) === String(item.blankNumber));
-
-                                  return (
-                                    <div key={`reading-inline-card-${item.id}`} id={`question-card-${item.id}`} data-blank-number={item.blankNumber || (itemIndex + 1)} style={{
-                                      borderRadius: '10px',
-                                      border: '1px solid rgba(148,163,184,0.22)',
-                                      background: 'rgba(2,6,23,0.25)',
-                                      padding: '10px 12px'
-                                    }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-                                        <div style={{ fontSize: '14px', fontWeight: 600, lineHeight: '1.45' }}>
-                                          Câu {itemIndex + 1}{item.blankNumber ? ` (${item.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
-                                          {item.allowMultipleAnswers && (
-                                            <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(234,179,8,0.15)', color: '#facc15', border: '1px solid rgba(234,179,8,0.3)', fontWeight: 'normal', display: 'inline-block', verticalAlign: 'middle', marginTop: '-2px' }}>
-                                              Đây là câu chọn nhiều đáp án
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
-                                          <button
-                                            onClick={() => handleCopyQuestionToClipboard(item, itemIndex)}
-                                            title={copiedQuestionId === item.id ? "Đã sao chép!" : "Sao chép câu hỏi này"}
-                                            style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: copiedQuestionId === item.id ? 'var(--accent-green)' : 'var(--text-muted)', display: 'flex' }}
-                                          >
-                                            {copiedQuestionId === item.id ? (
-                                              <CheckCircle size={15} color="var(--accent-green)" />
-                                            ) : (
-                                              <Copy size={15} />
-                                            )}
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              setSelectedReadingQuestionId(item.id);
-                                              handleToggleBookmark(item.id);
-                                            }}
-                                            title={item.isStarred ? 'Bỏ đánh dấu' : 'Đánh dấu câu hỏi này'}
-                                            style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: item.isStarred ? '#fbbf24' : 'var(--text-muted)', display: 'flex' }}
-                                          >
-                                            <Star size={16} fill={item.isStarred ? '#fbbf24' : 'none'} color={item.isStarred ? '#fbbf24' : 'currentColor'} />
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      {blankNotFoundInPassage && (
-                                        <div style={{ marginBottom: '8px', fontSize: '11px', color: '#facc15', background: 'rgba(250,204,21,0.12)', border: '1px solid rgba(250,204,21,0.35)', borderRadius: '8px', padding: '4px 8px' }}>
-                                          ⚠ Blank {item.blankNumber} chưa có trong passage.
-                                        </div>
-                                      )}
-
-                                      <div style={{ display: 'grid', gridTemplateColumns: Object.values(item.options).some(o => o && o.length > 50) ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))', gap: '8px' }}>
-                                        {(isShuffled && shuffledOptions?.[item.id] ? shuffledOptions[item.id] : Object.keys(item.options).sort()).map((opt, idx) => {
-                                          const displayLetter = ['A', 'B', 'C', 'D', 'E', 'F'][idx] || opt;
-                                          return (
-                                          <div
-                                            key={`${item.id}-${opt}`}
-                                            onClick={() => handleSelectAnswer(item.id, opt)}
-                                            style={{
-                                              padding: '8px',
-                                              borderRadius: '8px',
-                                              border: '1px solid var(--border-color)',
-                                              background: item.userAnswer === opt
-                                                ? (item.answer && item.userAnswer !== item.answer ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)')
-                                                : 'transparent',
-                                              cursor: 'pointer',
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '6px',
-                                              fontSize: '13px'
-                                            }}
-                                          >
-                                            <strong>{isTesting ? displayLetter : opt}.</strong>
-                                            <span>{renderQuizText(item.options[opt], answerRevealed)}</span>
-                                            {item.answer && item.userAnswer === opt && opt === item.answer && <CheckCircle size={14} color="var(--accent-green)"/>}
-                                            {item.answer && item.userAnswer === opt && opt !== item.answer && <XCircle size={14} color="var(--accent-red)"/>}
-                                          </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
+                          <TOEICReadingBlock
+                            key={`reading-group-${passageObj.id}`}
+                            passageObj={passageObj}
+                            groupQuestions={groupQuestions}
+                            questionsForDisplay={questionsForDisplay}
+                            isTesting={isTesting}
+                            setActiveLightboxImage={setActiveLightboxImage}
+                            copiedQuestionId={copiedQuestionId}
+                            handleCopyQuestionToClipboard={handleCopyQuestionToClipboard}
+                            handleToggleBookmark={handleToggleBookmark}
+                            handleDeleteQuestion={handleDeleteQuestion}
+                            handleUpdateQuestionProp={handleUpdateQuestionProp}
+                            handleUpdateOptionProp={handleUpdateOptionProp}
+                            handleUpdateReadingPassageProp={handleUpdateReadingPassageProp}
+                            handleDeleteReadingPassage={handleDeleteReadingPassage}
+                            handleUpdateReadingPassageRange={handleUpdateReadingPassageRange}
+                            handleUploadReadingPassageImages={handleUploadReadingPassageImages}
+                            handleDeleteReadingPassageImage={handleDeleteReadingPassageImage}
+                            handleSelectAnswer={handleSelectAnswer}
+                            handleCallAI={handleCallAI}
+                            aiLoading={aiLoading}
+                            shuffledOptions={shuffledOptions}
+                            isShuffled={isShuffled}
+                            renderQuizText={renderQuizText}
+                            renderPassageWithBlankHighlights={renderPassageWithBlankHighlights}
+                            isSameSelectedGroup={isSameSelectedGroup}
+                            activeReadingBlankNumber={activeReadingBlankNumber}
+                            readingPassageMap={readingPassageMap}
+                            TiptapEditor={TiptapEditor}
+                          />
                         );
                       }
 
                       return (
                       <div key={`section-item-${q.id}`}>
-                      {showReadingGroupHeader && passageObj && (
-                        <div
-                          key={`reading-block-${passageObj.id}`}
-                          className="glass-panel"
-                          style={{ padding: '16px', marginBottom: '12px', border: '1px solid rgba(6,182,212,0.35)' }}
-                        >
-                          <div style={{ fontSize: '12px', fontWeight: 800, color: '#8eefff', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                            Reading Block
-                          </div>
-                          <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', fontSize: '14px' }}>
-                            {renderPassageWithBlankHighlights(passageObj.content || '', isSameSelectedGroup ? activeReadingBlankNumber : null)}
-                          </div>
-                        </div>
-                      )}
                       {showNormalHeader && (
                         <div key="normal-block-header" className="glass-panel" style={{ padding: '12px 16px', marginBottom: '12px', border: '1px dashed rgba(124,77,255,0.35)' }}>
                           <div style={{ fontSize: '12px', fontWeight: 800, color: '#d8ccff', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -5767,7 +6014,35 @@ ${questionsText}`;
                   );
                 });
 
-                    return questionCards;
+                    return (
+                      <>
+                        {!isTesting && (activePartId === 'part6' || activePartId === 'part7') && (
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '14px' }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={handleAddNewReadingBlock}
+                              style={{
+                                background: 'linear-gradient(135deg, rgba(6,182,212,0.2) 0%, rgba(59,130,246,0.2) 100%)',
+                                border: '1px solid rgba(6,182,212,0.4)',
+                                color: '#8eefff',
+                                fontSize: '12.5px',
+                                fontWeight: 600,
+                                padding: '6px 14px',
+                                borderRadius: '8px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Plus size={15} /> + Thêm Block Đọc mới cho {activePartId === 'part6' ? 'Part 6' : 'Part 7'}
+                            </button>
+                          </div>
+                        )}
+                        {questionCards}
+                      </>
+                    );
                   })()}
 
                   {!isTesting && (

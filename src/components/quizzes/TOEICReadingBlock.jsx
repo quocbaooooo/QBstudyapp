@@ -1,0 +1,373 @@
+import React, { useState } from 'react';
+import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, Sparkles } from 'lucide-react';
+import ResizableSplitPanel from './ResizableSplitPanel';
+
+export default function TOEICReadingBlock({
+  passageObj,
+  groupQuestions,
+  questionsForDisplay,
+  isTesting,
+  setActiveLightboxImage,
+  copiedQuestionId,
+  handleCopyQuestionToClipboard,
+  handleToggleBookmark,
+  handleDeleteQuestion,
+  handleUpdateQuestionProp,
+  handleUpdateOptionProp,
+  handleUpdateReadingPassageProp,
+  handleDeleteReadingPassage,
+  handleUpdateReadingPassageRange,
+  handleUploadReadingPassageImages,
+  handleDeleteReadingPassageImage,
+  handleSelectAnswer,
+  handleCallAI,
+  aiLoading,
+  shuffledOptions,
+  isShuffled,
+  renderQuizText,
+  renderPassageWithBlankHighlights,
+  isSameSelectedGroup,
+  activeReadingBlankNumber,
+  readingPassageMap,
+  TiptapEditor
+}) {
+  const startNumCalc = groupQuestions?.[0]?.blankNumber || ((questionsForDisplay || []).findIndex(x => x?.id === groupQuestions?.[0]?.id) + 1);
+  const endNumCalc = groupQuestions?.[groupQuestions?.length - 1]?.blankNumber || ((questionsForDisplay || []).findIndex(x => x?.id === groupQuestions?.[groupQuestions?.length - 1]?.id) + 1);
+
+  const [startRangeInput, setStartRangeInput] = useState(passageObj.startNum || startNumCalc || '');
+  const [endRangeInput, setEndRangeInput] = useState(passageObj.endNum || endNumCalc || '');
+
+  const handleSaveRange = () => {
+    const s = parseInt(startRangeInput, 10);
+    const e = parseInt(endRangeInput, 10);
+    if (!isNaN(s) && !isNaN(e) && s <= e) {
+      handleUpdateReadingPassageRange(passageObj.id, s, e);
+    } else {
+      alert('Vui lòng nhập dải câu hỏi hợp lệ (Ví dụ: Từ câu 131 đến 134)');
+    }
+  };
+
+  const handleImageFileChange = (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleUploadReadingPassageImages(passageObj.id, files);
+    }
+  };
+
+  const passageHeaderUI = (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px', borderBottom: '1px solid rgba(6,182,212,0.2)', paddingBottom: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <BookOpen size={16} color="#8eefff" />
+        <span style={{ fontSize: '13px', fontWeight: 800, color: '#8eefff', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          READING BLOCK (CÂU {passageObj.rangeStr || `${startNumCalc} - ${endNumCalc}`})
+        </span>
+      </div>
+
+      {!isTesting && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Custom Question Range Editor */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(0,0,0,0.3)', padding: '3px 6px', borderRadius: '6px', border: '1px solid rgba(6,182,212,0.25)' }}>
+            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Dải câu:</span>
+            <input 
+              type="number"
+              value={startRangeInput}
+              onChange={(e) => setStartRangeInput(e.target.value)}
+              placeholder="Từ"
+              style={{ width: '42px', background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', padding: '2px 4px', fontSize: '11.5px', textAlign: 'center' }}
+            />
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>–</span>
+            <input 
+              type="number"
+              value={endRangeInput}
+              onChange={(e) => setEndRangeInput(e.target.value)}
+              placeholder="Đến"
+              style={{ width: '42px', background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', padding: '2px 4px', fontSize: '11.5px', textAlign: 'center' }}
+            />
+            <button 
+              type="button"
+              onClick={handleSaveRange}
+              style={{ background: 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.4)', color: '#8eefff', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+              title="Lưu dải câu hỏi cho Block này"
+            >
+              <Save size={11} /> Lưu
+            </button>
+          </div>
+
+          {/* Upload Images Button */}
+          <label style={{ fontSize: '11px', padding: '4px 8px', background: 'rgba(6,182,212,0.15)', color: '#8eefff', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+            <Upload size={12} /> 🖼️ Tải Ảnh Đề...
+            <input type="file" accept="image/*" multiple onChange={handleImageFileChange} style={{ display: 'none' }} />
+          </label>
+
+          {/* Delete Block Button */}
+          <button 
+            type="button" 
+            onClick={() => handleDeleteReadingPassage(passageObj.id)}
+            style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '4px 7px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}
+            title="Xóa Reading Block này"
+          >
+            <Trash2 size={12} /> Xóa Block
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div key={`reading-group-wrapper-${passageObj.id}`} id={`reading-block-${passageObj.id}`} className="glass-panel" style={{ padding: '16px', marginBottom: '20px', border: '1px solid rgba(6,182,212,0.35)', borderRadius: '16px' }}>
+      {passageHeaderUI}
+
+      <ResizableSplitPanel
+        defaultLeftPercent={45}
+        leftContent={
+          <div style={{ background: 'rgba(15,23,42,0.4)', border: '1px solid rgba(6,182,212,0.25)', borderRadius: '14px', padding: '14px', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#8eefff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <BookOpen size={15} /> Đoạn văn bài đọc
+            </div>
+
+            {isTesting ? (
+              <div style={{
+                whiteSpace: 'pre-wrap',
+                lineHeight: '1.7',
+                fontSize: '14px',
+                color: 'var(--text-main)'
+              }}>
+                {renderPassageWithBlankHighlights(passageObj.content || '', isSameSelectedGroup ? activeReadingBlankNumber : null)}
+              </div>
+            ) : (
+              <textarea
+                value={passageObj.content || ''}
+                onChange={(e) => handleUpdateReadingPassageProp(passageObj.id, 'content', e.target.value)}
+                placeholder="Nhập hoặc dán nội dung đoạn văn bài đọc tại đây..."
+                rows={8}
+                style={{
+                  width: '100%',
+                  background: 'rgba(0,0,0,0.3)',
+                  color: '#fff',
+                  border: '1px solid rgba(148,163,184,0.25)',
+                  borderRadius: '8px',
+                  padding: '10px',
+                  fontSize: '13.5px',
+                  lineHeight: '1.6',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  flex: 1,
+                  minHeight: '180px'
+                }}
+              />
+            )}
+
+            {passageObj.images && passageObj.images.length > 0 && (
+              <div style={{ marginTop: '8px' }}>
+                <div style={{ fontSize: '11.5px', color: '#94a3b8', marginBottom: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <ImageIcon size={13} /> Hình ảnh bài đọc ({passageObj.images.length} ảnh):
+                </div>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  {passageObj.images.map(img => (
+                    <div key={img.id} style={{ position: 'relative', display: 'inline-block' }}>
+                      <img
+                        src={img.data || img.url}
+                        alt={img.name}
+                        onClick={() => setActiveLightboxImage(img.data || img.url)}
+                        style={{ maxWidth: '100%', maxHeight: '220px', objectFit: 'contain', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: '#000' }}
+                        title="Click để xem phóng to ảnh (Lightbox)"
+                      />
+                      {!isTesting && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteReadingPassageImage(passageObj.id, img.id)}
+                          style={{
+                            position: 'absolute', top: '4px', right: '4px', background: 'rgba(239,68,68,0.85)', color: '#fff', border: 'none', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0
+                          }}
+                          title="Xóa ảnh này"
+                        >
+                          <Trash2 size={12} style={{ margin: 'auto' }} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        }
+        rightContent={
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%', overflowY: 'auto' }}>
+            {groupQuestions.map((item) => {
+              const itemIndex = questionsForDisplay.findIndex(x => x.id === item.id);
+              const answerRevealed = isTesting && item.userAnswer;
+              const displayQuestionText = isTesting ? (item._questionOnly || item.question) : item.question;
+              const blankNotFoundInPassage = item.blankNumber
+                && !(readingPassageMap.get(item.readingGroupId)?.blankNumbers || []).some(n => String(n) === String(item.blankNumber));
+
+              return (
+                <div 
+                  key={`reading-card-${item.id}`} 
+                  id={`question-card-${item.id}`} 
+                  data-blank-number={item.blankNumber || (itemIndex + 1)} 
+                  className="glass-panel" 
+                  style={{
+                    borderRadius: '12px',
+                    border: '1px solid rgba(148,163,184,0.22)',
+                    background: 'rgba(2,6,23,0.25)',
+                    padding: '14px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '12px' }}>
+                    <div style={{ fontWeight: '500', fontSize: '15px', flex: 1 }}>
+                      {!isTesting ? (
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                          <span style={{ paddingTop: '8px', fontWeight: 'bold', fontSize: '14px', color: '#8eefff' }}>
+                            Câu {item.blankNumber || (itemIndex + 1)}:
+                          </span>
+                          <textarea 
+                            value={item.question} 
+                            onChange={e => handleUpdateQuestionProp(item.id, 'question', e.target.value)}
+                            style={{ flex: 1, background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px', fontSize: '14px', resize: 'vertical', minHeight: '54px' }}
+                          />
+                        </div>
+                      ) : (
+                        <span>
+                          Câu {itemIndex + 1}{item.blankNumber ? ` (${item.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
+                          {item.allowMultipleAnswers && (
+                            <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(234,179,8,0.15)', color: '#facc15', border: '1px solid rgba(234,179,8,0.3)', fontWeight: 'normal', display: 'inline-block', verticalAlign: 'middle', marginTop: '-2px' }}>
+                              Đây là câu chọn nhiều đáp án
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
+                      <button
+                        onClick={() => handleCopyQuestionToClipboard(item, itemIndex)}
+                        title={copiedQuestionId === item.id ? "Đã sao chép!" : "Sao chép câu hỏi này"}
+                        style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: copiedQuestionId === item.id ? 'var(--accent-green)' : 'var(--text-muted)', display: 'flex' }}
+                      >
+                        {copiedQuestionId === item.id ? <CheckCircle size={15} color="var(--accent-green)" /> : <Copy size={15} />}
+                      </button>
+                      <button
+                        onClick={() => handleToggleBookmark(item.id)}
+                        title={item.isStarred ? 'Bỏ đánh dấu' : 'Đánh dấu câu hỏi này'}
+                        style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: item.isStarred ? '#fbbf24' : 'var(--text-muted)', display: 'flex' }}
+                      >
+                        <Star size={16} fill={item.isStarred ? '#fbbf24' : 'none'} color={item.isStarred ? '#fbbf24' : 'currentColor'} />
+                      </button>
+                      {!isTesting && (
+                        <button
+                          onClick={() => handleDeleteQuestion(item.id)}
+                          title="Xóa câu hỏi này"
+                          style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', display: 'flex' }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {blankNotFoundInPassage && (
+                    <div style={{ marginBottom: '8px', fontSize: '11px', color: '#facc15', background: 'rgba(250,204,21,0.12)', border: '1px solid rgba(250,204,21,0.35)', borderRadius: '8px', padding: '4px 8px' }}>
+                      ⚠ Blank {item.blankNumber} chưa có trong đoạn văn bài đọc.
+                    </div>
+                  )}
+
+                  {/* Options List */}
+                  <div style={{ display: 'grid', gridTemplateColumns: Object.values(item.options).some(o => o && o.length > 50) ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                    {(isShuffled && shuffledOptions?.[item.id] ? shuffledOptions[item.id] : Object.keys(item.options).sort()).map((opt, idx) => {
+                      const displayLetter = ['A', 'B', 'C', 'D', 'E', 'F'][idx] || opt;
+                      const isSelected = item.allowMultipleAnswers ? (item.userAnswer || '').split(',').includes(opt) : item.userAnswer === opt;
+                      const isCorrectOption = item.allowMultipleAnswers ? (item.answer || '').split(',').includes(opt) : item.answer === opt;
+
+                      let bgColor = 'transparent';
+                      if (isTesting) {
+                        if (isSelected) {
+                          bgColor = (item.answer && !isCorrectOption) ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)';
+                        }
+                      } else {
+                        if (isCorrectOption) bgColor = 'rgba(16, 185, 129, 0.15)';
+                      }
+
+                      return (
+                        <div
+                          key={`${item.id}-${opt}`}
+                          onClick={() => isTesting && handleSelectAnswer(item.id, opt)}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)',
+                            background: bgColor,
+                            cursor: isTesting ? 'pointer' : 'default',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontSize: '13.5px'
+                          }}
+                        >
+                          <strong style={{ minWidth: '18px' }}>{displayLetter}.</strong>
+                          {!isTesting ? (
+                            <input
+                              type="text"
+                              value={item.options[opt] || ''}
+                              onChange={e => handleUpdateOptionProp(item.id, opt, e.target.value)}
+                              style={{ flex: 1, background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '4px 8px', fontSize: '13px' }}
+                            />
+                          ) : (
+                            <span>{renderQuizText(item.options[opt], answerRevealed)}</span>
+                          )}
+
+                          {isTesting && item.answer && item.userAnswer === opt && opt === item.answer && <CheckCircle size={14} color="var(--accent-green)"/>}
+                          {isTesting && item.answer && item.userAnswer === opt && opt !== item.answer && <XCircle size={14} color="var(--accent-red)"/>}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Correct Answer & Explanation Selector in Edit Mode */}
+                  {!isTesting && (
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-green)' }}>✓ Đáp án đúng:</span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          {Object.keys(item.options).sort().map(optKey => (
+                            <button
+                              key={optKey}
+                              type="button"
+                              onClick={() => handleUpdateQuestionProp(item.id, 'answer', optKey)}
+                              style={{
+                                padding: '4px 10px', borderRadius: '4px', border: '1px solid var(--border-color)',
+                                background: item.answer === optKey ? 'var(--primary)' : 'var(--bg-secondary)',
+                                color: item.answer === optKey ? 'var(--on-primary)' : 'var(--text-main)',
+                                cursor: 'pointer', fontWeight: 700, fontSize: '12px'
+                              }}
+                            >
+                              {optKey}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Explanation Editor */}
+                      {TiptapEditor && (
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            📝 Lời giải thích chi tiết:
+                          </div>
+                          <TiptapEditor
+                            variant="mini"
+                            title="Giải thích"
+                            content={item.explanation || ''}
+                            onChange={html => handleUpdateQuestionProp(item.id, 'explanation', html)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        }
+      />
+    </div>
+  );
+}
