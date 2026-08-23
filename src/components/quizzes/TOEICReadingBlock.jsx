@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, Sparkles } from 'lucide-react';
 import ResizableSplitPanel from './ResizableSplitPanel';
+import TOEICImageUploader from './TOEICImageUploader';
 
 export default function TOEICReadingBlock({
   passageObj,
@@ -68,7 +69,7 @@ export default function TOEICReadingBlock({
           {/* Custom Question Range Editor */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(0,0,0,0.3)', padding: '3px 6px', borderRadius: '6px', border: '1px solid rgba(6,182,212,0.25)' }}>
             <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Dải câu:</span>
-            <input 
+            <input
               type="number"
               value={startRangeInput}
               onChange={(e) => setStartRangeInput(e.target.value)}
@@ -76,14 +77,14 @@ export default function TOEICReadingBlock({
               style={{ width: '42px', background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', padding: '2px 4px', fontSize: '11.5px', textAlign: 'center' }}
             />
             <span style={{ fontSize: '11px', color: '#94a3b8' }}>–</span>
-            <input 
+            <input
               type="number"
               value={endRangeInput}
               onChange={(e) => setEndRangeInput(e.target.value)}
               placeholder="Đến"
               style={{ width: '42px', background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', padding: '2px 4px', fontSize: '11.5px', textAlign: 'center' }}
             />
-            <button 
+            <button
               type="button"
               onClick={handleSaveRange}
               style={{ background: 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.4)', color: '#8eefff', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
@@ -93,15 +94,37 @@ export default function TOEICReadingBlock({
             </button>
           </div>
 
-          {/* Upload Images Button */}
-          <label style={{ fontSize: '11px', padding: '4px 8px', background: 'rgba(6,182,212,0.15)', color: '#8eefff', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-            <Upload size={12} /> 🖼️ Tải Ảnh Đề...
-            <input type="file" accept="image/*" multiple onChange={handleImageFileChange} style={{ display: 'none' }} />
-          </label>
+          {/* Upload Images & Link Button */}
+          <button
+            type="button"
+            onClick={() => {
+              const url = prompt('Dán URL link hình ảnh bài đọc (https://...)\nHoặc bấm OK (để trống) để chọn file ảnh từ máy tính:');
+              if (url !== null) {
+                if (url.trim()) {
+                  const newImg = { id: uuidv4(), name: 'Link Image', data: url.trim(), url: url.trim() };
+                  handleUpdateReadingPassageProp(passageObj.id, 'images', [...(passageObj.images || []), newImg]);
+                } else {
+                  document.getElementById(`file-input-reading-${passageObj.id}`)?.click();
+                }
+              }
+            }}
+            style={{ fontSize: '11px', padding: '4px 8px', background: 'rgba(6,182,212,0.15)', color: '#8eefff', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
+            title="Tải ảnh từ máy hoặc dán link URL ảnh"
+          >
+            <Upload size={12} /> 🖼️ Tải Ảnh / Dán Link...
+          </button>
+          <input
+            id={`file-input-reading-${passageObj.id}`}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleImageFileChange}
+            style={{ display: 'none' }}
+          />
 
           {/* Delete Block Button */}
-          <button 
-            type="button" 
+          <button
+            type="button"
             onClick={() => handleDeleteReadingPassage(passageObj.id)}
             style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '4px 7px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}
             title="Xóa Reading Block này"
@@ -157,38 +180,14 @@ export default function TOEICReadingBlock({
               />
             )}
 
-            {passageObj.images && passageObj.images.length > 0 && (
-              <div style={{ marginTop: '8px' }}>
-                <div style={{ fontSize: '11.5px', color: '#94a3b8', marginBottom: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <ImageIcon size={13} /> Hình ảnh bài đọc ({passageObj.images.length} ảnh):
-                </div>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  {passageObj.images.map(img => (
-                    <div key={img.id} style={{ position: 'relative', display: 'inline-block' }}>
-                      <img
-                        src={img.data || img.url}
-                        alt={img.name}
-                        onClick={() => setActiveLightboxImage(img.data || img.url)}
-                        style={{ maxWidth: '100%', maxHeight: '220px', objectFit: 'contain', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: '#000' }}
-                        title="Click để xem phóng to ảnh (Lightbox)"
-                      />
-                      {!isTesting && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteReadingPassageImage(passageObj.id, img.id)}
-                          style={{
-                            position: 'absolute', top: '4px', right: '4px', background: 'rgba(239,68,68,0.85)', color: '#fff', border: 'none', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0
-                          }}
-                          title="Xóa ảnh này"
-                        >
-                          <Trash2 size={12} style={{ margin: 'auto' }} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <TOEICImageUploader
+              images={passageObj.images || []}
+              onImagesChange={(updatedImgs) => handleUpdateReadingPassageProp(passageObj.id, 'images', updatedImgs)}
+              setActiveLightboxImage={setActiveLightboxImage}
+              accentColor="#8eefff"
+              label="🖼️ HÌNH ẢNH:"
+              isTesting={isTesting}
+            />
           </div>
         }
         rightContent={
@@ -201,11 +200,11 @@ export default function TOEICReadingBlock({
                 && !(readingPassageMap.get(item.readingGroupId)?.blankNumbers || []).some(n => String(n) === String(item.blankNumber));
 
               return (
-                <div 
-                  key={`reading-card-${item.id}`} 
-                  id={`question-card-${item.id}`} 
-                  data-blank-number={item.blankNumber || (itemIndex + 1)} 
-                  className="glass-panel" 
+                <div
+                  key={`reading-card-${item.id}`}
+                  id={`question-card-${item.id}`}
+                  data-blank-number={item.blankNumber || (itemIndex + 1)}
+                  className="glass-panel"
                   style={{
                     borderRadius: '12px',
                     border: '1px solid rgba(148,163,184,0.22)',
@@ -220,8 +219,8 @@ export default function TOEICReadingBlock({
                           <span style={{ paddingTop: '8px', fontWeight: 'bold', fontSize: '14px', color: '#8eefff' }}>
                             Câu {item.blankNumber || (itemIndex + 1)}:
                           </span>
-                          <textarea 
-                            value={item.question} 
+                          <textarea
+                            value={item.question}
                             onChange={e => handleUpdateQuestionProp(item.id, 'question', e.target.value)}
                             style={{ flex: 1, background: 'var(--bg-secondary)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px', fontSize: '14px', resize: 'vertical', minHeight: '54px' }}
                           />
@@ -315,8 +314,8 @@ export default function TOEICReadingBlock({
                             <span>{renderQuizText(item.options[opt], answerRevealed)}</span>
                           )}
 
-                          {isTesting && item.answer && item.userAnswer === opt && opt === item.answer && <CheckCircle size={14} color="var(--accent-green)"/>}
-                          {isTesting && item.answer && item.userAnswer === opt && opt !== item.answer && <XCircle size={14} color="var(--accent-red)"/>}
+                          {isTesting && item.answer && item.userAnswer === opt && opt === item.answer && <CheckCircle size={14} color="var(--accent-green)" />}
+                          {isTesting && item.answer && item.userAnswer === opt && opt !== item.answer && <XCircle size={14} color="var(--accent-red)" />}
                         </div>
                       );
                     })}

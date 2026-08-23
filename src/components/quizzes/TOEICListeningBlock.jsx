@@ -3,6 +3,7 @@ import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash
 import { v4 as uuidv4 } from 'uuid';
 import TOEICAudioPlayer from './TOEICAudioPlayer';
 import ResizableSplitPanel from './ResizableSplitPanel';
+import TOEICImageUploader from './TOEICImageUploader';
 
 function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 2, ...props }) {
   const textareaRef = useRef(null);
@@ -98,10 +99,10 @@ export default function TOEICListeningBlock({
               <Music size={15} /> Nguồn Âm Thanh & Kịch Bản
             </div>
 
-            <TOEICAudioPlayer 
-              src={listeningObj.audioUrl} 
-              passageId={listeningObj.id} 
-              title={listeningObj.audioName || listeningObj.title} 
+            <TOEICAudioPlayer
+              src={listeningObj.audioUrl}
+              passageId={listeningObj.id}
+              title={listeningObj.audioName || listeningObj.title}
             />
 
             {listeningObj.images && listeningObj.images.length > 0 && (
@@ -243,57 +244,14 @@ export default function TOEICListeningBlock({
                 {/* Image & Audio upload controls */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
                   {/* Image Uploader */}
-                  <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px', borderRadius: '10px', border: '1px dashed rgba(0,227,253,0.3)' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#8eefff', marginBottom: '6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <ImageIcon size={14} /> 🖼️ Hình Ảnh (Bức ảnh Part 1 / Sơ đồ Part 3-4):
-                    </div>
-                    <label style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px',
-                      background: 'rgba(0,227,253,0.18)', borderRadius: '6px', fontSize: '12px',
-                      color: '#8eefff', cursor: 'pointer', fontWeight: 700, width: 'fit-content'
-                    }}>
-                      <Upload size={13} /> Chọn ảnh cho câu/bài này...
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        multiple 
-                        style={{ display: 'none' }} 
-                        onChange={(e) => {
-                          const files = Array.from(e.target.files || []);
-                          if (!files.length) return;
-                          const readPromises = files.map(file => new Promise(resolve => {
-                            const reader = new FileReader();
-                            reader.onload = ev => resolve({ id: uuidv4(), name: file.name, data: ev.target.result });
-                            reader.readAsDataURL(file);
-                          }));
-                          Promise.all(readPromises).then(newImgs => {
-                            const existing = listeningObj.images || [];
-                            handleUpdateListeningPassageProp(listeningObj.id, 'images', [...existing, ...newImgs]);
-                          });
-                          e.target.value = '';
-                        }} 
-                      />
-                    </label>
-                    {listeningObj.images && listeningObj.images.length > 0 && (
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
-                        {listeningObj.images.map(img => (
-                          <div key={img.id} style={{ position: 'relative', width: '55px', height: '55px', borderRadius: '6px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
-                            <img src={img.data || img.url} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const remaining = (listeningObj.images || []).filter(x => x.id !== img.id);
-                                handleUpdateListeningPassageProp(listeningObj.id, 'images', remaining);
-                              }}
-                              style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff', borderRadius: '50%', width: '16px', height: '16px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <TOEICImageUploader
+                    images={listeningObj.images || []}
+                    onImagesChange={(updatedImgs) => handleUpdateListeningPassageProp(listeningObj.id, 'images', updatedImgs)}
+                    setActiveLightboxImage={setActiveLightboxImage}
+                    accentColor="#00e3fd"
+                    label="🖼️ HÌNH ẢNH:"
+                    isTesting={isTesting}
+                  />
 
                   {/* Audio Uploader */}
                   <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px', borderRadius: '10px', border: '1px dashed rgba(236,72,153,0.3)' }}>
@@ -307,10 +265,10 @@ export default function TOEICListeningBlock({
                         color: '#f472b6', cursor: 'pointer', fontWeight: 700, width: 'fit-content'
                       }}>
                         <Upload size={13} /> Chọn file MP3 cho câu/bài này...
-                        <input 
-                          type="file" 
-                          accept="audio/*" 
-                          style={{ display: 'none' }} 
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          style={{ display: 'none' }}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
@@ -321,7 +279,7 @@ export default function TOEICListeningBlock({
                             };
                             reader.readAsDataURL(file);
                             e.target.value = '';
-                          }} 
+                          }}
                         />
                       </label>
                       {listeningObj.audioUrl && (
@@ -397,7 +355,7 @@ export default function TOEICListeningBlock({
                         <Star size={16} fill={item.isStarred ? '#fbbf24' : 'none'} color={item.isStarred ? '#fbbf24' : 'currentColor'} />
                       </button>
                       {!isTesting && (
-                        <button 
+                        <button
                           onClick={() => handleDeleteQuestion(item.id)}
                           title="Xóa câu hỏi này"
                           style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
@@ -444,8 +402,8 @@ export default function TOEICListeningBlock({
                           ) : (
                             <span>{renderQuizText(item.options[opt], answerRevealed)}</span>
                           )}
-                          {isTesting && item.answer && isSelected && isCorrectOption && <CheckCircle size={14} color="var(--accent-green)" style={{ marginLeft: 'auto' }}/>}
-                          {isTesting && item.answer && isSelected && !isCorrectOption && <XCircle size={14} color="var(--accent-red)" style={{ marginLeft: 'auto' }}/>}
+                          {isTesting && item.answer && isSelected && isCorrectOption && <CheckCircle size={14} color="var(--accent-green)" style={{ marginLeft: 'auto' }} />}
+                          {isTesting && item.answer && isSelected && !isCorrectOption && <XCircle size={14} color="var(--accent-red)" style={{ marginLeft: 'auto' }} />}
                         </div>
                       );
                     })}
@@ -474,7 +432,7 @@ export default function TOEICListeningBlock({
                           onClick={() => handleCallAI(item.id, item)}
                           disabled={aiLoading === item.id}
                         >
-                          {aiLoading === item.id ? 'Đang hỏi AI...' : <><Sparkles size={13}/> {item.answer ? 'Hỏi lại AI' : 'Hỏi AI Đáp Án & Giải Thích'}</>}
+                          {aiLoading === item.id ? 'Đang hỏi AI...' : <><Sparkles size={13} /> {item.answer ? 'Hỏi lại AI' : 'Hỏi AI Đáp Án & Giải Thích'}</>}
                         </button>
                       </div>
 
@@ -500,7 +458,7 @@ export default function TOEICListeningBlock({
                         <div style={{ color: 'var(--text-main)', background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(16,185,129,0.2)', marginTop: '6px' }}>
                           <strong style={{ color: 'var(--accent-orange)', display: 'block', marginBottom: '4px' }}>📝 Giải thích:</strong>
                           {TiptapEditor ? (
-                            <TiptapEditor content={item.explanation} readOnly={true} variant="mini" onChange={() => {}} />
+                            <TiptapEditor content={item.explanation} readOnly={true} variant="mini" onChange={() => { }} />
                           ) : (
                             <div style={{ whiteSpace: 'pre-wrap' }}>{item.explanation}</div>
                           )}
