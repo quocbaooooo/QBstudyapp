@@ -490,18 +490,105 @@ export default function QuizzesView({ modeFilter = 'all' }) {
 
   const [showUnsavedExitModal, setShowUnsavedExitModal] = useState(false);
   const [pendingExitAction, setPendingExitAction] = useState(null);
+  const [showBulkAnswerKeyModal, setShowBulkAnswerKeyModal] = useState(false);
+  const [bulkAnswerKeyInput, setBulkAnswerKeyInput] = useState('');
+
+  function parse200AnswerKeys(text) {
+    if (!text || !text.trim()) return [];
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    const map = new Map();
+
+    // Pattern 1: Number + separator + letter (e.g. 1. A, 1.A, 1-A, 1A, Câu 1: A, Q1: A)
+    const patternNumLetter = /(?:Câu|Question|Q)?\s*(\d{1,3})\s*[\s\.:\-\)]*([A-D])\b/gi;
+    let match;
+    while ((match = patternNumLetter.exec(normalized)) !== null) {
+      const num = parseInt(match[1], 10);
+      const ans = match[2].toUpperCase();
+      if (num >= 1 && num <= 200) {
+        map.set(num, ans);
+      }
+    }
+
+    if (map.size > 0) {
+      const results = [];
+      for (let i = 1; i <= 200; i++) {
+        if (map.has(i)) {
+          results.push({ number: i, answer: map.get(i) });
+        }
+      }
+      return results;
+    }
+
+    // Pattern 2: Line by line single letters or space-separated letters (A B C D...)
+    const tokens = normalized.split(/[\s,\n]+/).map(t => t.trim().toUpperCase()).filter(t => /^[A-D]$/.test(t));
+    if (tokens.length > 0) {
+      const results = [];
+      tokens.forEach((ans, idx) => {
+        const num = idx + 1;
+        if (num <= 200) {
+          results.push({ number: num, answer: ans });
+        }
+      });
+      return results;
+    }
+
+    return [];
+  }
+
+  const handleApplyBulkAnswers = () => {
+    if (!activeQuiz) return;
+    const parsed = parse200AnswerKeys(bulkAnswerKeyInput);
+    if (!parsed || parsed.length === 0) {
+      alert('Không tìm thấy đáp án hợp lệ nào (A, B, C, D). Vui lòng kiểm tra lại văn bản dán.');
+      return;
+    }
+
+    let updatedCount = 0;
+    const answerMap = new Map();
+    parsed.forEach(item => answerMap.set(Number(item.number), item.answer));
+
+    const updatedQuestions = activeQuiz.questions.map(q => {
+      const qNum = Number(q.blankNumber);
+      if (answerMap.has(qNum)) {
+        updatedCount++;
+        return { ...q, answer: answerMap.get(qNum) };
+      }
+      return q;
+    });
+
+    setQuizzes(prev => prev.map(q => q.id === activeQuizId ? { ...q, questions: updatedQuestions, updatedAt: Date.now() } : q));
+    setShowBulkAnswerKeyModal(false);
+    setBulkAnswerKeyInput('');
+    alert(`🎉 Đã cập nhật thành công đáp án cho ${updatedCount} câu hỏi!`);
+  };
 
   const handlePreviewPartQuickText = () => {
     if (!partQuickText.trim() || !activeQuiz) return;
 
     let rawText = partQuickText.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     let transcriptText = '';
+    let translationText = '';
+    let notesText = '';
 
-    // 1. Check for explicit LISTENING tag
-    const listeningMatch = rawText.match(/(?:LISTENING|TRANSCRIPT|KỊCH BẢN):\s*([\s\S]*?)(?=\n\s*(?:Questions|Câu|Question|\d{1,4})[\s\.\:]|$)/i);
+    // 1. Check for explicit LISTENING tag / TRANSCRIPT tag
+    const listeningMatch = rawText.match(/(?:LISTENING|TRANSCRIPT|KỊCH BẢN):\s*([\s\S]*?)(?=\n\s*(?:TRANSLATION|BẢN DỊCH|DỊCH|NOTES|GHI CHÚ|TỪ VỰNG|READING|Questions|Câu|Question|\d{1,4})[\s\.\:]|$)/i);
     if (listeningMatch) {
       transcriptText = listeningMatch[1].trim();
       rawText = rawText.replace(listeningMatch[0], '').trim();
+    }
+
+    // 1b. Check for explicit TRANSLATION tag
+    const translationMatch = rawText.match(/(?:TRANSLATION|BẢN DỊCH|DỊCH|VIETNAMESE):\s*([\s\S]*?)(?=\n\s*(?:NOTES|GHI CHÚ|TỪ VỰNG|READING|Questions|Câu|Question|\d{1,4})[\s\.\:]|$)/i);
+    if (translationMatch) {
+      translationText = translationMatch[1].trim();
+      rawText = rawText.replace(translationMatch[0], '').trim();
+    }
+
+    // 1c. Check for explicit NOTES tag
+    const notesMatch = rawText.match(/(?:NOTES|GHI CHÚ|TỪ VỰNG):\s*([\s\S]*?)(?=\n\s*(?:READING|Questions|Câu|Question|\d{1,4})[\s\.\:]|$)/i);
+    if (notesMatch) {
+      notesText = notesMatch[1].trim();
+      rawText = rawText.replace(notesMatch[0], '').trim();
     }
 
     // 2. Check for explicit READING tag
@@ -678,14 +765,16 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       }
     }
 
-    if (parsedQuestions.length === 0 && !transcriptText && parsedReadingBlocks.length === 0) {
-      alert('Không tìm thấy câu hỏi hoặc bài đọc hợp lệ theo mẫu! Vui lòng kiểm tra lại định dạng.');
+    if (parsedQuestions.length === 0 && !transcriptText && !translationText && !notesText && parsedReadingBlocks.length === 0) {
+      alert('Không tìm thấy câu hỏi hoặc bài đọc/kịch bản hợp lệ theo mẫu! Vui lòng kiểm tra lại định dạng.');
       return;
     }
 
     setPartQuickPreviewData({
       currentPart,
       transcriptText,
+      translationText,
+      notesText,
       readingText: globalReadingText,
       parsedQuestions,
       parsedReadingBlocks
@@ -694,7 +783,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
 
   const confirmApplyPartQuickText = () => {
     if (!partQuickPreviewData || !activeQuiz) return;
-    const { currentPart, transcriptText, parsedQuestions, parsedReadingBlocks } = partQuickPreviewData;
+    const { currentPart, transcriptText, translationText, notesText, parsedQuestions, parsedReadingBlocks } = partQuickPreviewData;
 
     let updatedQuestions = [...(activeQuiz.questions || [])];
     let updatedListeningPassages = [...(activeQuiz.listeningPassages || [])];
@@ -730,7 +819,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       }
     });
 
-    if (transcriptText) {
+    if (transcriptText || translationText || notesText) {
       const firstTargetNum = parsedQuestions[0]?.blankNumber || (currentPart ? currentPart.start : 1);
 
       let targetPassage = updatedListeningPassages.find(p => {
@@ -740,13 +829,34 @@ export default function QuizzesView({ modeFilter = 'all' }) {
             const s = parseInt(parts[0], 10);
             const e = parseInt(parts[1], 10);
             return firstTargetNum >= s && firstTargetNum <= e;
+          } else if (parts.length === 1) {
+            const num = parseInt(parts[0], 10);
+            return firstTargetNum === num;
           }
         }
         return false;
       });
 
       if (targetPassage) {
-        targetPassage.transcript = transcriptText;
+        if (transcriptText) targetPassage.transcript = transcriptText;
+        if (translationText) targetPassage.transcriptTranslation = translationText;
+        if (notesText) targetPassage.notes = notesText;
+      } else {
+        const newPassageId = uuidv4();
+        const newPassage = {
+          id: newPassageId,
+          type: 'listening',
+          part: firstTargetNum <= 6 ? 'part1' : (firstTargetNum <= 31 ? 'part2' : 'part34'),
+          title: `Bài nghe (Câu ${firstTargetNum})`,
+          rangeStr: `${firstTargetNum}`,
+          transcript: transcriptText || '',
+          transcriptTranslation: translationText || '',
+          notes: notesText || '',
+          audioUrl: '',
+          audioName: '',
+          images: []
+        };
+        updatedListeningPassages.push(newPassage);
       }
     }
 
@@ -4170,6 +4280,16 @@ ${questionsText}`;
                     {isShuffled ? 'Bỏ trộn' : 'Xáo trộn'}
                   </button>
                 )}
+                {!isTesting && (
+                  <button 
+                    className="btn" 
+                    style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.1)' }} 
+                    onClick={() => setShowBulkAnswerKeyModal(true)}
+                    title="Nhập nhanh bảng đáp án A/B/C/D cho toàn bộ 200 câu hỏi"
+                  >
+                    <Key size={16} /> 🔑 Nhập đáp án 200 câu
+                  </button>
+                )}
                 <button 
                   className="btn" 
                   style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#10b981', borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.06)' }} 
@@ -5494,14 +5614,38 @@ ${questionsText}`;
 
                       {showPartQuickInput && (
                         <div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: '1.5' }}>
-                            💡 <strong>Dán theo mẫu:</strong> <code style={{ color: '#8eefff' }}>READING: [Nội dung đoạn văn (tùy chọn)]\n\nCâu {currentPartInfo?.start}: [Nội dung câu hỏi]\nA. [Đáp án A]\nB. [Đáp án B]\nC. [Đáp án C]\nD. [Đáp án D]</code>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: '1.6' }}>
+                            💡 <strong>Cấu trúc Dán theo mẫu:</strong>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', marginTop: '6px' }}>
+                              <div style={{ background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.2)', padding: '6px 8px', borderRadius: '6px' }}>
+                                <span style={{ color: '#f472b6', fontWeight: 700, fontSize: '11px' }}>🎧 LISTENING (Part 1-4):</span>
+                                <div style={{ fontSize: '10.5px', color: '#cbd5e1', marginTop: '2px', fontFamily: 'monospace' }}>
+                                  TRANSCRIPT: [Kịch bản English]<br />
+                                  TRANSLATION: [Bản dịch Tiếng Việt]<br />
+                                  NOTES: [Từ vựng & Ghi chú]
+                                </div>
+                              </div>
+                              <div style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)', padding: '6px 8px', borderRadius: '6px' }}>
+                                <span style={{ color: '#8eefff', fontWeight: 700, fontSize: '11px' }}>📚 READING (Part 6-7):</span>
+                                <div style={{ fontSize: '10.5px', color: '#cbd5e1', marginTop: '2px', fontFamily: 'monospace' }}>
+                                  READING: [Đoạn văn bài đọc]
+                                </div>
+                              </div>
+                              <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', padding: '6px 8px', borderRadius: '6px' }}>
+                                <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: '11px' }}>❓ CÂU HỎI & ĐÁP ÁN:</span>
+                                <div style={{ fontSize: '10.5px', color: '#cbd5e1', marginTop: '2px', fontFamily: 'monospace' }}>
+                                  Câu {currentPartInfo?.start}: [Tiêu đề câu hỏi]<br />
+                                  A. [Ý A] B. [Ý B] C. [Ý C] D. [Ý D]<br />
+                                  Answer: A
+                                </div>
+                              </div>
+                            </div>
                           </div>
                           <textarea
                             value={partQuickText}
                             onChange={(e) => setPartQuickText(e.target.value)}
-                            placeholder={`Dán nội dung câu hỏi cho ${currentPartInfo?.label} tại đây...\n\nVí dụ cho Part 6/7:\nREADING:\n[Nội dung đoạn văn bài đọc...]\n\nCâu ${currentPartInfo?.start}: What is the main purpose of the email?\nA. To request information\nB. To confirm an order\nC. To schedule an interview\nD. To report an issue`}
-                            rows={5}
+                            placeholder={`Dán nội dung câu hỏi, kịch bản hoặc đoạn văn cho ${currentPartInfo?.label} tại đây...\n\nMẫu ví dụ cho Part 3/4:\nTRANSCRIPT:\nW: Welcome to Danforth Fashions. How may I help you?\nM: Hi, I would like to return this jacket.\n\nTRANSLATION:\nW: Chào mừng tới Danforth Fashions. Tôi có thể giúp gì cho bạn?\nM: Xin chào, tôi muốn đổi lại chiếc áo khoác này.\n\nCâu 32: Where does the conversation take place?\nA. At a clothing store\nB. At a bank\nC. At an airport\nD. At a hotel\nAnswer: A`}
+                            rows={6}
                             style={{
                               width: '100%',
                               background: 'rgba(0,0,0,0.35)',
@@ -5550,13 +5694,47 @@ ${questionsText}`;
                               border: '1px solid rgba(236,72,153,0.3)',
                               borderRadius: '10px',
                               padding: '12px 14px',
-                              marginBottom: '16px'
+                              marginBottom: '12px'
                             }}>
                               <div style={{ fontSize: '12px', fontWeight: 700, color: '#f472b6', marginBottom: '6px', textTransform: 'uppercase' }}>
                                 📜 Kịch bản (Transcript) trích xuất được:
                               </div>
                               <div style={{ fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#fff' }}>
                                 {partQuickPreviewData.transcriptText}
+                              </div>
+                            </div>
+                          )}
+
+                          {partQuickPreviewData.translationText && (
+                            <div style={{
+                              background: 'rgba(124,77,255,0.1)',
+                              border: '1px solid rgba(124,77,255,0.3)',
+                              borderRadius: '10px',
+                              padding: '12px 14px',
+                              marginBottom: '12px'
+                            }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#a78bfa', marginBottom: '6px', textTransform: 'uppercase' }}>
+                                🇻🇳 Bản dịch kịch bản (Translation) trích xuất được:
+                              </div>
+                              <div style={{ fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#fff' }}>
+                                {partQuickPreviewData.translationText}
+                              </div>
+                            </div>
+                          )}
+
+                          {partQuickPreviewData.notesText && (
+                            <div style={{
+                              background: 'rgba(251,191,36,0.1)',
+                              border: '1px solid rgba(251,191,36,0.3)',
+                              borderRadius: '10px',
+                              padding: '12px 14px',
+                              marginBottom: '12px'
+                            }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#fbbf24', marginBottom: '6px', textTransform: 'uppercase' }}>
+                                📌 Ghi chú & Từ vựng (Notes) trích xuất được:
+                              </div>
+                              <div style={{ fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#fff' }}>
+                                {partQuickPreviewData.notesText}
                               </div>
                             </div>
                           )}
@@ -6672,6 +6850,125 @@ ${questionsText}`;
                   }}
                 >
                   Ở lại sửa tiếp
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Bulk Answer Key Importer (200 câu) */}
+      {showBulkAnswerKeyModal && (
+        <div className="custom-modal-overlay">
+          <div className="custom-modal-content" style={{ maxWidth: '720px', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="custom-modal-header">
+              <h3 className="custom-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24' }}>
+                <Key size={20} /> 🔑 Nhập Nhanh Bảng Đáp Án (Cho 200 câu hỏi TOEIC)
+              </h3>
+              <button className="custom-modal-close-btn" onClick={() => setShowBulkAnswerKeyModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="custom-modal-body" style={{ overflowY: 'auto', flex: 1, paddingRight: '6px' }}>
+              <div style={{ fontSize: '12.5px', color: '#94a3b8', marginBottom: '12px', lineHeight: '1.5', background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                💡 <strong>Hỗ trợ dán các dạng bảng đáp án đa dạng:</strong>
+                <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                  <li>Dạng số + đáp án: <code>1. A  2. B  3. C  4. D ... 200. A</code></li>
+                  <li>Dạng gộp dán liền: <code>1A 2B 3C 4D 5A ... 200D</code> hoặc <code>1-A, 2-B, 3-C, 4-D</code></li>
+                  <li>Dạng danh sách ký tự từng dòng: <code>A\nB\nC\nD...</code> (tương ứng từ câu 1 đến 200)</li>
+                </ul>
+              </div>
+
+              <textarea
+                value={bulkAnswerKeyInput}
+                onChange={(e) => setBulkAnswerKeyInput(e.target.value)}
+                placeholder={`Dán bảng đáp án 200 câu vào đây...\n\nVí dụ:\n1. A\n2. B\n3. C\n4. D\n...\n200. A`}
+                rows={6}
+                style={{
+                  width: '100%',
+                  background: 'rgba(0,0,0,0.35)',
+                  color: '#fff',
+                  border: '1px solid rgba(251,191,36,0.3)',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  fontFamily: 'monospace',
+                  resize: 'vertical',
+                  marginBottom: '12px'
+                }}
+              />
+
+              {/* Realtime parsed preview grid */}
+              {(() => {
+                const parsed = parse200AnswerKeys(bulkAnswerKeyInput);
+                if (!parsed.length) return null;
+
+                return (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#10b981', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>🎉 Đã nhận diện {parsed.length}/200 đáp án:</span>
+                      <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 400 }}>Sẽ cập nhật đáp án cho các câu trùng số thứ tự</span>
+                    </div>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(68px, 1fr))',
+                      gap: '6px',
+                      maxHeight: '220px',
+                      overflowY: 'auto',
+                      padding: '8px',
+                      background: 'rgba(0,0,0,0.2)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.06)'
+                    }}>
+                      {parsed.map(item => (
+                        <div key={item.number} style={{
+                          background: 'rgba(16,185,129,0.12)',
+                          border: '1px solid rgba(16,185,129,0.3)',
+                          borderRadius: '6px',
+                          padding: '3px 6px',
+                          textAlign: 'center',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          color: '#fff'
+                        }}>
+                          <span style={{ color: '#94a3b8', fontSize: '10.5px' }}>#{item.number}: </span>
+                          <span style={{ color: '#34d399' }}>{item.answer}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="custom-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const demoKeys = Array.from({ length: 200 }, (_, i) => `${i + 1}. ${['A', 'B', 'C', 'D'][i % 4]}`).join('\n');
+                  setBulkAnswerKeyInput(demoKeys);
+                }}
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#cbd5e1', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+              >
+                📋 Dán mẫu thử 200 câu
+              </button>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowBulkAnswerKeyModal(false)}
+                  style={{ fontSize: '12px', padding: '6px 12px' }}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleApplyBulkAnswers}
+                  style={{ fontSize: '12px', padding: '6px 16px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', color: '#000', fontWeight: 700 }}
+                >
+                  ⚡ Xác nhận gán đáp án
                 </button>
               </div>
             </div>
