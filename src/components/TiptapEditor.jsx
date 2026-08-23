@@ -154,7 +154,8 @@ const FixedToolbar = ({
   isAILoading, 
   onRequestAITextAction,
   isFullscreen,
-  toggleFullscreen
+  toggleFullscreen,
+  variant
 }) => {
   const [showAIMenu, setShowAIMenu] = useState(false);
   const aiMenuRef = useRef(null);
@@ -170,6 +171,108 @@ const FixedToolbar = ({
   }, []);
 
   if (!editor) return null;
+  const isMini = variant === 'mini';
+
+  if (isMini) {
+    return (
+      <div className="editor-fixed-toolbar mini-toolbar">
+        {/* Undo / Redo */}
+        <div className="toolbar-group">
+          <button className="toolbar-btn" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Hoàn tác (Ctrl+Z)">
+            <Undo size={14}/>
+          </button>
+          <button className="toolbar-btn" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="Làm lại (Ctrl+Y)">
+            <Redo size={14}/>
+          </button>
+        </div>
+
+        <div className="toolbar-divider" />
+
+        {/* Text Formatting */}
+        <div className="toolbar-group">
+          <button className={`toolbar-btn ${editor.isActive('bold') ? 'is-active' : ''}`} onClick={() => editor.chain().focus().toggleBold().run()} title="In đậm (Ctrl+B)"><Bold size={14} /></button>
+          <button className={`toolbar-btn ${editor.isActive('italic') ? 'is-active' : ''}`} onClick={() => editor.chain().focus().toggleItalic().run()} title="In nghiêng (Ctrl+I)"><Italic size={14} /></button>
+          <button className={`toolbar-btn ${editor.isActive('underline') ? 'is-active' : ''}`} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Gạch chân (Ctrl+U)"><UnderlineIcon size={14} /></button>
+          <button className={`toolbar-btn ${editor.isActive('highlight') ? 'is-active' : ''}`} onClick={() => editor.chain().focus().toggleHighlight().run()} title="Tô màu chữ"><PaintBucket size={14} /></button>
+          <button className="toolbar-btn" onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()} title="Xóa toàn bộ định dạng / Bỏ khung nền"><Eraser size={14} /></button>
+        </div>
+
+        <div className="toolbar-divider" />
+
+        {/* Lists */}
+        <div className="toolbar-group">
+          <button className={`toolbar-btn ${editor.isActive('bulletList') ? 'is-active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Danh sách chấm"><List size={14} /></button>
+          <button className={`toolbar-btn ${editor.isActive('orderedList') ? 'is-active' : ''}`} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Danh sách số"><ListOrdered size={14} /></button>
+          <button className={`toolbar-btn ${editor.isActive('taskList') ? 'is-active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title="Việc cần làm"><CheckSquare size={14} /></button>
+        </div>
+
+        <div className="toolbar-divider" />
+
+        {/* Link & Image */}
+        <div className="toolbar-group">
+          <button className={`toolbar-btn ${editor.isActive('link') ? 'is-active' : ''}`} onClick={() => {
+            if (editor.isActive('link')) {
+              editor.chain().focus().unsetLink().run();
+              return;
+            }
+            const url = window.prompt('Nhập đường dẫn liên kết (URL):');
+            if (url) editor.chain().focus().setLink({ href: url }).run();
+          }} title="Chèn Link"><LinkIcon size={14}/></button>
+
+          <button className={`toolbar-btn ${editor.isActive('image') ? 'is-active' : ''}`} onClick={() => {
+            const url = window.prompt('Nhập đường dẫn Ảnh (URL):');
+            if (url) editor.chain().focus().setImage({ src: url }).run();
+          }} title="Chèn Ảnh"><ImageIcon size={14}/></button>
+        </div>
+
+        <div className="toolbar-divider" />
+
+        {/* AI Assistant Popover */}
+        <div className="toolbar-group ai-group" ref={aiMenuRef}>
+          <button 
+            className={`ai-dropdown-btn ${showAIMenu ? 'active' : ''}`} 
+            onClick={() => setShowAIMenu(!showAIMenu)}
+            disabled={isAILoading}
+            style={{ padding: '3px 8px', fontSize: '11.5px' }}
+            title="Trợ lý AI hỗ trợ giải thích"
+          >
+            <Sparkles size={13} className="sparkle-icon" />
+            <span>✨ AI</span>
+            <ChevronDown size={11} style={{ transform: showAIMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </button>
+
+          {showAIMenu && (
+            <div className="ai-menu-popover" style={{ zIndex: 100 }}>
+              <div className="ai-menu-header">TÍNH NĂNG AI SOẠN THẢO</div>
+              <button className="ai-menu-item" onClick={() => { setShowAIMenu(false); onSuggestContent(); }}>
+                <PenLine size={15} color="#60a5fa" />
+                <div>
+                  <div className="item-title">Gợi ý giải thích</div>
+                  <div className="item-sub">Bổ sung ý tưởng và hoàn thiện văn bản</div>
+                </div>
+              </button>
+              <div className="ai-menu-divider" />
+              <div className="ai-menu-header">XỬ LÝ VĂN BẢN</div>
+              <button className="ai-menu-item" onClick={() => { setShowAIMenu(false); onRequestAITextAction('explain'); }}>
+                <Info size={15} color="#c59aff" />
+                <div>
+                  <div className="item-title">Giải thích ngắn gọn</div>
+                  <div className="item-sub">Giải nghĩa khái niệm đang chọn</div>
+                </div>
+              </button>
+              <button className="ai-menu-item" onClick={() => { setShowAIMenu(false); onRequestAITextAction('summarize'); }}>
+                <Code size={15} color="#60a5fa" />
+                <div>
+                  <div className="item-title">Tóm tắt nội dung</div>
+                  <div className="item-sub">Rút gọn ý chính ngắn gọn</div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="editor-fixed-toolbar">
@@ -859,6 +962,7 @@ BẮT BUỘC FORMAT: Sử dụng HTML thuần (<h2>, <h3>, <ul>, <li>, <strong>,
           onRequestAITextAction={requestAITextAction}
           isFullscreen={isFullscreen}
           toggleFullscreen={variant !== 'mini' ? () => setIsFullscreen(!isFullscreen) : null}
+          variant={variant}
         />
       )}
 
