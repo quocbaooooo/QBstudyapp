@@ -223,6 +223,18 @@ function AppContent() {
 
   const [activeTab, setActiveTab] = useState('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('qb_sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('qb_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [player, setPlayer] = useState(null);
 
@@ -401,17 +413,30 @@ function AppContent() {
       {/* Sidebar */}
       <nav className={`
         fixed lg:relative top-0 left-0 h-full z-50
-        w-52 p-3 border-r border-white/10 backdrop-blur-xl bg-[#060e20]/95 lg:bg-white/5
+        w-52 ${isSidebarCollapsed ? 'lg:w-[68px]' : 'lg:w-52'} p-3 border-r border-white/10 backdrop-blur-xl bg-[#060e20]/95 lg:bg-white/5
         shadow-[0_0_40px_rgba(124,77,255,0.1)]
-        transition-transform duration-300 ease-out
-        flex flex-col shrink-0
+        transition-all duration-300 ease-out
+        flex flex-col shrink-0 overflow-x-hidden
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className="mb-6 px-3 mt-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="Logo" className="h-9 w-auto object-contain drop-shadow-[0_0_8px_rgba(34,211,238,0.4)]" />
-            <span className="text-xl font-extrabold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-cyan-400">QBStudy</span>
+        <div className={`mb-6 mt-3 flex items-center ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-2' : 'justify-between px-2'}`}>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <img src="/logo.png" alt="Logo" className="h-9 w-auto object-contain shrink-0 drop-shadow-[0_0_8px_rgba(34,211,238,0.4)]" />
+            <span className={`text-xl font-extrabold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-cyan-400 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>
+              QBStudy
+            </span>
           </div>
+          {/* Desktop Toggle Button */}
+          <button
+            className={`hidden lg:flex text-slate-400 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-colors ${isSidebarCollapsed ? 'mt-2' : 'ml-auto'}`}
+            onClick={toggleSidebarCollapse}
+            title={isSidebarCollapsed ? "Mở rộng thanh điều hướng" : "Thu gọn thanh điều hướng"}
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              {isSidebarCollapsed ? 'chevron_right' : 'chevron_left'}
+            </span>
+          </button>
+          {/* Mobile Close Button */}
           <button
             className="lg:hidden text-slate-400 hover:text-white p-1"
             onClick={() => setSidebarOpen(false)}
@@ -419,77 +444,88 @@ function AppContent() {
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
+
         <div className="space-y-1">
           <button
             onClick={() => handleTabChange('home')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'home' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+            title={isSidebarCollapsed ? "Trang chủ" : undefined}
+            className={`w-full flex items-center py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'} ${activeTab === 'home' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
           >
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : undefined }}>home</span>
-            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Trang chủ</span>
+            <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : undefined }}>home</span>
+            <span className={`font-['Inter'] font-medium tracking-tight text-left flex-1 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>Trang chủ</span>
           </button>
 
           <button
             onClick={() => handleTabChange('notes')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'notes' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+            title={isSidebarCollapsed ? "Sổ tay" : undefined}
+            className={`w-full flex items-center py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'} ${activeTab === 'notes' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
           >
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'notes' ? "'FILL' 1" : undefined }}>book</span>
-            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Sổ tay</span>
+            <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: activeTab === 'notes' ? "'FILL' 1" : undefined }}>book</span>
+            <span className={`font-['Inter'] font-medium tracking-tight text-left flex-1 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>Sổ tay</span>
           </button>
 
           <button
             onClick={() => handleTabChange('flashcards')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'flashcards' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+            title={isSidebarCollapsed ? "Thẻ học" : undefined}
+            className={`w-full flex items-center py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'} ${activeTab === 'flashcards' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
           >
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'flashcards' ? "'FILL' 1" : undefined }}>style</span>
-            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Thẻ học</span>
+            <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: activeTab === 'flashcards' ? "'FILL' 1" : undefined }}>style</span>
+            <span className={`font-['Inter'] font-medium tracking-tight text-left flex-1 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>Thẻ học</span>
           </button>
 
           <button
             onClick={() => handleTabChange('quizzes')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'quizzes' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+            title={isSidebarCollapsed ? "Trắc nghiệm" : undefined}
+            className={`w-full flex items-center py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'} ${activeTab === 'quizzes' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
           >
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'quizzes' ? "'FILL' 1" : undefined }}>quiz</span>
-            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Trắc nghiệm</span>
+            <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: activeTab === 'quizzes' ? "'FILL' 1" : undefined }}>quiz</span>
+            <span className={`font-['Inter'] font-medium tracking-tight text-left flex-1 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>Trắc nghiệm</span>
           </button>
 
           <button
             onClick={() => handleTabChange('toeic')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'toeic' ? 'bg-white/10 text-pink-400 border-l-3 border-pink-400 shadow-[0_0_15px_rgba(244,114,182,0.35)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+            title={isSidebarCollapsed ? "Luyện thi TOEIC" : undefined}
+            className={`w-full flex items-center py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'} ${activeTab === 'toeic' ? 'bg-white/10 text-pink-400 border-l-3 border-pink-400 shadow-[0_0_15px_rgba(244,114,182,0.35)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
           >
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'toeic' ? "'FILL' 1" : undefined }}>headphones</span>
-            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Luyện thi TOEIC</span>
+            <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: activeTab === 'toeic' ? "'FILL' 1" : undefined }}>headphones</span>
+            <span className={`font-['Inter'] font-medium tracking-tight text-left flex-1 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>Luyện thi TOEIC</span>
           </button>
           
           <button
             onClick={() => handleTabChange('settings')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${activeTab === 'settings' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+            title={isSidebarCollapsed ? "Cài đặt" : undefined}
+            className={`w-full flex items-center py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'} ${activeTab === 'settings' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
           >
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === 'settings' ? "'FILL' 1" : undefined }}>settings</span>
-            <span className="font-['Inter'] font-medium tracking-tight text-left flex-1">Cài đặt</span>
+            <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: activeTab === 'settings' ? "'FILL' 1" : undefined }}>settings</span>
+            <span className={`font-['Inter'] font-medium tracking-tight text-left flex-1 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>Cài đặt</span>
           </button>
         </div>
 
         {/* Sign out button at bottom */}
         <div className="mt-auto pt-4 border-t border-white/5">
-          <div className="flex items-center gap-3 px-3 py-2 mb-2">
+          <div 
+            className={`flex items-center mb-2 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'}`}
+            title={isSidebarCollapsed ? (user.displayName || user.email || 'User') : undefined}
+          >
             {user.photoURL ? (
-              <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full border border-white/20" referrerPolicy="no-referrer" />
+              <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full border border-white/20 shrink-0" referrerPolicy="no-referrer" />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
                 {(user.displayName || user.email || '?')[0].toUpperCase()}
               </div>
             )}
-            <div className="flex-1 min-w-0">
+            <div className={`flex-1 min-w-0 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>
               <div className="text-sm text-white font-medium truncate">{user.displayName || 'User'}</div>
               <div className="text-[11px] text-slate-400 truncate">{user.email}</div>
             </div>
           </div>
           <button
             onClick={signOut}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/10 hover:text-red-400 transition-all"
+            title={isSidebarCollapsed ? "Đăng xuất" : undefined}
+            className={`w-full flex items-center rounded-lg text-sm text-slate-400 hover:bg-white/10 hover:text-red-400 transition-all ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 py-2 gap-3' : 'px-3 py-2 gap-3'}`}
           >
-            <span className="material-symbols-outlined text-[20px]">logout</span>
-            <span className="font-['Inter'] font-medium">Đăng xuất</span>
+            <span className="material-symbols-outlined text-[20px] shrink-0">logout</span>
+            <span className={`font-['Inter'] font-medium whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>Đăng xuất</span>
           </button>
         </div>
       </nav>
