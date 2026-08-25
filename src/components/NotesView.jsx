@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
-import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote, Cloud, CloudUpload, CloudOff, Save } from 'lucide-react';
+import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote, Cloud, CloudUpload, CloudOff, Save, FileDown } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import TiptapEditor from './TiptapEditor';
 import { compressHtmlImages } from '../utils/imageCompressor';
+import { exportNoteToWord } from '../utils/exportWord';
 
 const DEMO_NOTE = {
   id: uuidv4(),
@@ -370,13 +371,27 @@ export default function NotesView() {
                       style={{ background: cardGradients[gradientIdx] }}
                     >
                       <div className="quiz-card-accent" style={{ background: cardAccentColors[gradientIdx] }} />
-                      <button
-                        className="quiz-card-delete"
-                        onClick={(e) => handleDelete(e, note.id)}
-                        title="Xóa ghi chú"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '6px', zIndex: 5 }}>
+                        <button
+                          className="quiz-card-delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            exportNoteToWord(note);
+                          }}
+                          title="Xuất ghi chú thành file Word (.doc / .docx)"
+                          style={{ position: 'static', opacity: 0.8 }}
+                        >
+                          <FileDown size={14} />
+                        </button>
+                        <button
+                          className="quiz-card-delete"
+                          onClick={(e) => handleDelete(e, note.id)}
+                          title="Xóa ghi chú"
+                          style={{ position: 'static' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <h3 className="quiz-card-title">{note.title || 'Không có tiêu đề'}</h3>
                         <p style={{ 
@@ -514,8 +529,23 @@ export default function NotesView() {
                 </div>
               )}
             </div>
-            {/* Right side Cloud Sync Status */}
+            {/* Right side Cloud Sync Status & Export Word */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+              {activeNote && (
+                <button
+                  type="button"
+                  onClick={() => exportNoteToWord(activeNote)}
+                  style={{
+                    padding: '8px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600,
+                    background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  title="Xuất ghi chú này thành file Word (.doc / .docx)"
+                >
+                  <FileText size={14} /> Xuất Word
+                </button>
+              )}
               {renderCloudSyncStatus()}
             </div>
           </div>

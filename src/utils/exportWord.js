@@ -195,3 +195,127 @@ export const exportQuizToWord = async (quiz) => {
     alert('Không thể xuất file Word. Vui lòng thử lại!');
   });
 };
+
+/**
+ * Export a single Note to a Word (.doc / .docx) file.
+ * Preserves title, category, tags, and full HTML formatting (images, tables, headings, blockquotes, lists).
+ * @param {Object} note - The note object { title, category, tags, content }
+ */
+export const exportNoteToWord = (note) => {
+  if (!note) return;
+
+  const title = note.title || 'Ghi chú mới';
+  const category = note.category || 'Mặc định';
+  const tags = (note.tags || []).join(', ');
+  const content = note.content || '<p>Chưa có nội dung</p>';
+
+  const htmlDocument = `
+    <!DOCTYPE html>
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head>
+      <meta charset="utf-8">
+      <title>${title}</title>
+      <!--[if gte mso 9]>
+      <xml>
+        <w:WordDocument>
+          <w:View>Print</w:View>
+          <w:Zoom>100</w:Zoom>
+          <w:DoNotOptimizeForBrowser/>
+        </w:WordDocument>
+      </xml>
+      <![endif]-->
+      <style>
+        @page {
+          size: A4;
+          margin: 2cm;
+        }
+        body {
+          font-family: 'Calibri', 'Arial', sans-serif;
+          font-size: 11pt;
+          line-height: 1.6;
+          color: #1e293b;
+        }
+        .header-title {
+          font-size: 22pt;
+          font-weight: bold;
+          color: #4f46e5;
+          margin-bottom: 6px;
+          border-bottom: 2px solid #6366f1;
+          padding-bottom: 6px;
+        }
+        .header-meta {
+          font-size: 9.5pt;
+          color: #64748b;
+          margin-bottom: 20px;
+        }
+        h1 { font-size: 18pt; color: #1e293b; font-weight: bold; margin-top: 18px; margin-bottom: 8px; }
+        h2 { font-size: 14pt; color: #4338ca; font-weight: bold; margin-top: 14px; margin-bottom: 6px; }
+        h3 { font-size: 12pt; color: #334155; font-weight: bold; margin-top: 12px; margin-bottom: 4px; }
+        p { margin-bottom: 10px; }
+        strong, b { font-weight: bold; color: #0f172a; }
+        em, i { font-style: italic; }
+        u { text-decoration: underline; }
+        blockquote {
+          border-left: 4px solid #818cf8;
+          background-color: #f8fafc;
+          padding: 10px 14px;
+          margin: 12px 0;
+          color: #334155;
+          font-style: italic;
+        }
+        table {
+          border-collapse: collapse;
+          width: 100%;
+          margin: 12px 0;
+        }
+        th, td {
+          border: 1px solid #cbd5e1;
+          padding: 8px 12px;
+          text-align: left;
+        }
+        th {
+          background-color: #f1f5f9;
+          font-weight: bold;
+          color: #1e293b;
+        }
+        ul, ol {
+          padding-left: 24px;
+          margin-bottom: 10px;
+        }
+        li {
+          margin-bottom: 4px;
+        }
+        img {
+          max-width: 100%;
+          height: auto;
+          display: block;
+          margin: 12px 0;
+        }
+        hr {
+          border: 0;
+          border-top: 1px solid #e2e8f0;
+          margin: 16px 0;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header-title">${title}</div>
+      <div class="header-meta">
+        <strong>Danh mục:</strong> ${category} ${tags ? `| <strong>Tags:</strong> ${tags}` : ''}
+      </div>
+      <div>
+        ${content}
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const blob = new Blob(['\ufeff', htmlDocument], { type: 'application/msword;charset=utf-8' });
+    const cleanTitle = title.replace(/[^a-zA-Z0-9\sÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂÂĐỔỞỚỜỞỨỪỬỮỰỲÝỴỶỸửữựỳýỵỷỹ_-]/g, '').trim();
+    saveAs(blob, `${cleanTitle || 'ghi-chu'}.doc`);
+  } catch (err) {
+    console.error('Lỗi xuất file Word:', err);
+    alert('Không thể xuất file Word: ' + err.message);
+  }
+};
