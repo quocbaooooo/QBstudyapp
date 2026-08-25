@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { Trash2, Play, Sparkles, Loader, Wand2, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { Trash2, Play, Sparkles, Loader, Wand2, CheckCircle, AlertCircle, X, Cloud, CloudUpload, CloudOff } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import StudyMode from './StudyMode';
 
@@ -1038,13 +1038,75 @@ const DEMO_DECK = {
 };
 
 export default function DecksView() {
-  const [decks, setDecks] = useFirestore('decks', 'study_decks', [DEMO_DECK]);
+  const [decks, setDecks, syncState, saveToCloud, hasUnsavedChanges] = useFirestore('decks', 'study_decks', [DEMO_DECK]);
   const [activeDeckId, setActiveDeckId] = useState(null);
   const [isStudying, setIsStudying] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
 
   const activeDeck = decks.find(d => d.id === activeDeckId);
+
+  const renderCloudSyncStatus = () => {
+    const { status, error } = syncState || {};
+
+    if (status === 'saving') {
+      return (
+        <span className="px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-400 bg-blue-500/15 border border-blue-500/30 flex items-center gap-1.5">
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid #60a5fa', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+          Đang lưu Cloud...
+        </span>
+      );
+    }
+
+    if (status === 'has_unsaved' || hasUnsavedChanges) {
+      return (
+        <button
+          type="button"
+          onClick={() => saveToCloud()}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold text-black flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-md"
+          style={{ background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', boxShadow: '0 2px 10px rgba(245,158,11,0.4)' }}
+          title="Nhấn để lưu bộ thẻ lên Cloud"
+        >
+          <CloudUpload size={14} /> Lưu lên Cloud
+        </button>
+      );
+    }
+
+    if (status === 'local_only') {
+      return (
+        <span 
+          title={error || 'Đã lưu an toàn tại máy Local'}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-amber-400 bg-amber-500/15 border border-amber-500/30 flex items-center gap-1.5 cursor-help"
+        >
+          <CloudOff size={14} /> Đã lưu máy Local
+        </span>
+      );
+    }
+
+    if (status === 'error') {
+      return (
+        <button
+          type="button"
+          onClick={() => saveToCloud()}
+          title={error || 'Lỗi kết nối Cloud. Thử lại.'}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-400 bg-red-500/15 border border-red-500/30 flex items-center gap-1.5 cursor-pointer"
+        >
+          <CloudOff size={14} /> Lỗi lưu Cloud (Thử lại)
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => saveToCloud()}
+        title="Dữ liệu bộ thẻ đã đồng bộ Cloud. Nhấp để lưu lại bất kỳ lúc nào."
+        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
+      >
+        <Cloud size={14} /> Đã đồng bộ Cloud
+      </button>
+    );
+  };
 
   const handleAddDeck = () => {
     const newDeck = { id: uuidv4(), title: 'Bộ thẻ mới', cards: [] };
@@ -1194,7 +1256,8 @@ export default function DecksView() {
                   placeholder="Tên bộ thẻ..."
                 />
               </div>
-              <div className="flex gap-2 shrink-0">
+              <div className="flex gap-2 shrink-0 items-center">
+                {renderCloudSyncStatus()}
                 <button
                   className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"
                   style={{ background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white', boxShadow: '0 2px 12px rgba(124,77,255,0.3)' }}

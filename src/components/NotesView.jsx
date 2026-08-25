@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
-import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote } from 'lucide-react';
+import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote, Cloud, CloudUpload, CloudOff, Save } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import TiptapEditor from './TiptapEditor';
 
@@ -14,7 +14,7 @@ const DEMO_NOTE = {
 };
 
 export default function NotesView() {
-  const [notes, setNotes] = useFirestore('notes', 'study_notes', [DEMO_NOTE]);
+  const [notes, setNotes, syncState, saveToCloud, hasUnsavedChanges] = useFirestore('notes', 'study_notes', [DEMO_NOTE]);
   const [activeNoteId, setActiveNoteId] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,6 +83,103 @@ export default function NotesView() {
 
     return () => window.clearInterval(id);
   }, []);
+
+  // Keyboard shortcut Ctrl+S / Cmd+S to save to cloud
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        saveToCloud();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saveToCloud]);
+
+  const renderCloudSyncStatus = () => {
+    const { status, error } = syncState || {};
+
+    if (status === 'saving') {
+      return (
+        <span style={{
+          padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
+          background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)',
+          display: 'inline-flex', alignItems: 'center', gap: '6px'
+        }}>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid #60a5fa', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+          Đang lưu Cloud...
+        </span>
+      );
+    }
+
+    if (status === 'has_unsaved' || hasUnsavedChanges) {
+      return (
+        <button
+          type="button"
+          onClick={() => saveToCloud()}
+          style={{
+            padding: '8px 16px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700,
+            background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000',
+            border: 'none', cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            boxShadow: '0 3px 12px rgba(245,158,11,0.35)',
+            transition: 'all 0.2s'
+          }}
+          title="Nhấn để lưu tất cả ghi chú lên Cloud (Ctrl+S)"
+        >
+          <CloudUpload size={15} /> Lưu lên Cloud
+        </button>
+      );
+    }
+
+    if (status === 'local_only') {
+      return (
+        <span 
+          title={error || 'Đã lưu an toàn tại máy (Local Storage / IndexedDB)'} 
+          style={{
+            padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
+            background: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.3)',
+            display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'help'
+          }}
+        >
+          <CloudOff size={14} /> Đã lưu máy Local
+        </span>
+      );
+    }
+
+    if (status === 'error') {
+      return (
+        <button
+          type="button"
+          onClick={() => saveToCloud()}
+          title={error || 'Lỗi kết nối Cloud. Thử lại.'}
+          style={{
+            padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
+            background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)',
+            display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer'
+          }}
+        >
+          <CloudOff size={14} /> Lỗi lưu Cloud (Thử lại)
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => saveToCloud()}
+        title="Dữ liệu ghi chú đã đồng bộ Cloud. Nhấp để lưu lại bất kỳ lúc nào."
+        style={{
+          padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
+          background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)',
+          display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+          transition: 'all 0.2s'
+        }}
+      >
+        <Cloud size={14} /> Đã đồng bộ Cloud
+      </button>
+    );
+  };
 
   // Helper: relative time
   const getRelativeTime = (timestamp) => {
@@ -185,6 +282,8 @@ export default function NotesView() {
                     <Filter size={12} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
                   </div>
                 )}
+                {/* Cloud Sync Button */}
+                {renderCloudSyncStatus()}
                 {/* Create button */}
                 <button
                   onClick={handleAddNote}
@@ -384,6 +483,10 @@ export default function NotesView() {
                   </div>
                 </div>
               )}
+            </div>
+            {/* Right side Cloud Sync Status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+              {renderCloudSyncStatus()}
             </div>
           </div>
 
