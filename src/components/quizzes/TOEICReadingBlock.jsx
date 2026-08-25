@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, Sparkles } from 'lucide-react';
+import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, Sparkles, Edit3, StickyNote } from 'lucide-react';
 import ResizableSplitPanel from './ResizableSplitPanel';
 import TOEICImageUploader from './TOEICImageUploader';
 
@@ -37,6 +37,7 @@ export default function TOEICReadingBlock({
 
   const [startRangeInput, setStartRangeInput] = useState(passageObj.startNum || startNumCalc || '');
   const [endRangeInput, setEndRangeInput] = useState(passageObj.endNum || endNumCalc || '');
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
 
   const handleSaveRange = () => {
     const s = parseInt(startRangeInput, 10);
@@ -179,6 +180,85 @@ export default function TOEICReadingBlock({
                 }}
               />
             )}
+
+            {/* GHI CHÚ & TỪ VỰNG (NOTES) SECTION */}
+            <div style={{
+              background: 'rgba(15, 23, 42, 0.65)',
+              border: '1px solid rgba(245, 158, 11, 0.45)',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              marginTop: '4px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span>📄</span> <span>📌</span> GHI CHÚ & TỪ VỰNG (NOTES):
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingNotes(!isEditingNotes)}
+                  style={{
+                    background: isEditingNotes ? 'rgba(251,191,36,0.3)' : 'rgba(251,191,36,0.12)',
+                    border: '1px solid rgba(251,191,36,0.35)',
+                    color: '#fbbf24',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Bấm để chỉnh sửa ghi chú từ vựng"
+                >
+                  {isEditingNotes ? <CheckCircle size={12} /> : <Edit3 size={12} />}
+                  {isEditingNotes ? 'Xong' : 'Sửa Ghi Chú'}
+                </button>
+              </div>
+
+              {!isTesting || isEditingNotes ? (
+                <textarea
+                  value={passageObj.notes || ''}
+                  onChange={(e) => handleUpdateReadingPassageProp(passageObj.id, 'notes', e.target.value)}
+                  placeholder={"Nhập ghi chú & từ vựng bài đọc tại đây...\nVí dụ:\n- Advertise (v) quảng cáo\n- Beverage (n) đồ uống\n- Superior (adj) Ưu việt\n- distinctive /dɪˈstɪŋktɪv/ (adj) có đặc điểm riêng\n- flavor (hương vị)"}
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(0,0,0,0.35)',
+                    color: '#fbbf24',
+                    border: '1px solid rgba(245,158,11,0.35)',
+                    borderRadius: '8px',
+                    padding: '10px',
+                    fontSize: '13.5px',
+                    lineHeight: '1.6',
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                    outline: 'none',
+                    minHeight: '100px'
+                  }}
+                />
+              ) : (
+                <div style={{
+                  color: '#fbbf24',
+                  fontSize: '13.5px',
+                  lineHeight: '1.7',
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'inherit',
+                  padding: '2px 0'
+                }}>
+                  {passageObj.notes ? (
+                    passageObj.notes
+                  ) : (
+                    <span style={{ color: 'rgba(251,191,36,0.5)', fontStyle: 'italic', fontSize: '12px' }}>
+                      Chưa có ghi chú từ vựng cho bài đọc này. (Bấm "Sửa Ghi Chú" để thêm từ vựng mới)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
 
             <TOEICImageUploader
               images={passageObj.images || []}
