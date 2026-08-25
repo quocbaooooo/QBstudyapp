@@ -5,6 +5,7 @@ import { useFirestore } from '../hooks/useFirestore';
 import { Key, Sparkles, Upload, Play, CheckCircle, XCircle, Trash2, Star, Lightbulb, ChevronDown, ChevronUp, X, Image as ImageIcon, FileText, Zap, ArrowLeft, Clock, BookOpen, MoreVertical, Languages, File, Volume2, Save, Copy, Folder, FolderPlus, Edit3, Plus, Share2, Headphones, Music, Eye, EyeOff } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportQuizToWord } from '../utils/exportWord';
+import { saveAs } from 'file-saver';
 import Tesseract from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import TiptapEditor from './TiptapEditor';
@@ -151,93 +152,161 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     }
   };
 
-  // Download quiz as JSON file
-  const handleDownloadJson = (quiz) => {
+  /**
+   * Optimized Export Quiz to JSON file (.json)
+   * Encodes all questions, options, explanations, reading passages, listening audio, notes, and takeaways cleanly.
+   */
+  const handleDownloadJson = (quizToExport) => {
+    const targetQuiz = quizToExport || activeQuiz;
+    if (!targetQuiz) {
+      alert('Không tìm thấy bộ trắc nghiệm để tải xuống!');
+      return;
+    }
+
     try {
-      const exportData = {
-        title: quiz.title,
-        questions: quiz.questions || [],
-        readingPassages: quiz.readingPassages || [],
-        exportedAt: Date.now(),
-        type: 'qbstudy_quiz'
+      // Clean up transient runtime fields (userAnswer, _passage, etc.)
+      const cleanQuestions = (targetQuiz.questions || []).map(q => {
+        const { userAnswer, _passage, _questionOnly, ...rest } = q;
+        return rest;
+      });
+
+      const cleanReadingPassages = (targetQuiz.readingPassages || []).map(p => ({
+        id: p.id || uuidv4(),
+        title: p.title || 'Reading Passage',
+        content: p.content || '',
+        images: p.images || [],
+        notes: p.notes || '',
+        blankNumbers: p.blankNumbers || []
+      }));
+
+      const cleanListeningPassages = (targetQuiz.listeningPassages || []).map(p => ({
+        id: p.id || uuidv4(),
+        type: p.type || 'listening',
+        part: p.part || 'part34',
+        title: p.title || 'Listening Passage',
+        rangeStr: p.rangeStr || '',
+        audioUrl: p.audioUrl || '',
+        audioName: p.audioName || '',
+        transcript: p.transcript || '',
+        transcriptTranslation: p.transcriptTranslation || '',
+        notes: p.notes || p.transcriptNotes || '',
+        images: p.images || []
+      }));
+
+      const exportPayload = {
+        app: 'QBStudyApp',
+        version: '2.0',
+        format: 'quiz_export',
+        exportedAt: new Date().toISOString(),
+        quiz: {
+          id: targetQuiz.id || uuidv4(),
+          title: targetQuiz.title || 'Bộ đề trắc nghiệm',
+          description: targetQuiz.description || '',
+          category: targetQuiz.category || 'Mặc định',
+          tags: targetQuiz.tags || [],
+          questions: cleanQuestions,
+          readingPassages: cleanReadingPassages,
+          listeningPassages: cleanListeningPassages,
+          keyTakeaways: targetQuiz.keyTakeaways || '',
+          folderId: targetQuiz.folderId || null,
+          createdAt: targetQuiz.createdAt || Date.now(),
+          updatedAt: Date.now()
+        }
       };
 
-      const jsonStr = JSON.stringify(exportData, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      // Clean special characters from filename
-      const cleanTitle = quiz.title.replace(/[^a-zA-Z0-9\sÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂÂĐỔỞỚỜỞỨỪỬỮỰỲÝỴỶỸửữựỳýỵỷỹ]/g, '').trim();
-      a.download = `${cleanTitle || 'bo-de-trac-nghiem'}.json`;
-      
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const jsonString = JSON.stringify(exportPayload, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+      const rawTitle = targetQuiz.title || 'Bo_trac_nghiem';
+      const cleanTitle = rawTitle
+        .replace(/[^a-zA-Z0-9\sÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂÂĐỔỞỚỜỞỨỪỬỮỰỲÝỴỶỸửữựỳýỵỷỹ_-]/g, '')
+        .trim()
+        .replace(/\s+/g, '_');
+      saveAs(blob, `${cleanTitle || 'bo-trac-nghiem'}.json`);
     } catch (err) {
+      console.error('Lỗi khi xuất file JSON:', err);
       alert('Không thể xuất file JSON: ' + err.message);
     }
   };
 
-  // Import quiz from JSON file
-  const handleJsonImport = (e) => {
-    const file = e.target.files[0];
+  /**
+   * Import Quiz from uploaded JSON file (.json)
+   */
+  const handleJsonFileImport = (file) => {
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = (e) => {
       try {
-        const parsed = JSON.parse(event.target.result);
-        
-        // Validation
-        if (!parsed || typeof parsed !== 'object' || !parsed.title || !Array.isArray(parsed.questions)) {
-          alert('File JSON không hợp lệ hoặc thiếu cấu trúc bộ đề QBStudy.');
+        const json = JSON.parse(e.target.result);
+        const quizData = json.quiz || (json.questions ? json : null);
+
+        if (!quizData || typeof quizData !== 'object' || !Array.isArray(quizData.questions)) {
+          alert('File JSON không hợp lệ hoặc thiếu danh sách câu hỏi.');
           return;
         }
 
-        // Deep clone questions & reading passages and generate new UUIDs to prevent conflicts
-        const oldPassages = parsed.readingPassages || [];
-        const passageIdMap = {};
-        const newPassages = oldPassages.map(p => {
+        const readingPassageIdMap = {};
+        const newReadingPassages = (quizData.readingPassages || []).map(p => {
           const newId = uuidv4();
-          passageIdMap[p.id] = newId;
+          readingPassageIdMap[p.id] = newId;
           return { ...p, id: newId };
         });
 
-        const newQuestions = parsed.questions.map(q => {
+        const listeningPassageIdMap = {};
+        const newListeningPassages = (quizData.listeningPassages || []).map(p => {
           const newId = uuidv4();
-          let readingGroupId = q.readingGroupId || null;
-          if (readingGroupId && passageIdMap[readingGroupId]) {
-            readingGroupId = passageIdMap[readingGroupId];
+          listeningPassageIdMap[p.id] = newId;
+          return { ...p, id: newId };
+        });
+
+        const newQuestions = quizData.questions.map(q => {
+          const newId = uuidv4();
+          let rGroupId = q.readingGroupId || null;
+          if (rGroupId && readingPassageIdMap[rGroupId]) {
+            rGroupId = readingPassageIdMap[rGroupId];
           }
+
+          let lGroupId = q.listeningGroupId || null;
+          if (lGroupId && listeningPassageIdMap[lGroupId]) {
+            lGroupId = listeningPassageIdMap[lGroupId];
+          }
+
           return {
             ...q,
             id: newId,
-            readingGroupId,
-            userAnswer: null // reset user answers
+            readingGroupId: rGroupId,
+            listeningGroupId: lGroupId,
+            userAnswer: null
           };
         });
 
         const newQuiz = {
           id: uuidv4(),
-          title: `${parsed.title} (Nhập từ file)`,
+          title: quizData.title ? `${quizData.title} (Nhập từ file)` : 'Bộ đề nhập từ JSON',
+          description: quizData.description || '',
+          category: quizData.category || 'Mặc định',
+          tags: quizData.tags || [],
           questions: newQuestions,
-          readingPassages: newPassages,
+          readingPassages: newReadingPassages,
+          listeningPassages: newListeningPassages,
+          keyTakeaways: quizData.keyTakeaways || '',
           updatedAt: Date.now()
         };
 
         setQuizzes(prev => [newQuiz, ...prev]);
         setActiveQuizId(newQuiz.id);
         setIsImporting(false);
-        alert(`Nhập thành công bộ đề: "${newQuiz.title}" với ${newQuestions.length} câu hỏi!`);
+        alert(`🎉 Nhập thành công bộ đề: "${newQuiz.title}" với ${newQuestions.length} câu hỏi!`);
       } catch (err) {
-        alert('Lỗi đọc file JSON: ' + err.message);
+        console.error('Lỗi đọc file JSON:', err);
+        alert('File JSON không hợp lệ hoặc bị lỗi định dạng!');
       }
     };
     reader.readAsText(file);
-    e.target.value = ''; // Reset input
+  };
+  const handleJsonImport = (e) => {
+    const file = e?.target?.files?.[0] || e;
+    if (file) handleJsonFileImport(file);
+    if (e?.target) e.target.value = '';
   };
 
   // Check for shared quiz ID in URL query parameters on mount
@@ -2510,6 +2579,8 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     e.target.value = ''; // Reset input
   };
 
+
+
   const getBlankNumbersFromPassage = (text = '') => {
     if (!text) return [];
     const numberSet = new Set();
@@ -4305,6 +4376,14 @@ ${questionsText}`;
                   <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>download</span> Xuất Word
                 </button>
                 <button 
+                  className="btn" 
+                  style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#34d399', borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)' }} 
+                  onClick={() => handleDownloadJson(activeQuiz)}
+                  title="Tải xuống file dữ liệu JSON (.json) đầy đủ của bộ đề"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>download_for_offline</span> Xuất JSON
+                </button>
+                <button 
                   className="btn btn-primary" 
                   onClick={() => {
                     if (!isTesting) {
@@ -4732,6 +4811,20 @@ ${questionsText}`;
                         <FileText size={14} />
                         Nhập từ file Word (.docx)
                         <input type="file" accept=".docx" style={{ display: 'none' }} onChange={handleWordUpload} />
+                      </label>
+                      <label style={{
+                          padding: '7px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 700,
+                          border: '1px solid rgba(16,185,129,0.35)', cursor: 'pointer',
+                          background: 'rgba(16,185,129,0.12)', color: '#34d399',
+                          display: 'flex', alignItems: 'center', gap: '6px'
+                      }} title="Nhập trực tiếp bộ đề đầy đủ từ file JSON đã lưu">
+                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download_for_offline</span>
+                        Nhập file JSON (.json)
+                        <input type="file" accept=".json" style={{ display: 'none' }} onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleJsonFileImport(file);
+                          e.target.value = '';
+                        }} />
                       </label>
                     </div>
 
