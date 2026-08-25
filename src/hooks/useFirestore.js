@@ -9,6 +9,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/useAuth';
 import { saveAudioToIDB } from '../utils/audioStorage';
+import { compressHtmlImages } from '../utils/imageCompressor';
 
 /**
  * Hook that syncs a Firestore collection with local state.
@@ -287,9 +288,14 @@ async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
         const itemJson = JSON.stringify(item);
 
         if (itemJson.length > 850000) {
-          hasOversizedDoc = true;
           // Sanitize item for Firestore document limit (<1MB)
           const sanitizedItem = JSON.parse(itemJson);
+          if (sanitizedItem.content && typeof sanitizedItem.content === 'string' && sanitizedItem.content.includes('data:image/')) {
+            sanitizedItem.content = await compressHtmlImages(sanitizedItem.content);
+          }
+          if (JSON.stringify(sanitizedItem).length > 850000) {
+            hasOversizedDoc = true;
+          }
           if (sanitizedItem.listeningPassages) {
             sanitizedItem.listeningPassages = sanitizedItem.listeningPassages.map(p => {
               if (p.audioUrl && p.audioUrl.length > 200000) {

@@ -3,6 +3,7 @@ import { useFirestore } from '../hooks/useFirestore';
 import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote, Cloud, CloudUpload, CloudOff, Save } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import TiptapEditor from './TiptapEditor';
+import { compressHtmlImages } from '../utils/imageCompressor';
 
 const DEMO_NOTE = {
   id: uuidv4(),
@@ -44,9 +45,13 @@ export default function NotesView() {
     }
   };
 
-  const handleUpdateActiveNote = (field, value) => {
+  const handleUpdateActiveNote = async (field, value) => {
+    let finalValue = value;
+    if (field === 'content' && typeof value === 'string' && value.includes('data:image/')) {
+      finalValue = await compressHtmlImages(value);
+    }
     const updatedNotes = notes.map(n => 
-      n.id === activeNoteId ? { ...n, [field]: value, updatedAt: Date.now() } : n
+      n.id === activeNoteId ? { ...n, [field]: finalValue, updatedAt: Date.now() } : n
     );
     setNotes(updatedNotes);
   };
@@ -83,6 +88,31 @@ export default function NotesView() {
 
     return () => window.clearInterval(id);
   }, []);
+
+  // Auto-compress existing notes that contain uncompressed Base64 images
+  useEffect(() => {
+    let isSubscribed = true;
+    const healExistingNotes = async () => {
+      let changed = false;
+      const healedNotes = await Promise.all(notes.map(async (n) => {
+        if (n.content && typeof n.content === 'string' && n.content.includes('data:image/')) {
+          const compressedContent = await compressHtmlImages(n.content);
+          if (compressedContent !== n.content) {
+            changed = true;
+            return { ...n, content: compressedContent };
+          }
+        }
+        return n;
+      }));
+
+      if (changed && isSubscribed) {
+        setNotes(healedNotes);
+      }
+    };
+
+    healExistingNotes();
+    return () => { isSubscribed = false; };
+  }, [notes, setNotes]);
 
   // Keyboard shortcut Ctrl+S / Cmd+S to save to cloud
   useEffect(() => {

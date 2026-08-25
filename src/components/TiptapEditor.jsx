@@ -26,6 +26,7 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { Image as BaseImage } from '@tiptap/extension-image';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useState, useEffect, useRef } from 'react';
+import { compressBase64Image, compressHtmlImages } from '../utils/imageCompressor';
 
 const ResizableImage = BaseImage.extend({
   addAttributes() {
@@ -159,6 +160,7 @@ const FixedToolbar = ({
 }) => {
   const [showAIMenu, setShowAIMenu] = useState(false);
   const aiMenuRef = useRef(null);
+  const imageInputRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -172,6 +174,35 @@ const FixedToolbar = ({
 
   if (!editor) return null;
   const isMini = variant === 'mini';
+
+  const handleSelectImageFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const rawSrc = ev.target.result;
+      const compressedSrc = await compressBase64Image(rawSrc, 1200, 1200, 0.75);
+      editor.chain().focus().setImage({ src: compressedSrc, width: '100%' }).run();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleInsertImage = () => {
+    if (editor.isActive('image')) {
+      const width = window.prompt('Nhập chiều rộng Ảnh (VD: 100%, 500px, 300px):', editor.getAttributes('image').width || '100%');
+      if (width) editor.chain().focus().updateAttributes('image', { width }).run();
+      return;
+    }
+
+    const choice = window.confirm('Bấm OK để chọn file ảnh từ máy tính, hoặc Cancel để dán đường dẫn (URL) ảnh.');
+    if (choice) {
+      if (imageInputRef.current) imageInputRef.current.click();
+    } else {
+      const url = window.prompt('Nhập đường dẫn Ảnh (URL):');
+      if (url) editor.chain().focus().setImage({ src: url }).run();
+    }
+  };
 
   if (isMini) {
     return (
@@ -210,6 +241,7 @@ const FixedToolbar = ({
 
         {/* Link & Image */}
         <div className="toolbar-group">
+          <input type="file" ref={imageInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleSelectImageFile} />
           <button className={`toolbar-btn ${editor.isActive('link') ? 'is-active' : ''}`} onClick={() => {
             if (editor.isActive('link')) {
               editor.chain().focus().unsetLink().run();
@@ -219,10 +251,7 @@ const FixedToolbar = ({
             if (url) editor.chain().focus().setLink({ href: url }).run();
           }} title="Chèn Link"><LinkIcon size={14}/></button>
 
-          <button className={`toolbar-btn ${editor.isActive('image') ? 'is-active' : ''}`} onClick={() => {
-            const url = window.prompt('Nhập đường dẫn Ảnh (URL):');
-            if (url) editor.chain().focus().setImage({ src: url }).run();
-          }} title="Chèn Ảnh"><ImageIcon size={14}/></button>
+          <button className={`toolbar-btn ${editor.isActive('image') ? 'is-active' : ''}`} onClick={handleInsertImage} title="Chèn Ảnh / Chọn file ảnh"><ImageIcon size={14}/></button>
         </div>
 
         <div className="toolbar-divider" />
@@ -387,15 +416,7 @@ const FixedToolbar = ({
           if (url) editor.chain().focus().setLink({ href: url }).run();
         }} title="Chèn Link"><LinkIcon size={15}/></button>
         
-        <button className={`toolbar-btn ${editor.isActive('image') ? 'is-active' : ''}`} onClick={() => {
-          if (editor.isActive('image')) {
-            const width = window.prompt('Nhập chiều rộng Ảnh (VD: 100%, 500px, 300px):', editor.getAttributes('image').width || '100%');
-            if (width) editor.chain().focus().updateAttributes('image', { width }).run();
-          } else {
-            const url = window.prompt('Nhập đường dẫn Ảnh (URL):');
-            if (url) editor.chain().focus().setImage({ src: url }).run();
-          }
-        }} title="Chèn Ảnh / Đổi kích thước"><ImageIcon size={15}/></button>
+        <button className={`toolbar-btn ${editor.isActive('image') ? 'is-active' : ''}`} onClick={handleInsertImage} title="Chèn Ảnh / Chọn file ảnh"><ImageIcon size={15}/></button>
 
         <button className="toolbar-btn" onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Chèn Bảng (3x3)"><TableIcon size={15}/></button>
         {editor.isActive('table') && (
@@ -540,9 +561,10 @@ export default function TiptapEditor({ title, content, onChange = () => {}, vari
             event.preventDefault();
             const file = item.getAsFile();
             const reader = new FileReader();
-            reader.onload = (e) => {
-              const src = e.target.result;
-              const node = view.state.schema.nodes.image.create({ src, width: '100%' });
+            reader.onload = async (e) => {
+              const rawSrc = e.target.result;
+              const compressedSrc = await compressBase64Image(rawSrc, 1200, 1200, 0.75);
+              const node = view.state.schema.nodes.image.create({ src: compressedSrc, width: '100%' });
               const transaction = view.state.tr.replaceSelectionWith(node);
               view.dispatch(transaction);
             };
@@ -551,6 +573,27 @@ export default function TiptapEditor({ title, content, onChange = () => {}, vari
           }
         }
         return false;
+      },
+      handleDrop: (view, event) => {
+        const hasFiles = event.dataTransfer?.files?.length > 0;
+        if (!hasFiles) return false;
+
+        const files = Array.from(event.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+        if (files.length === 0) return false;
+
+        event.preventDefault();
+        files.forEach(file => {
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            const rawSrc = e.target.result;
+            const compressedSrc = await compressBase64Image(rawSrc, 1200, 1200, 0.75);
+            const node = view.state.schema.nodes.image.create({ src: compressedSrc, width: '100%' });
+            const transaction = view.state.tr.replaceSelectionWith(node);
+            view.dispatch(transaction);
+          };
+          reader.readAsDataURL(file);
+        });
+        return true;
       },
     },
     onUpdate: ({ editor }) => {
