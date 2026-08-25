@@ -1,7 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
 import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, Sparkles, Edit3, StickyNote } from 'lucide-react';
 import ResizableSplitPanel from './ResizableSplitPanel';
 import TOEICImageUploader from './TOEICImageUploader';
+
+function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 6, ...props }) {
+  const textareaRef = useRef(null);
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${Math.max(el.scrollHeight, 140)}px`;
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    adjustHeight();
+  }, [value, adjustHeight]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(e) => {
+        if (onChange) onChange(e);
+        adjustHeight();
+      }}
+      placeholder={placeholder}
+      rows={minRows}
+      style={{
+        width: '100%',
+        background: 'rgba(0,0,0,0.3)',
+        color: '#fff',
+        border: '1px solid rgba(148,163,184,0.25)',
+        borderRadius: '8px',
+        padding: '10px',
+        fontSize: '13.5px',
+        lineHeight: '1.6',
+        fontFamily: 'inherit',
+        resize: 'vertical',
+        boxSizing: 'border-box',
+        ...style
+      }}
+      {...props}
+    />
+  );
+}
 
 export default function TOEICReadingBlock({
   passageObj,
@@ -159,25 +203,11 @@ export default function TOEICReadingBlock({
                 {renderPassageWithBlankHighlights(passageObj.content || '', isSameSelectedGroup ? activeReadingBlankNumber : null)}
               </div>
             ) : (
-              <textarea
+              <AutoResizeTextarea
                 value={passageObj.content || ''}
                 onChange={(e) => handleUpdateReadingPassageProp(passageObj.id, 'content', e.target.value)}
                 placeholder="Nhập hoặc dán nội dung đoạn văn bài đọc tại đây..."
-                rows={8}
-                style={{
-                  width: '100%',
-                  background: 'rgba(0,0,0,0.3)',
-                  color: '#fff',
-                  border: '1px solid rgba(148,163,184,0.25)',
-                  borderRadius: '8px',
-                  padding: '10px',
-                  fontSize: '13.5px',
-                  lineHeight: '1.6',
-                  fontFamily: 'inherit',
-                  resize: 'vertical',
-                  flex: 1,
-                  minHeight: '180px'
-                }}
+                minRows={6}
               />
             )}
 
@@ -220,24 +250,16 @@ export default function TOEICReadingBlock({
               </div>
 
               {!isTesting || isEditingNotes ? (
-                <textarea
+                <AutoResizeTextarea
                   value={passageObj.notes || ''}
                   onChange={(e) => handleUpdateReadingPassageProp(passageObj.id, 'notes', e.target.value)}
                   placeholder={"Nhập ghi chú & từ vựng bài đọc tại đây...\nVí dụ:\n- Advertise (v) quảng cáo\n- Beverage (n) đồ uống\n- Superior (adj) Ưu việt\n- distinctive /dɪˈstɪŋktɪv/ (adj) có đặc điểm riêng\n- flavor (hương vị)"}
-                  rows={4}
+                  minRows={3}
                   style={{
-                    width: '100%',
                     background: 'rgba(0,0,0,0.35)',
                     color: '#fbbf24',
                     border: '1px solid rgba(245,158,11,0.35)',
-                    borderRadius: '8px',
-                    padding: '10px',
-                    fontSize: '13.5px',
-                    lineHeight: '1.6',
-                    fontFamily: 'inherit',
-                    resize: 'vertical',
-                    outline: 'none',
-                    minHeight: '100px'
+                    outline: 'none'
                   }}
                 />
               ) : (

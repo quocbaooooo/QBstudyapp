@@ -100,57 +100,9 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   }, [quizzes, selectedFolderId, modeFilter]);
   
   // Sharing states
-  const [shareQuizModal, setShareQuizModal] = useState(null); // { quiz: Object, link: string, isGenerating: boolean, error: string }
   const [importSharedQuizModal, setImportSharedQuizModal] = useState(null); // { quiz: Object }
   const [isFetchingSharedQuiz, setIsFetchingSharedQuiz] = useState(false);
   const jsonFileInputRef = useRef(null);
-
-  // Handle sharing a quiz
-  const handleShareQuiz = async (quiz) => {
-    setShareQuizModal({
-      quiz,
-      link: '',
-      isGenerating: true,
-      error: ''
-    });
-
-    if (!user) {
-      setShareQuizModal(prev => ({
-        ...prev,
-        isGenerating: false,
-        error: 'Bạn cần đăng nhập bằng Google hoặc Email để sử dụng tính năng tạo liên kết chia sẻ trực tuyến.'
-      }));
-      return;
-    }
-
-    try {
-      // Create shared quiz document in Firestore
-      const sharedData = {
-        title: quiz.title,
-        questions: quiz.questions || [],
-        readingPassages: quiz.readingPassages || [],
-        sharedBy: user.displayName || user.email || 'Người dùng QBStudy',
-        sharedByUid: user.uid,
-        createdAt: Date.now()
-      };
-
-      const docRef = await addDoc(collection(db, 'shared_quizzes'), sharedData);
-      const shareUrl = `${window.location.origin}${window.location.pathname}?share=${docRef.id}`;
-      
-      setShareQuizModal(prev => ({
-        ...prev,
-        isGenerating: false,
-        link: shareUrl
-      }));
-    } catch (err) {
-      console.error('Error sharing quiz:', err);
-      setShareQuizModal(prev => ({
-        ...prev,
-        isGenerating: false,
-        error: 'Không thể tạo liên kết chia sẻ: ' + err.message
-      }));
-    }
-  };
 
   /**
    * Optimized Export Quiz to JSON file (.json)
@@ -4147,16 +4099,6 @@ ${questionsText}`;
                                 <button
                                   className="quiz-card-menu-item"
                                   onClick={() => {
-                                    handleShareQuiz(quiz);
-                                    setActiveQuizCardMenu(null);
-                                  }}
-                                >
-                                  <Share2 size={14} style={{ color: '#10b981' }} />
-                                  Chia sẻ
-                                </button>
-                                <button
-                                  className="quiz-card-menu-item"
-                                  onClick={() => {
                                     setMoveQuizModal({ quizId: quiz.id, folderId: quiz.folderId || null });
                                     setActiveQuizCardMenu(null);
                                   }}
@@ -4361,13 +4303,6 @@ ${questionsText}`;
                     <Key size={16} /> 🔑 Nhập đáp án 200 câu
                   </button>
                 )}
-                <button 
-                  className="btn" 
-                  style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#10b981', borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.06)' }} 
-                  onClick={() => handleShareQuiz(activeQuiz)}
-                >
-                  <Share2 size={16} /> Chia sẻ
-                </button>
                 <button 
                   className="btn" 
                   style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }} 
@@ -6553,143 +6488,7 @@ ${questionsText}`;
         </div>
       )}
 
-      {/* Share Quiz Modal */}
-      {shareQuizModal && (
-        <div className="custom-modal-overlay">
-          <div className="custom-modal-content" style={{ maxWidth: '480px', width: '90%' }}>
-            <div className="custom-modal-header">
-              <h3 className="custom-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Share2 size={18} style={{ color: '#10b981' }} />
-                Chia sẻ bộ đề trắc nghiệm
-              </h3>
-              <button className="custom-modal-close-btn" onClick={() => setShareQuizModal(null)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="custom-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'white', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '8px' }}>
-                Bộ đề: <span style={{ color: '#a78bfa' }}>{shareQuizModal.quiz?.title}</span>
-              </div>
-              
-              {/* Online Sharing section */}
-              <div className="glass-panel" style={{ padding: '14px', background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  🌐 CHIA SẺ TRỰC TUYẾN
-                </div>
-                
-                {shareQuizModal.isGenerating ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0' }}>
-                    <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.1)', borderTop: '2px solid #10b981', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                    <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Đang tạo liên kết chia sẻ...</span>
-                  </div>
-                ) : shareQuizModal.error ? (
-                  <div style={{ fontSize: '13px', color: '#f87171', padding: '6px 0' }}>
-                    {shareQuizModal.error}
-                  </div>
-                ) : shareQuizModal.link ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      Bất kỳ ai có liên kết này đều có thể ôn tập hoặc lưu bộ đề này:
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
-                        type="text"
-                        readOnly
-                        value={shareQuizModal.link}
-                        style={{
-                          flex: 1,
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: '1px solid rgba(16,185,129,0.3)',
-                          borderRadius: '8px',
-                          padding: '8px 12px',
-                          color: '#34d399',
-                          fontSize: '13px',
-                          outline: 'none'
-                        }}
-                        onClick={e => e.target.select()}
-                      />
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(shareQuizModal.link);
-                          alert('Đã sao chép liên kết vào bộ nhớ tạm!');
-                        }}
-                        style={{
-                          padding: '8px 14px',
-                          borderRadius: '8px',
-                          border: 'none',
-                          background: 'linear-gradient(135deg, #10b981, #059669)',
-                          color: 'white',
-                          fontWeight: 600,
-                          fontSize: '13px',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        Sao chép
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
 
-              {/* Offline Sharing section */}
-              <div className="glass-panel" style={{ padding: '14px', background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  💾 CHIA SẺ OFFLINE (JSON FILE)
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 10px 0', lineHeight: '1.4' }}>
-                  Tải file dữ liệu bộ trắc nghiệm về máy. Người nhận có thể dùng nút "Nhập file JSON" để nhập vào ứng dụng của họ.
-                </p>
-                <button
-                  onClick={() => {
-                    handleDownloadJson(shareQuizModal.quiz);
-                    setShareQuizModal(null);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(var(--glass-rgb), 0.15)',
-                    background: 'rgba(var(--glass-rgb), 0.05)',
-                    color: 'white',
-                    fontWeight: 600,
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseOver={e => e.currentTarget.style.background = 'rgba(var(--glass-rgb), 0.15)'}
-                  onMouseOut={e => e.currentTarget.style.background = 'rgba(var(--glass-rgb), 0.05)'}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>download</span>
-                  Tải xuống file dữ liệu JSON (.json)
-                </button>
-              </div>
-            </div>
-            <div className="custom-modal-footer">
-              <button
-                onClick={() => setShareQuizModal(null)}
-                style={{
-                  padding: '9px 16px',
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  border: '1px solid rgba(var(--glass-rgb), 0.1)',
-                  cursor: 'pointer',
-                  background: 'rgba(var(--glass-rgb), 0.04)',
-                  color: 'var(--text-muted)',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Import Shared Quiz Modal */}
       {importSharedQuizModal && (
