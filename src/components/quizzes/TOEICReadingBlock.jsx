@@ -401,6 +401,29 @@ export default function TOEICReadingBlock({
                     })}
                   </div>
 
+                  {/* Correct Answer & Explanation Display in Test Mode when user has chosen an answer */}
+                  {isTesting && item.userAnswer && (
+                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.1)', fontSize: '13px' }}>
+                      {item.answer && (
+                        <div style={{ color: 'var(--accent-green)', fontWeight: 'bold', marginBottom: '6px', fontSize: '13.5px' }}>
+                          ✓ Đáp án đúng: {item.answer}. {item.options[item.answer]}
+                        </div>
+                      )}
+                      {item.explanation && (
+                        <div style={{ color: 'var(--text-main)', background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.25)', marginTop: '6px' }}>
+                          <strong style={{ color: 'var(--accent-orange)', display: 'block', marginBottom: '6px', fontSize: '12.5px' }}>📝 Lời giải thích chi tiết:</strong>
+                          {TiptapEditor ? (
+                            <TiptapEditor content={item.explanation} readOnly={true} variant="mini" onChange={() => { }} />
+                          ) : item.explanation.includes('<') && item.explanation.includes('>') ? (
+                            <div className="tiptap-rendered-content" dangerouslySetInnerHTML={{ __html: item.explanation }} />
+                          ) : (
+                            <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>{item.explanation}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Correct Answer & Explanation Selector in Edit Mode */}
                   {!isTesting && (
                     <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>

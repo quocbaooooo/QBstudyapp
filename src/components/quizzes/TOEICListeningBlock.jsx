@@ -1,5 +1,5 @@
 import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
-import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash2, Sparkles, StickyNote, Upload, Image as ImageIcon } from 'lucide-react';
+import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash2, Sparkles, StickyNote, Upload, Image as ImageIcon, Edit3 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import TOEICAudioPlayer from './TOEICAudioPlayer';
 import ResizableSplitPanel from './ResizableSplitPanel';
@@ -79,6 +79,7 @@ export default function TOEICListeningBlock({
   TiptapEditor
 }) {
   const [localShowNotes, setLocalShowNotes] = useState({});
+  const [editingNotesMap, setEditingNotesMap] = useState({});
   const activeShowNotesMap = showNotesMap || localShowNotes;
   const activeSetShowNotesMap = setShowNotesMap || setLocalShowNotes;
 
@@ -183,11 +184,73 @@ export default function TOEICListeningBlock({
             )}
 
             {activeShowNotesMap[listeningObj.id] && (
-              <div style={{ marginTop: '6px', padding: '12px', borderRadius: '10px', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(251,191,36,0.35)', fontSize: '13px', lineHeight: '1.65', whiteSpace: 'pre-wrap', color: '#fef08a' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#fbbf24', marginBottom: '6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <StickyNote size={13} /> Ghi Chú & Từ Vựng:
+              <div style={{
+                marginTop: '6px',
+                padding: '12px 14px',
+                borderRadius: '12px',
+                background: 'rgba(15, 23, 42, 0.65)',
+                border: '1px solid rgba(245, 158, 11, 0.45)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <span>📄</span> <span>📌</span> GHI CHÚ & TỪ VỰNG (NOTES):
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingNotesMap(prev => ({ ...prev, [listeningObj.id]: !prev[listeningObj.id] }))}
+                    style={{
+                      background: editingNotesMap[listeningObj.id] ? 'rgba(251,191,36,0.3)' : 'rgba(251,191,36,0.12)',
+                      border: '1px solid rgba(251,191,36,0.35)',
+                      color: '#fbbf24',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Bấm để chỉnh sửa ghi chú từ vựng"
+                  >
+                    {editingNotesMap[listeningObj.id] ? <CheckCircle size={12} /> : <Edit3 size={12} />}
+                    {editingNotesMap[listeningObj.id] ? 'Xong' : 'Sửa Ghi Chú'}
+                  </button>
                 </div>
-                {listeningObj.notes || listeningObj.transcriptNotes || 'Chưa có ghi chú'}
+
+                {editingNotesMap[listeningObj.id] ? (
+                  <AutoResizeTextarea
+                    value={listeningObj.notes || listeningObj.transcriptNotes || ''}
+                    onChange={e => {
+                      handleUpdateListeningPassageProp(listeningObj.id, 'notes', e.target.value);
+                      handleUpdateListeningPassageProp(listeningObj.id, 'transcriptNotes', e.target.value);
+                    }}
+                    placeholder={"Nhập ghi chú & từ vựng bài nghe tại đây...\nVí dụ:\n- Announcement (n) thông báo\n- Schedule (v) sắp xếp lịch"}
+                    style={{
+                      width: '100%',
+                      border: '1px solid rgba(251,191,36,0.35)',
+                      color: '#fbbf24',
+                      background: 'rgba(0,0,0,0.35)',
+                      borderRadius: '8px',
+                      padding: '8px',
+                      fontSize: '13px',
+                      lineHeight: '1.6'
+                    }}
+                  />
+                ) : (
+                  <div style={{ color: '#fbbf24', fontSize: '13.5px', lineHeight: '1.7', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                    {(listeningObj.notes || listeningObj.transcriptNotes) ? (
+                      listeningObj.notes || listeningObj.transcriptNotes
+                    ) : (
+                      <span style={{ color: 'rgba(251,191,36,0.5)', fontStyle: 'italic', fontSize: '12px' }}>
+                        Chưa có ghi chú từ vựng cho bài nghe này. (Bấm "Sửa Ghi Chú" để thêm từ vựng mới)
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
