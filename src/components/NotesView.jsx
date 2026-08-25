@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
-import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote, Cloud, CloudUpload, CloudOff, Save, FileDown } from 'lucide-react';
+import { Plus, Trash2, Search, Filter, Folder, Tag, Minus, ArrowLeft, Clock, FileText, StickyNote, Cloud, CloudUpload, CloudOff, Save, FileDown, Upload, Download } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import TiptapEditor from './TiptapEditor';
 import { compressHtmlImages } from '../utils/imageCompressor';
 import { exportNoteToWord } from '../utils/exportWord';
+import { saveAs } from 'file-saver';
 
 const DEMO_NOTE = {
   id: uuidv4(),
@@ -44,6 +45,118 @@ export default function NotesView() {
       setNotes(notes.filter(n => n.id !== id));
       if (activeNoteId === id) setActiveNoteId(null);
     }
+  };
+
+  /**
+   * Export ALL notes in Notebook to a JSON backup file (.json)
+   */
+  const handleExportNotesJson = () => {
+    if (!notes || notes.length === 0) {
+      alert('Sổ tay chưa có ghi chú nào để xuất!');
+      return;
+    }
+
+    try {
+      const exportData = {
+        app: 'QBStudyApp',
+        version: '2.0',
+        format: 'notes_backup',
+        exportedAt: new Date().toISOString(),
+        totalNotes: notes.length,
+        notes: notes.map(n => ({
+          id: n.id || uuidv4(),
+          title: n.title || 'Ghi chú mới',
+          content: n.content || '',
+          category: n.category || 'Mặc định',
+          tags: n.tags || [],
+          updatedAt: n.updatedAt || Date.now()
+        }))
+      };
+
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+      const dateStr = new Date().toISOString().slice(0, 10);
+      saveAs(blob, `So_tay_ghi_chu_${dateStr}.json`);
+    } catch (err) {
+      console.error('Lỗi xuất JSON sổ tay:', err);
+      alert('Không thể xuất file JSON sổ tay: ' + err.message);
+    }
+  };
+
+  /**
+   * Export single Note to a JSON file (.json)
+   */
+  const handleExportSingleNoteJson = (noteToExport) => {
+    const targetNote = noteToExport || activeNote;
+    if (!targetNote) return;
+
+    try {
+      const exportData = {
+        app: 'QBStudyApp',
+        version: '2.0',
+        format: 'single_note_export',
+        exportedAt: new Date().toISOString(),
+        note: {
+          id: targetNote.id || uuidv4(),
+          title: targetNote.title || 'Ghi chú mới',
+          content: targetNote.content || '',
+          category: targetNote.category || 'Mặc định',
+          tags: targetNote.tags || [],
+          updatedAt: targetNote.updatedAt || Date.now()
+        }
+      };
+
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+      const cleanTitle = (targetNote.title || 'Ghi_chu')
+        .replace(/[^a-zA-Z0-9\sÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂÂĐỔỞỚỜỞỨỪỬỮỰỲÝỴỶỸửữựỳýỵỷỹ_-]/g, '')
+        .trim()
+        .replace(/\s+/g, '_');
+      saveAs(blob, `${cleanTitle || 'ghi-chu'}.json`);
+    } catch (err) {
+      console.error('Lỗi xuất JSON ghi chú:', err);
+      alert('Không thể xuất file JSON ghi chú: ' + err.message);
+    }
+  };
+
+  /**
+   * Import notes from uploaded JSON file (.json) into Notebook
+   */
+  const handleImportNotesJson = (e) => {
+    const file = e?.target?.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target.result);
+        const importedArray = Array.isArray(json) 
+          ? json 
+          : (json.notes || (json.note ? [json.note] : (json.quiz ? null : null)));
+
+        if (!importedArray || !Array.isArray(importedArray) || importedArray.length === 0) {
+          alert('File JSON không hợp lệ hoặc không chứa danh sách ghi chú Sổ tay.');
+          return;
+        }
+
+        const newNotes = importedArray.map(item => ({
+          id: uuidv4(),
+          title: item.title || 'Ghi chú nhập từ JSON',
+          content: item.content || '',
+          category: item.category || 'Mặc định',
+          tags: Array.isArray(item.tags) ? item.tags : [],
+          updatedAt: item.updatedAt || Date.now()
+        }));
+
+        setNotes(prev => [...newNotes, ...prev]);
+        alert(`🎉 Đã nhập thành công ${newNotes.length} ghi chú vào Sổ tay!`);
+      } catch (err) {
+        console.error('Lỗi đọc file JSON sổ tay:', err);
+        alert('File JSON bị lỗi hoặc không thể đọc. Vui lòng kiểm tra lại!');
+      }
+    };
+    reader.readAsText(file);
+    if (e.target) e.target.value = ''; // Reset input
   };
 
   const handleUpdateActiveNote = async (field, value) => {
@@ -315,6 +428,33 @@ export default function NotesView() {
                 )}
                 {/* Cloud Sync Button */}
                 {renderCloudSyncStatus()}
+                {/* Export All Notes JSON */}
+                <button
+                  type="button"
+                  onClick={handleExportNotesJson}
+                  style={{
+                    padding: '9px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                    background: 'rgba(16,185,129,0.12)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  title="Xuất toàn bộ ghi chú Sổ tay ra file JSON (.json) để sao lưu hoặc chia sẻ"
+                >
+                  <Download size={14} /> Xuất JSON
+                </button>
+                {/* Import Notes JSON */}
+                <label
+                  style={{
+                    padding: '9px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                    background: 'rgba(34,211,238,0.12)', color: '#22d3ee', border: '1px solid rgba(34,211,238,0.3)',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  title="Nhập danh sách ghi chú từ file JSON (.json) vào Sổ tay"
+                >
+                  <Upload size={14} /> Nhập JSON
+                  <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportNotesJson} />
+                </label>
                 {/* Create button */}
                 <button
                   onClick={handleAddNote}
@@ -532,19 +672,34 @@ export default function NotesView() {
             {/* Right side Cloud Sync Status & Export Word */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
               {activeNote && (
-                <button
-                  type="button"
-                  onClick={() => exportNoteToWord(activeNote)}
-                  style={{
-                    padding: '8px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600,
-                    background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)',
-                    display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  title="Xuất ghi chú này thành file Word (.doc / .docx)"
-                >
-                  <FileText size={14} /> Xuất Word
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleExportSingleNoteJson(activeNote)}
+                    style={{
+                      padding: '8px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600,
+                      background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)',
+                      display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    title="Xuất ghi chú này thành file JSON (.json)"
+                  >
+                    <Download size={14} /> Xuất JSON
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportNoteToWord(activeNote)}
+                    style={{
+                      padding: '8px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600,
+                      background: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)',
+                      display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    title="Xuất ghi chú này thành file Word (.doc / .docx)"
+                  >
+                    <FileText size={14} /> Xuất Word
+                  </button>
+                </>
               )}
               {renderCloudSyncStatus()}
             </div>
