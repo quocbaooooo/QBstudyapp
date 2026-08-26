@@ -453,6 +453,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [isTesting, setIsTesting] = useState(false);
   const [testMode, setTestMode] = useState('all'); // 'all' or 'starred'
   const [selectedReadingQuestionId, setSelectedReadingQuestionId] = useState(null);
+  const [copiedAllNotes, setCopiedAllNotes] = useState(false);
 
   const [isShuffled, setIsShuffled] = useState(false);
   const [shuffledIds, setShuffledIds] = useState(null);
@@ -3642,6 +3643,37 @@ ${optionsText}`;
     });
   };
 
+  const handleCopyAllTakeaways = (e) => {
+    if (e) e.stopPropagation();
+    if (!activeQuiz || !activeQuiz.keyTakeaways || !activeQuiz.keyTakeaways.trim()) {
+      alert('Chưa có ghi chú nào trong Kiến Thức Cốt Lõi để sao chép!');
+      return;
+    }
+
+    const blocks = parseTakeawaysToBlocks(activeQuiz.keyTakeaways || '');
+    let textToCopy = '';
+    if (blocks && blocks.length > 0) {
+      textToCopy = blocks.map(b => b.text).filter(Boolean).join('\n\n');
+    }
+    
+    if (!textToCopy) {
+      const doc = new DOMParser().parseFromString(activeQuiz.keyTakeaways, 'text/html');
+      textToCopy = (doc.body.textContent || '').trim();
+    }
+
+    if (!textToCopy) {
+      alert('Chưa có ghi chú nào trong Kiến Thức Cốt Lõi để sao chép!');
+      return;
+    }
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopiedAllNotes(true);
+      setTimeout(() => setCopiedAllNotes(false), 2000);
+    }).catch(err => {
+      console.error('Lỗi khi sao chép toàn bộ ghi chú:', err);
+    });
+  };
+
   const handleGenerateTakeaways = async () => {
     if (!activeQuiz || activeQuiz.questions.length === 0) {
       alert("Đề thi chưa có câu hỏi nào để tổng hợp.");
@@ -5144,15 +5176,27 @@ ${questionsText}`;
                         <h4 style={{ margin: 0, fontWeight: 'bold', fontSize: '15px' }}>Kiến Thức Cốt Lõi (Cheat Sheet)</h4>
                       </div>
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        {!isTesting && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleGenerateTakeaways(); }}
-                            disabled={isGeneratingTakeaways}
-                            style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '6px', background: 'var(--primary)', color: 'var(--on-primary)', border: 'none', display: 'flex', gap: '4px', alignItems: 'center', cursor: 'pointer' }}
-                          >
-                            {isGeneratingTakeaways ? 'Đang tổng hợp...' : <><Sparkles size={12}/> AI Tổng hợp</>}
-                          </button>
-                        )}
+                        <button 
+                          type="button"
+                          onClick={handleCopyAllTakeaways}
+                          style={{ 
+                            fontSize: '12px', 
+                            padding: '4px 10px', 
+                            borderRadius: '6px', 
+                            background: copiedAllNotes ? 'rgba(16,185,129,0.2)' : 'rgba(255,152,0,0.15)', 
+                            color: copiedAllNotes ? '#34d399' : '#fbbf24', 
+                            border: copiedAllNotes ? '1px solid rgba(16,185,129,0.4)' : '1px solid rgba(255,152,0,0.3)', 
+                            display: 'flex', 
+                            gap: '4px', 
+                            alignItems: 'center', 
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            transition: 'all 0.2s ease'
+                          }}
+                          title="Sao chép toàn bộ ghi chú Kiến Thức Cốt Lõi"
+                        >
+                          {copiedAllNotes ? <><CheckCircle size={13} /> Đã sao chép tất cả!</> : <><Copy size={13} /> Sao chép tất cả</>}
+                        </button>
                         {isTakeawaysCollapsed ? <ChevronDown size={16} color="var(--text-muted)" /> : <ChevronUp size={16} color="var(--text-muted)" />}
                       </div>
                     </div>
