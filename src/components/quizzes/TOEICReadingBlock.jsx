@@ -1,5 +1,5 @@
 import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
-import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, Sparkles, Edit3, StickyNote } from 'lucide-react';
+import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, EyeOff, Sparkles, Edit3, StickyNote } from 'lucide-react';
 import ResizableSplitPanel from './ResizableSplitPanel';
 import TOEICImageUploader from './TOEICImageUploader';
 
@@ -82,6 +82,8 @@ export default function TOEICReadingBlock({
   const [startRangeInput, setStartRangeInput] = useState(passageObj.startNum || startNumCalc || '');
   const [endRangeInput, setEndRangeInput] = useState(passageObj.endNum || endNumCalc || '');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [isEditingTranslation, setIsEditingTranslation] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(false);
 
   const handleSaveRange = () => {
     const s = parseInt(startRangeInput, 10);
@@ -209,6 +211,112 @@ export default function TOEICReadingBlock({
                 placeholder="Nhập hoặc dán nội dung đoạn văn bài đọc tại đây..."
                 minRows={6}
               />
+            )}
+
+            {/* TOGGLE TRANSLATION BUTTON (TEST MODE) */}
+            {isTesting && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowTranslation(!showTranslation)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    background: showTranslation ? 'rgba(0,227,253,0.25)' : 'rgba(255,255,255,0.06)',
+                    color: showTranslation ? '#8eefff' : 'var(--text-muted)',
+                    border: '1px solid rgba(0,227,253,0.35)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {showTranslation ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {showTranslation ? 'Ẩn bản dịch tiếng Việt' : 'Xem bản dịch tiếng Việt'}
+                </button>
+              </div>
+            )}
+
+            {/* BẢN DỊCH TIẾNG VIỆT (TRANSLATION) SECTION */}
+            {(!isTesting || showTranslation) && (
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.65)',
+                border: '1px solid rgba(0, 227, 253, 0.45)',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginTop: '4px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#00e3fd', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🌐</span> <span>🇻🇳</span> BẢN DỊCH TIẾNG VIỆT (TRANSLATION):
+                  </div>
+                  {!isTesting && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingTranslation(!isEditingTranslation)}
+                      style={{
+                        background: isEditingTranslation ? 'rgba(0,227,253,0.3)' : 'rgba(0,227,253,0.12)',
+                        border: '1px solid rgba(0,227,253,0.35)',
+                        color: '#8eefff',
+                        borderRadius: '6px',
+                        padding: '3px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="Bấm để chỉnh sửa bản dịch tiếng Việt"
+                    >
+                      {isEditingTranslation ? <CheckCircle size={12} /> : <Edit3 size={12} />}
+                      {isEditingTranslation ? 'Xong' : 'Sửa Bản Dịch'}
+                    </button>
+                  )}
+                </div>
+
+                {!isTesting || isEditingTranslation ? (
+                  <AutoResizeTextarea
+                    value={passageObj.translation || passageObj.contentTranslation || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleUpdateReadingPassageProp(passageObj.id, 'translation', val);
+                      handleUpdateReadingPassageProp(passageObj.id, 'contentTranslation', val);
+                    }}
+                    placeholder="Nhập hoặc dán bản dịch tiếng Việt của đoạn văn bài đọc tại đây..."
+                    minRows={3}
+                    style={{
+                      background: 'rgba(0,0,0,0.35)',
+                      color: '#8eefff',
+                      border: '1px solid rgba(0,227,253,0.35)',
+                      outline: 'none'
+                    }}
+                  />
+                ) : (
+                  <div style={{
+                    color: '#8eefff',
+                    fontSize: '13.5px',
+                    lineHeight: '1.7',
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'inherit',
+                    padding: '2px 0'
+                  }}>
+                    {(passageObj.translation || passageObj.contentTranslation) ? (
+                      passageObj.translation || passageObj.contentTranslation
+                    ) : (
+                      <span style={{ color: 'rgba(0,227,253,0.5)', fontStyle: 'italic', fontSize: '12px' }}>
+                        Chưa có bản dịch tiếng Việt cho bài đọc này. (Bấm "Sửa Bản Dịch" để thêm bản dịch)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* GHI CHÚ & TỪ VỰNG (NOTES) SECTION */}

@@ -126,6 +126,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         id: p.id || uuidv4(),
         title: p.title || 'Reading Passage',
         content: p.content || '',
+        translation: p.translation || p.contentTranslation || '',
         images: p.images || [],
         notes: p.notes || '',
         blankNumbers: p.blankNumbers || []
