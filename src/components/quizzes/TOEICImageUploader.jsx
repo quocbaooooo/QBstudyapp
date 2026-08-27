@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Plus, Check, Clipboard, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { compressBase64Image } from '../../utils/imageCompressor';
-import { uploadImageToStorage } from '../../utils/cloudStorage';
 
 export default function TOEICImageUploader({
   images = [],
@@ -36,15 +35,13 @@ export default function TOEICImageUploader({
         reader.onload = async (ev) => {
           try {
             const rawDataUrl = ev.target.result;
-            // Compress raw Base64 image data (e.g. 5MB -> 80KB)
-            const compressed = await compressBase64Image(rawDataUrl, 1200, 1200, 0.75);
-            // Optionally upload to Firebase Storage if online/authenticated
-            const finalUrl = await uploadImageToStorage(compressed, file.name || 'image');
+            // Fast local canvas compression (e.g. 5MB -> 80KB in ~20ms)
+            const compressed = await compressBase64Image(rawDataUrl, 1000, 1000, 0.7);
             resolve({
               id: uuidv4(),
               name: file.name || 'Image',
-              data: finalUrl,
-              url: finalUrl
+              data: compressed,
+              url: compressed
             });
           } catch (err) {
             reject(err);
@@ -57,7 +54,7 @@ export default function TOEICImageUploader({
       const newImgs = await Promise.all(readPromises);
       const updated = [...(images || []), ...newImgs];
       onImagesChange(updated);
-      showToast(`🎉 Đã nén & thêm ${newImgs.length} ảnh mới!`);
+      showToast(`🎉 Đã thêm ${newImgs.length} ảnh!`);
     } catch (err) {
       console.error('Error processing image upload:', err);
       showToast('❌ Có lỗi khi xử lý hình ảnh');
@@ -79,30 +76,22 @@ export default function TOEICImageUploader({
       return;
     }
 
-    setIsCompressing(true);
-    try {
-      let finalUrl = url;
-      if (url.startsWith('data:image/')) {
-        const compressed = await compressBase64Image(url);
-        finalUrl = await uploadImageToStorage(compressed, 'pasted_link');
-      }
-
-      const newImg = {
-        id: uuidv4(),
-        name: 'Link Image',
-        data: finalUrl,
-        url: finalUrl
-      };
-
-      onImagesChange([...(images || []), newImg]);
-      setUrlInputValue('');
-      setShowUrlInput(false);
-      showToast('🎉 Đã thêm ảnh từ Link!');
-    } catch (err) {
-      console.error('Error adding url image:', err);
-    } finally {
-      setIsCompressing(false);
+    let finalUrl = url;
+    if (url.startsWith('data:image/')) {
+      finalUrl = await compressBase64Image(url, 1000, 1000, 0.7);
     }
+
+    const newImg = {
+      id: uuidv4(),
+      name: 'Link Image',
+      data: finalUrl,
+      url: finalUrl
+    };
+
+    onImagesChange([...(images || []), newImg]);
+    setUrlInputValue('');
+    setShowUrlInput(false);
+    showToast('🎉 Đã thêm ảnh từ Link!');
   };
 
   const handlePaste = async (e) => {
@@ -127,18 +116,12 @@ export default function TOEICImageUploader({
       const pastedText = e.clipboardData?.getData('text')?.trim();
       if (pastedText && (pastedText.startsWith('http://') || pastedText.startsWith('https://') || pastedText.startsWith('data:image/'))) {
         e.preventDefault();
-        setIsCompressing(true);
-        try {
-          let finalUrl = pastedText;
-          if (pastedText.startsWith('data:image/')) {
-            const compressed = await compressBase64Image(pastedText);
-            finalUrl = await uploadImageToStorage(compressed, 'pasted_clipboard');
-          }
-          onImagesChange([...(images || []), { id: uuidv4(), name: 'Pasted URL', data: finalUrl, url: finalUrl }]);
-          showToast('🎉 Đã nhận diện & dán ảnh thành công!');
-        } finally {
-          setIsCompressing(false);
+        let finalUrl = pastedText;
+        if (pastedText.startsWith('data:image/')) {
+          finalUrl = await compressBase64Image(pastedText, 1000, 1000, 0.7);
         }
+        onImagesChange([...(images || []), { id: uuidv4(), name: 'Pasted URL', data: finalUrl, url: finalUrl }]);
+        showToast('🎉 Đã nhận diện & dán ảnh thành công!');
       }
     }
   };
