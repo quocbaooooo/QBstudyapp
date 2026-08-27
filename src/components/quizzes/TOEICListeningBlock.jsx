@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import TOEICAudioPlayer from './TOEICAudioPlayer';
 import ResizableSplitPanel from './ResizableSplitPanel';
 import TOEICImageUploader from './TOEICImageUploader';
+import SmartImage from './SmartImage';
 
 function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 2, ...props }) {
   const textareaRef = useRef(null);
@@ -109,12 +110,11 @@ export default function TOEICListeningBlock({
             {listeningObj.images && listeningObj.images.length > 0 && (
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '6px 0' }}>
                 {listeningObj.images.map(img => (
-                  <img
+                  <SmartImage
                     key={img.id}
-                    src={img.data || img.url}
-                    alt={img.name}
-                    onClick={() => setActiveLightboxImage(img.data || img.url)}
-                    style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: '#000' }}
+                    img={img}
+                    onClick={(src) => setActiveLightboxImage(src)}
+                    style={{ width: '100%', maxHeight: '450px', objectFit: 'contain', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: '#000' }}
                     title="Click để phóng to ảnh"
                   />
                 ))}

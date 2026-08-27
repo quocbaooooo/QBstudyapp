@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/useAuth';
-import { saveAudioToIDB } from '../utils/audioStorage';
+import { saveAudioToIDB, saveMediaToIDB } from '../utils/audioStorage';
 import { compressHtmlImages, compressBase64Image } from '../utils/imageCompressor';
 
 /**
@@ -23,10 +23,11 @@ async function sanitizeItemForFirestore(item) {
     sanitized.content = await compressHtmlImages(sanitized.content);
   }
 
-  // 2. Compress images & sanitize audio in listeningPassages
+  // 2. Compress images & sanitize audio in listeningPassages + backup to IndexedDB
   if (Array.isArray(sanitized.listeningPassages)) {
     for (let p of sanitized.listeningPassages) {
       if (p.audioUrl && p.audioUrl.length > 200000) {
+        saveAudioToIDB(p.id, p.audioUrl);
         p.audioUrl = '[STORED_IN_INDEXEDDB]';
         p.isLocalAudio = true;
       }
@@ -37,13 +38,14 @@ async function sanitizeItemForFirestore(item) {
             if (img.url && img.url.startsWith('data:image/')) {
               img.url = img.data;
             }
+            saveMediaToIDB(img.id, img.data);
           }
         }
       }
     }
   }
 
-  // 3. Compress images in readingPassages
+  // 3. Compress images in readingPassages + backup to IndexedDB
   if (Array.isArray(sanitized.readingPassages)) {
     for (let p of sanitized.readingPassages) {
       if (Array.isArray(p.images)) {
@@ -53,6 +55,7 @@ async function sanitizeItemForFirestore(item) {
             if (img.url && img.url.startsWith('data:image/')) {
               img.url = img.data;
             }
+            saveMediaToIDB(img.id, img.data);
           }
         }
       }
@@ -64,6 +67,7 @@ async function sanitizeItemForFirestore(item) {
     for (let q of sanitized.questions) {
       if (q.image && typeof q.image === 'string' && q.image.startsWith('data:image/')) {
         q.image = await compressBase64Image(q.image);
+        if (q.id) saveMediaToIDB(q.id, q.image);
       }
       if (Array.isArray(q.images)) {
         for (let img of q.images) {
@@ -72,6 +76,7 @@ async function sanitizeItemForFirestore(item) {
             if (img.url && img.url.startsWith('data:image/')) {
               img.url = img.data;
             }
+            saveMediaToIDB(img.id, img.data);
           }
         }
       }
@@ -86,6 +91,7 @@ async function sanitizeItemForFirestore(item) {
         if (img.url && img.url.startsWith('data:image/')) {
           img.url = img.data;
         }
+        saveMediaToIDB(img.id, img.data);
       }
     }
   }
@@ -97,12 +103,7 @@ async function sanitizeItemForFirestore(item) {
  * Hook that syncs a Firestore collection with local state.
  * Each item in the array becomes a document in: users/{userId}/{collectionName}/{item.id}
  * Falls back to localStorage if user is not logged in.
- * Audio files are stored in IndexedDB to bypass 5MB localStorage and 1MB Firestore limits.
- * 
- * @param {string} collectionName - Name of the sub-collection (e.g., 'notes', 'decks', 'quizzes')
- * @param {string} localStorageKey - localStorage key for fallback/migration
- * @param {Array} defaultValue - Default empty value
- * @returns {[Array, Function, Object]} - [items, setItems, syncState]
+ * Audio and image files are stored in IndexedDB to bypass 5MB localStorage and 1MB Firestore limits.
  */
 export function useFirestore(collectionName, localStorageKey, defaultValue = [], options = {}) {
   const { autoSync = false } = options;
@@ -180,19 +181,32 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
         if (!hasUnsavedChanges) {
           setItemsState(firestoreItems);
           
-          // Save clean version to localStorage (sanitize large audio Base64)
+          // Save clean version to localStorage (sanitize large audio & image Base64)
           try {
             const sanitizedForLocalStorage = firestoreItems.map(item => {
-              if (!item.listeningPassages) return item;
-              return {
-                ...item,
-                listeningPassages: item.listeningPassages.map(p => {
-                  if (p.audioUrl && p.audioUrl.length > 200000) {
-                    return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]' };
-                  }
-                  return p;
-                })
-              };
+              let sanitized = { ...item };
+              if (sanitized.listeningPassages) {
+                sanitized.listeningPassages = sanitized.listeningPassages.map(p => ({
+                  ...p,
+                  audioUrl: (p.audioUrl && p.audioUrl.length > 200000) ? '[STORED_IN_INDEXEDDB]' : p.audioUrl,
+                  images: Array.isArray(p.images) ? p.images.map(img => ({
+                    ...img,
+                    data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                    url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+                  })) : []
+                }));
+              }
+              if (sanitized.readingPassages) {
+                sanitized.readingPassages = sanitized.readingPassages.map(p => ({
+                  ...p,
+                  images: Array.isArray(p.images) ? p.images.map(img => ({
+                    ...img,
+                    data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                    url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+                  })) : []
+                }));
+              }
+              return sanitized;
             });
             window.localStorage.setItem(localStorageKey, JSON.stringify(sanitizedForLocalStorage));
           } catch (e) {
@@ -290,12 +304,30 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
     setItemsState(prev => {
       const newItems = typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn;
 
-      // Extract and save audio files to IndexedDB (unlimited storage)
+      // Extract and save audio & image files to IndexedDB (unlimited storage)
       newItems.forEach(item => {
         if (item.listeningPassages) {
           item.listeningPassages.forEach(p => {
             if (p.id && p.audioUrl && p.audioUrl.length > 200 && p.audioUrl !== '[STORED_IN_INDEXEDDB]' && p.audioUrl !== '[STORED_LOCALLY]') {
               saveAudioToIDB(p.id, p.audioUrl);
+            }
+            if (Array.isArray(p.images)) {
+              p.images.forEach(img => {
+                if (img.id && (img.data || img.url) && img.data !== '[STORED_IN_INDEXEDDB]') {
+                  saveMediaToIDB(img.id, img.data || img.url);
+                }
+              });
+            }
+          });
+        }
+        if (item.readingPassages) {
+          item.readingPassages.forEach(p => {
+            if (Array.isArray(p.images)) {
+              p.images.forEach(img => {
+                if (img.id && (img.data || img.url) && img.data !== '[STORED_IN_INDEXEDDB]') {
+                  saveMediaToIDB(img.id, img.data || img.url);
+                }
+              });
             }
           });
         }
@@ -305,16 +337,29 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
       let localSaveOk = true;
       try {
         const sanitizedForLocalStorage = newItems.map(item => {
-          if (!item.listeningPassages) return item;
-          return {
-            ...item,
-            listeningPassages: item.listeningPassages.map(p => {
-              if (p.audioUrl && p.audioUrl.length > 200000) {
-                return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]' };
-              }
-              return p;
-            })
-          };
+          let sanitized = { ...item };
+          if (sanitized.listeningPassages) {
+            sanitized.listeningPassages = sanitized.listeningPassages.map(p => ({
+              ...p,
+              audioUrl: (p.audioUrl && p.audioUrl.length > 200000) ? '[STORED_IN_INDEXEDDB]' : p.audioUrl,
+              images: Array.isArray(p.images) ? p.images.map(img => ({
+                ...img,
+                data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+              })) : []
+            }));
+          }
+          if (sanitized.readingPassages) {
+            sanitized.readingPassages = sanitized.readingPassages.map(p => ({
+              ...p,
+              images: Array.isArray(p.images) ? p.images.map(img => ({
+                ...img,
+                data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+              })) : []
+            }));
+          }
+          return sanitized;
         });
         window.localStorage.setItem(localStorageKey, JSON.stringify(sanitizedForLocalStorage));
       } catch (e) {

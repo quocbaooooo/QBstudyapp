@@ -2,6 +2,7 @@ import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
 import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, EyeOff, Sparkles, Edit3, StickyNote } from 'lucide-react';
 import ResizableSplitPanel from './ResizableSplitPanel';
 import TOEICImageUploader from './TOEICImageUploader';
+import SmartImage from './SmartImage';
 
 function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 6, ...props }) {
   const textareaRef = useRef(null);
@@ -199,11 +200,10 @@ export default function TOEICReadingBlock({
             {passageObj.images && passageObj.images.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', margin: '4px 0 8px 0' }}>
                 {passageObj.images.map(img => (
-                  <img
+                  <SmartImage
                     key={img.id}
-                    src={img.data || img.url}
-                    alt={img.name}
-                    onClick={() => setActiveLightboxImage && setActiveLightboxImage(img.data || img.url)}
+                    img={img}
+                    onClick={(src) => setActiveLightboxImage && setActiveLightboxImage(src)}
                     style={{
                       width: '100%',
                       maxWidth: '100%',

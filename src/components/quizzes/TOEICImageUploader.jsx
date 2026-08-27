@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Plus, Check, Clipboard, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { compressBase64Image } from '../../utils/imageCompressor';
+import SmartImage from './SmartImage';
 
 export default function TOEICImageUploader({
   images = [],
@@ -154,11 +155,10 @@ export default function TOEICImageUploader({
       <div style={{ marginTop: '8px' }}>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {images.map(img => (
-            <img
+            <SmartImage
               key={img.id}
-              src={img.data || img.url}
-              alt={img.name}
-              onClick={() => setActiveLightboxImage && setActiveLightboxImage(img.data || img.url)}
+              img={img}
+              onClick={(src) => setActiveLightboxImage && setActiveLightboxImage(src)}
               style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: '#000' }}
               title="Click để xem phóng to ảnh (Lightbox)"
             />
@@ -311,10 +311,9 @@ export default function TOEICImageUploader({
         <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
           {images.map(img => (
             <div key={img.id} style={{ position: 'relative', display: 'inline-block' }}>
-              <img
-                src={img.data || img.url}
-                alt={img.name}
-                onClick={() => setActiveLightboxImage && setActiveLightboxImage(img.data || img.url)}
+              <SmartImage
+                img={img}
+                onClick={(src) => setActiveLightboxImage && setActiveLightboxImage(src)}
                 style={{ width: '65px', height: '65px', objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', background: '#000' }}
                 title="Click để xem phóng to ảnh (Lightbox)"
               />
