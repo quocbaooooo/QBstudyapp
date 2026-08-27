@@ -427,7 +427,7 @@ export default function TOEICReadingBlock({
                       {!isTesting ? (
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
                           <span style={{ paddingTop: '8px', fontWeight: 'bold', fontSize: '14px', color: '#8eefff' }}>
-                            Câu {item.blankNumber || (itemIndex + 1)}:
+                            {item.blankNumber || (itemIndex + 1)}.
                           </span>
                           <textarea
                             value={item.question}
@@ -437,7 +437,7 @@ export default function TOEICReadingBlock({
                         </div>
                       ) : (
                         <span>
-                          Câu {itemIndex + 1}{item.blankNumber ? ` (${item.blankNumber})` : ''}: {renderQuizText(displayQuestionText, answerRevealed)}
+                          {item.blankNumber || (itemIndex + 1)}. {renderQuizText(displayQuestionText, answerRevealed)}
                           {item.allowMultipleAnswers && (
                             <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(234,179,8,0.15)', color: '#facc15', border: '1px solid rgba(234,179,8,0.3)', fontWeight: 'normal', display: 'inline-block', verticalAlign: 'middle', marginTop: '-2px' }}>
                               Đây là câu chọn nhiều đáp án

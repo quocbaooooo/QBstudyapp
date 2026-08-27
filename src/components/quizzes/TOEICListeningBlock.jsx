@@ -384,7 +384,7 @@ export default function TOEICListeningBlock({
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
                     {!isTesting ? (
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', flex: 1 }}>
-                        <span style={{ paddingTop: '6px', fontWeight: 700, fontSize: '14px' }}>Câu {item.blankNumber || (itemIndex + 1)}:</span>
+                        <span style={{ paddingTop: '6px', fontWeight: 700, fontSize: '14px' }}>{item.blankNumber || (itemIndex + 1)}.</span>
                         <AutoResizeTextarea
                           value={item.question}
                           onChange={e => handleUpdateQuestionProp(item.id, 'question', e.target.value)}
@@ -398,7 +398,7 @@ export default function TOEICListeningBlock({
                       </div>
                     ) : (
                       <div style={{ fontSize: '14px', fontWeight: 600, lineHeight: '1.45' }}>
-                        Câu {item.blankNumber || (itemIndex + 1)}: {renderQuizText(displayQuestionText, answerRevealed)}
+                        {item.blankNumber || (itemIndex + 1)}. {renderQuizText(displayQuestionText, answerRevealed)}
                       </div>
                     )}
 

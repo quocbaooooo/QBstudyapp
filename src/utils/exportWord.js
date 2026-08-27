@@ -84,7 +84,7 @@ export const exportQuizToWord = async (quiz) => {
     children.push(
       new Paragraph({
         children: [
-          new TextRun({ text: `Câu ${i + 1}: `, bold: true }),
+          new TextRun({ text: `${q.blankNumber || (i + 1)}. `, bold: true }),
           new TextRun({ text: q.question, bold: true }),
         ],
         spacing: { before: 200, after: 100 },

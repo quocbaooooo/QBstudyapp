@@ -3118,7 +3118,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       let promptText = `${fileContext}\n${userPrompt}\n\nYÊU CẦU: Tạo chính xác ${numQuestions} câu hỏi trắc nghiệm.
 
 BẠN BẮT BUỘC PHẢI TRẢ VỀ KẾT QUẢ THEO ĐÚNG ĐỊNH DẠNG SAU CHO MỖI CÂU HỎI:
-Câu [số]: [Nội dung câu hỏi]
+[số]. [Nội dung câu hỏi]
 A. [Đáp án A]
 B. [Đáp án B]
 C. [Đáp án C]
@@ -4983,19 +4983,19 @@ ${questionsText}`;
 
                     <p style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '14px' }}>
                       {importMode === 'listening'
-                        ? <>Dán theo mẫu: <strong>LISTENING: [Nội dung kịch bản Transcript (tùy chọn)]\n\nCâu 1: [câu hỏi] A...B...C...D...</strong>. Chọn file audio hoặc ảnh đính kèm nếu có.</>
+                        ? <>Dán theo mẫu: <strong>LISTENING: [Nội dung kịch bản Transcript (tùy chọn)]\n\n1. [câu hỏi] A...B...C...D...</strong>. Chọn file audio hoặc ảnh đính kèm nếu có.</>
                         : importMode === 'reading'
                         ? <>Dán theo mẫu: <strong>READING: [tiêu đề + passage có blank number như (135), 136...]\n\n135. [câu hỏi] A...B...C...D...</strong>. Passage được lưu 1 block và câu hỏi map theo số.</>
-                        : <>Copy và Paste trực tiếp từ Word. Định dạng yêu cầu: <strong>"Câu 1: [đề] A. [đáp án] B. [đáp án] C. [đáp án] D. [đáp án]"</strong>. (Tùy chọn ghi thêm "Đáp án: A", "Giải thích: ...")</>}
+                        : <>Copy và Paste trực tiếp từ Word. Định dạng yêu cầu: <strong>"1. [đề] A. [đáp án] B. [đáp án] C. [đáp án] D. [đáp án]"</strong>. (Tùy chọn ghi thêm "Đáp án: A", "Giải thích: ...")</>}
                     </p>
                     <textarea 
                       style={{ flex: 1, resize: 'none', fontFamily: 'monospace' }} 
                       value={importText} onChange={e => setImportText(e.target.value)}
                       placeholder={importMode === 'listening'
-                        ? "LISTENING:\nWoman: Excuse me, where can I find the train schedule?\nMan: You can check the information board near gate 3.\n\nCâu 1: What is the woman asking about?\nA. A train schedule\nB. A flight ticket\nC. A hotel room\nD. A taxicab"
+                        ? "LISTENING:\nWoman: Excuse me, where can I find the train schedule?\nMan: You can check the information board near gate 3.\n\n1. What is the woman asking about?\nA. A train schedule\nB. A flight ticket\nC. A hotel room\nD. A taxicab"
                         : importMode === 'reading'
-                        ? "READING:\nBiggs, CEO and founder of BiggsGraphics...\n\nCâu 1: Từ (131) phù hợp nhất là gì?\nA. seek\nB. to seek\nC. seeking\nD. are seeking"
-                        : "Câu 1: 1 + 1 bằng mấy?\nA. 1\nB. 2\nC. 3\nD. 4"}
+                        ? "READING:\nBiggs, CEO and founder of BiggsGraphics...\n\n131. Từ (131) phù hợp nhất là gì?\nA. seek\nB. to seek\nC. seeking\nD. are seeking"
+                        : "1. 1 + 1 bằng mấy?\nA. 1\nB. 2\nC. 3\nD. 4"}
                     />
                     <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                       <button className="btn" onClick={() => { setIsImporting(false); setImportTargetQuizId(null); setPreviewQuestions(null); setPreviewReadingPassage(null); setImportMode('normal'); setListeningAudio(null); setListeningAudioUrl(''); setListeningImages([]); }}>Hủy</button>
