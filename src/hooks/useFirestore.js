@@ -6,6 +6,7 @@ import {
   onSnapshot,
   writeBatch
 } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/useAuth';
 import { saveAudioToIDB, saveMediaToIDB } from '../utils/audioStorage';
@@ -24,39 +25,47 @@ function mergeLocalMediaWithFirestore(firestoreItems, localItems) {
 
     let merged = { ...fItem };
 
-    if (Array.isArray(merged.readingPassages) && Array.isArray(lItem.readingPassages)) {
-      const lPassagesMap = new Map(lItem.readingPassages.map(p => [p.id, p]));
-      merged.readingPassages = merged.readingPassages.map(fPassage => {
-        const lPassage = lPassagesMap.get(fPassage.id);
-        if (!lPassage || !Array.isArray(lPassage.images)) return fPassage;
+    if (Array.isArray(lItem.readingPassages)) {
+      const fPassagesMap = new Map((merged.readingPassages || []).map(p => [p.id, p]));
+      merged.readingPassages = lItem.readingPassages.map(lPassage => {
+        const fPassage = fPassagesMap.get(lPassage.id);
+        if (!fPassage) return lPassage;
 
-        const lImgMap = new Map(lPassage.images.map(img => [img.id, img]));
-        const mergedImages = (fPassage.images || []).map(fImg => {
-          const lImg = lImgMap.get(fImg.id);
+        const fImgMap = new Map((fPassage.images || []).map(img => [img.id, img]));
+        const lImgMap = new Map((lPassage.images || []).map(img => [img.id, img]));
+
+        const allImgIds = new Set([...lImgMap.keys(), ...fImgMap.keys()]);
+        const mergedImages = Array.from(allImgIds).map(id => {
+          const lImg = lImgMap.get(id);
+          const fImg = fImgMap.get(id);
           if (lImg && lImg.data && lImg.data !== '[STORED_IN_INDEXEDDB]') {
-            return { ...fImg, data: lImg.data, url: lImg.url || fImg.url };
+            return lImg;
           }
-          return fImg;
-        });
+          return fImg || lImg;
+        }).filter(Boolean);
 
         return { ...fPassage, images: mergedImages };
       });
     }
 
-    if (Array.isArray(merged.listeningPassages) && Array.isArray(lItem.listeningPassages)) {
-      const lPassagesMap = new Map(lItem.listeningPassages.map(p => [p.id, p]));
-      merged.listeningPassages = merged.listeningPassages.map(fPassage => {
-        const lPassage = lPassagesMap.get(fPassage.id);
-        if (!lPassage || !Array.isArray(lPassage.images)) return fPassage;
+    if (Array.isArray(lItem.listeningPassages)) {
+      const fPassagesMap = new Map((merged.listeningPassages || []).map(p => [p.id, p]));
+      merged.listeningPassages = lItem.listeningPassages.map(lPassage => {
+        const fPassage = fPassagesMap.get(lPassage.id);
+        if (!fPassage) return lPassage;
 
-        const lImgMap = new Map(lPassage.images.map(img => [img.id, img]));
-        const mergedImages = (fPassage.images || []).map(fImg => {
-          const lImg = lImgMap.get(fImg.id);
+        const fImgMap = new Map((fPassage.images || []).map(img => [img.id, img]));
+        const lImgMap = new Map((lPassage.images || []).map(img => [img.id, img]));
+
+        const allImgIds = new Set([...lImgMap.keys(), ...fImgMap.keys()]);
+        const mergedImages = Array.from(allImgIds).map(id => {
+          const lImg = lImgMap.get(id);
+          const fImg = fImgMap.get(id);
           if (lImg && lImg.data && lImg.data !== '[STORED_IN_INDEXEDDB]') {
-            return { ...fImg, data: lImg.data, url: lImg.url || fImg.url };
+            return lImg;
           }
-          return fImg;
-        });
+          return fImg || lImg;
+        }).filter(Boolean);
 
         return { ...fPassage, images: mergedImages };
       });
@@ -84,15 +93,16 @@ async function sanitizeItemForFirestore(item) {
     for (let p of passages) {
       if (Array.isArray(p.images)) {
         for (let img of p.images) {
-          if (!img || !img.id) continue;
+          if (!img) continue;
+          if (!img.id) img.id = uuidv4();
           const rawData = img.data || img.url;
           if (rawData && rawData.length > 100) {
-            // Save to IndexedDB
-            saveMediaToIDB(img.id, rawData);
+            // Save to IndexedDB (awaited)
+            await saveMediaToIDB(img.id, rawData);
 
             if (typeof rawData === 'string' && rawData.startsWith('data:image/')) {
               const compressed = await compressBase64Image(rawData, 900, 900, 0.65);
-              saveMediaToIDB(img.id, compressed);
+              await saveMediaToIDB(img.id, compressed);
 
               if (compressed.length > 120000) {
                 img.data = '[STORED_IN_INDEXEDDB]';
