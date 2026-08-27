@@ -6,10 +6,95 @@ import {
   onSnapshot,
   writeBatch
 } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/useAuth';
-import { saveAudioToIDB } from '../utils/audioStorage';
+import { saveAudioToIDB, saveMediaToIDB } from '../utils/audioStorage';
 import { compressHtmlImages, compressBase64Image } from '../utils/imageCompressor';
+
+/**
+ * Helper to preserve local in-memory image data & edited content when Firestore snapshot updates
+ */
+function mergeLocalMediaWithFirestore(firestoreItems, localItems) {
+  if (!Array.isArray(firestoreItems) || !Array.isArray(localItems)) return firestoreItems;
+  const localMap = new Map(localItems.map(item => [item.id, item]));
+
+  return firestoreItems.map(fItem => {
+    const lItem = localMap.get(fItem.id);
+    if (!lItem) return fItem;
+
+    // Prefer local item for text/content, but take Firestore ID & updatedAt
+    let merged = { ...fItem, ...lItem };
+
+    // Restore or hydrate readingPassages
+    if (Array.isArray(lItem.readingPassages)) {
+      const fPassagesMap = new Map((fItem.readingPassages || []).map(p => [p.id, p]));
+      merged.readingPassages = lItem.readingPassages.map(lPassage => {
+        const fPassage = fPassagesMap.get(lPassage.id);
+        if (!fPassage) return lPassage;
+
+        const fImgMap = new Map((fPassage.images || []).map(img => [img.id, img]));
+        const lImgMap = new Map((lPassage.images || []).map(img => [img.id, img]));
+
+        const allImgIds = new Set([...lImgMap.keys(), ...fImgMap.keys()]);
+        const mergedImages = Array.from(allImgIds).map(id => {
+          const lImg = lImgMap.get(id);
+          const fImg = fImgMap.get(id);
+          if (lImg && lImg.data && lImg.data !== '[STORED_IN_INDEXEDDB]') {
+            return lImg;
+          }
+          return fImg || lImg;
+        }).filter(Boolean);
+
+        return {
+          ...fPassage,
+          ...lPassage,
+          images: mergedImages
+        };
+      });
+    }
+
+    // Restore or hydrate listeningPassages
+    if (Array.isArray(lItem.listeningPassages)) {
+      const fPassagesMap = new Map((fItem.listeningPassages || []).map(p => [p.id, p]));
+      merged.listeningPassages = lItem.listeningPassages.map(lPassage => {
+        const fPassage = fPassagesMap.get(lPassage.id);
+        if (!fPassage) return lPassage;
+
+        const fImgMap = new Map((fPassage.images || []).map(img => [img.id, img]));
+        const lImgMap = new Map((lPassage.images || []).map(img => [img.id, img]));
+
+        const allImgIds = new Set([...lImgMap.keys(), ...fImgMap.keys()]);
+        const mergedImages = Array.from(allImgIds).map(id => {
+          const lImg = lImgMap.get(id);
+          const fImg = fImgMap.get(id);
+          if (lImg && lImg.data && lImg.data !== '[STORED_IN_INDEXEDDB]') {
+            return lImg;
+          }
+          return fImg || lImg;
+        }).filter(Boolean);
+
+        return {
+          ...fPassage,
+          ...lPassage,
+          audioUrl: (lPassage.audioUrl && lPassage.audioUrl !== '[STORED_IN_INDEXEDDB]') ? lPassage.audioUrl : fPassage.audioUrl,
+          images: mergedImages
+        };
+      });
+    }
+
+    // Restore local questions if present
+    if (Array.isArray(lItem.questions)) {
+      const fQMap = new Map((fItem.questions || []).map(q => [q.id, q]));
+      merged.questions = lItem.questions.map(lQ => {
+        const fQ = fQMap.get(lQ.id);
+        return fQ ? { ...fQ, ...lQ } : lQ;
+      });
+    }
+
+    return merged;
+  });
+}
 
 /**
  * Helper to recursively sanitize and compress all Base64 images & audio refs in an item before Firestore sync
@@ -23,40 +108,56 @@ async function sanitizeItemForFirestore(item) {
     sanitized.content = await compressHtmlImages(sanitized.content);
   }
 
+  // Helper to process & sanitize passage images
+  const processPassageImages = async (passages) => {
+    if (!Array.isArray(passages)) return;
+    for (let p of passages) {
+      if (Array.isArray(p.images)) {
+        for (let img of p.images) {
+          if (!img) continue;
+          if (!img.id) img.id = uuidv4();
+          const rawData = img.data || img.url;
+          if (rawData && rawData.length > 100) {
+            // Save to IndexedDB (awaited)
+            await saveMediaToIDB(img.id, rawData);
+
+            if (typeof rawData === 'string' && rawData.startsWith('data:image/')) {
+              const compressed = await compressBase64Image(rawData, 900, 900, 0.65);
+              await saveMediaToIDB(img.id, compressed);
+
+              if (compressed.length > 120000) {
+                img.data = '[STORED_IN_INDEXEDDB]';
+                if (img.url && img.url.startsWith('data:image/')) {
+                  img.url = '[STORED_IN_INDEXEDDB]';
+                }
+              } else {
+                img.data = compressed;
+                if (img.url && img.url.startsWith('data:image/')) {
+                  img.url = compressed;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+
   // 2. Compress images & sanitize audio in listeningPassages
   if (Array.isArray(sanitized.listeningPassages)) {
     for (let p of sanitized.listeningPassages) {
       if (p.audioUrl && p.audioUrl.length > 200000) {
+        saveAudioToIDB(p.id, p.audioUrl);
         p.audioUrl = '[STORED_IN_INDEXEDDB]';
         p.isLocalAudio = true;
       }
-      if (Array.isArray(p.images)) {
-        for (let img of p.images) {
-          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
-            img.data = await compressBase64Image(img.data);
-            if (img.url && img.url.startsWith('data:image/')) {
-              img.url = img.data;
-            }
-          }
-        }
-      }
     }
+    await processPassageImages(sanitized.listeningPassages);
   }
 
   // 3. Compress images in readingPassages
   if (Array.isArray(sanitized.readingPassages)) {
-    for (let p of sanitized.readingPassages) {
-      if (Array.isArray(p.images)) {
-        for (let img of p.images) {
-          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
-            img.data = await compressBase64Image(img.data);
-            if (img.url && img.url.startsWith('data:image/')) {
-              img.url = img.data;
-            }
-          }
-        }
-      }
-    }
+    await processPassageImages(sanitized.readingPassages);
   }
 
   // 4. Compress images in questions
@@ -64,14 +165,16 @@ async function sanitizeItemForFirestore(item) {
     for (let q of sanitized.questions) {
       if (q.image && typeof q.image === 'string' && q.image.startsWith('data:image/')) {
         q.image = await compressBase64Image(q.image);
+        if (q.id) saveMediaToIDB(q.id, q.image);
       }
       if (Array.isArray(q.images)) {
         for (let img of q.images) {
-          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+          if (img && img.id && img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
             img.data = await compressBase64Image(img.data);
             if (img.url && img.url.startsWith('data:image/')) {
               img.url = img.data;
             }
+            saveMediaToIDB(img.id, img.data);
           }
         }
       }
@@ -81,11 +184,12 @@ async function sanitizeItemForFirestore(item) {
   // 5. Compress root images array
   if (Array.isArray(sanitized.images)) {
     for (let img of sanitized.images) {
-      if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+      if (img && img.id && img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
         img.data = await compressBase64Image(img.data);
         if (img.url && img.url.startsWith('data:image/')) {
           img.url = img.data;
         }
+        saveMediaToIDB(img.id, img.data);
       }
     }
   }
@@ -97,7 +201,7 @@ async function sanitizeItemForFirestore(item) {
  * Hook that syncs a Firestore collection with local state.
  * Each item in the array becomes a document in: users/{userId}/{collectionName}/{item.id}
  * Falls back to localStorage if user is not logged in.
- * Audio files are stored in IndexedDB to bypass 5MB localStorage and 1MB Firestore limits.
+ * Audio and image files are stored in IndexedDB to bypass 5MB localStorage and 1MB Firestore limits.
  * 
  * @param {string} collectionName - Name of the sub-collection (e.g., 'notes', 'decks', 'quizzes')
  * @param {string} localStorageKey - localStorage key for fallback/migration
@@ -154,7 +258,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
     if (!colRef) return;
 
     const unsubscribe = onSnapshot(colRef, (snapshot) => {
-      if (pendingWrites.current) return; // Skip if we're writing
+      if (pendingWrites.current || snapshot.metadata.hasPendingWrites) return; // Skip if writing or local pending echo write
       
       const firestoreItems = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -178,21 +282,35 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
         // migration effect will handle pushing default/local data
       } else {
         if (!hasUnsavedChanges) {
-          setItemsState(firestoreItems);
+          const mergedItems = mergeLocalMediaWithFirestore(firestoreItems, currentItemsRef.current);
+          setItemsState(mergedItems);
           
-          // Save clean version to localStorage (sanitize large audio Base64)
+          // Save clean version to localStorage (sanitize large audio & image Base64)
           try {
             const sanitizedForLocalStorage = firestoreItems.map(item => {
-              if (!item.listeningPassages) return item;
-              return {
-                ...item,
-                listeningPassages: item.listeningPassages.map(p => {
-                  if (p.audioUrl && p.audioUrl.length > 200000) {
-                    return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]' };
-                  }
-                  return p;
-                })
-              };
+              let sanitized = { ...item };
+              if (sanitized.listeningPassages) {
+                sanitized.listeningPassages = sanitized.listeningPassages.map(p => ({
+                  ...p,
+                  audioUrl: (p.audioUrl && p.audioUrl.length > 200000) ? '[STORED_IN_INDEXEDDB]' : p.audioUrl,
+                  images: Array.isArray(p.images) ? p.images.map(img => ({
+                    ...img,
+                    data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                    url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+                  })) : []
+                }));
+              }
+              if (sanitized.readingPassages) {
+                sanitized.readingPassages = sanitized.readingPassages.map(p => ({
+                  ...p,
+                  images: Array.isArray(p.images) ? p.images.map(img => ({
+                    ...img,
+                    data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                    url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+                  })) : []
+                }));
+              }
+              return sanitized;
             });
             window.localStorage.setItem(localStorageKey, JSON.stringify(sanitizedForLocalStorage));
           } catch (e) {
@@ -281,7 +399,9 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
       console.error('Firestore save error:', err);
       setSyncState({ status: 'error', error: `Lỗi lưu Cloud: ${err.message}`, lastSaved: Date.now() });
     } finally {
-      pendingWrites.current = false;
+      setTimeout(() => {
+        pendingWrites.current = false;
+      }, 1500);
     }
   }, [user, getCollectionRef]);
 
@@ -290,12 +410,30 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
     setItemsState(prev => {
       const newItems = typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn;
 
-      // Extract and save audio files to IndexedDB (unlimited storage)
+      // Extract and save audio & image files to IndexedDB (unlimited storage)
       newItems.forEach(item => {
         if (item.listeningPassages) {
           item.listeningPassages.forEach(p => {
             if (p.id && p.audioUrl && p.audioUrl.length > 200 && p.audioUrl !== '[STORED_IN_INDEXEDDB]' && p.audioUrl !== '[STORED_LOCALLY]') {
               saveAudioToIDB(p.id, p.audioUrl);
+            }
+            if (Array.isArray(p.images)) {
+              p.images.forEach(img => {
+                if (img.id && (img.data || img.url) && img.data !== '[STORED_IN_INDEXEDDB]') {
+                  saveMediaToIDB(img.id, img.data || img.url);
+                }
+              });
+            }
+          });
+        }
+        if (item.readingPassages) {
+          item.readingPassages.forEach(p => {
+            if (Array.isArray(p.images)) {
+              p.images.forEach(img => {
+                if (img.id && (img.data || img.url) && img.data !== '[STORED_IN_INDEXEDDB]') {
+                  saveMediaToIDB(img.id, img.data || img.url);
+                }
+              });
             }
           });
         }
@@ -305,16 +443,29 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
       let localSaveOk = true;
       try {
         const sanitizedForLocalStorage = newItems.map(item => {
-          if (!item.listeningPassages) return item;
-          return {
-            ...item,
-            listeningPassages: item.listeningPassages.map(p => {
-              if (p.audioUrl && p.audioUrl.length > 200000) {
-                return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]' };
-              }
-              return p;
-            })
-          };
+          let sanitized = { ...item };
+          if (sanitized.listeningPassages) {
+            sanitized.listeningPassages = sanitized.listeningPassages.map(p => ({
+              ...p,
+              audioUrl: (p.audioUrl && p.audioUrl.length > 200000) ? '[STORED_IN_INDEXEDDB]' : p.audioUrl,
+              images: Array.isArray(p.images) ? p.images.map(img => ({
+                ...img,
+                data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+              })) : []
+            }));
+          }
+          if (sanitized.readingPassages) {
+            sanitized.readingPassages = sanitized.readingPassages.map(p => ({
+              ...p,
+              images: Array.isArray(p.images) ? p.images.map(img => ({
+                ...img,
+                data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+              })) : []
+            }));
+          }
+          return sanitized;
         });
         window.localStorage.setItem(localStorageKey, JSON.stringify(sanitizedForLocalStorage));
       } catch (e) {
