@@ -195,6 +195,33 @@ export default function TOEICReadingBlock({
               <BookOpen size={15} /> Đoạn văn bài đọc
             </div>
 
+            {/* Images displayed FIRST at top before reading passage text */}
+            {passageObj.images && passageObj.images.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', margin: '4px 0 8px 0' }}>
+                {passageObj.images.map(img => (
+                  <img
+                    key={img.id}
+                    src={img.data || img.url}
+                    alt={img.name}
+                    onClick={() => setActiveLightboxImage && setActiveLightboxImage(img.data || img.url)}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      height: 'auto',
+                      maxHeight: '650px',
+                      objectFit: 'contain',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(0, 227, 253, 0.35)',
+                      cursor: 'pointer',
+                      background: '#000',
+                      transition: 'all 0.2s ease'
+                    }}
+                    title="Click để phóng to ảnh (Lightbox)"
+                  />
+                ))}
+              </div>
+            )}
+
             {isTesting ? (
               <div style={{
                 whiteSpace: 'pre-wrap',
@@ -383,21 +410,23 @@ export default function TOEICReadingBlock({
                     passageObj.notes
                   ) : (
                     <span style={{ color: 'rgba(251,191,36,0.5)', fontStyle: 'italic', fontSize: '12px' }}>
-                      Chưa có ghi chú từ vựng cho bài đọc này. (Bấm "Sửa Ghi Chú" để thêm từ vựng mới)
+                      Chưa có ghi chú từ vựng cho bài đọc này. (Bấm "Sửa Bản Dịch" để thêm từ vựng mới)
                     </span>
                   )}
                 </div>
               )}
             </div>
 
-            <TOEICImageUploader
-              images={passageObj.images || []}
-              onImagesChange={(updatedImgs) => handleUpdateReadingPassageProp(passageObj.id, 'images', updatedImgs)}
-              setActiveLightboxImage={setActiveLightboxImage}
-              accentColor="#8eefff"
-              label="🖼️ HÌNH ẢNH:"
-              isTesting={isTesting}
-            />
+            {!isTesting && (
+              <TOEICImageUploader
+                images={passageObj.images || []}
+                onImagesChange={(updatedImgs) => handleUpdateReadingPassageProp(passageObj.id, 'images', updatedImgs)}
+                setActiveLightboxImage={setActiveLightboxImage}
+                accentColor="#8eefff"
+                label="🖼️ HÌNH ẢNH BÀI ĐỌC:"
+                isTesting={isTesting}
+              />
+            )}
           </div>
         }
         rightContent={

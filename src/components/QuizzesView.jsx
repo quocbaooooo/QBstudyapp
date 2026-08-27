@@ -3476,11 +3476,14 @@ ${optionsText}`;
     const readPromises = imageFiles.map(file => {
       return new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
+          const rawData = e.target.result;
+          const compressed = await compressBase64Image(rawData, 1000, 1000, 0.7);
           resolve({
             id: uuidv4(),
             name: file.name,
-            data: e.target.result
+            data: compressed,
+            url: compressed
           });
         };
         reader.readAsDataURL(file);
