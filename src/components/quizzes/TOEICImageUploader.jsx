@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Plus, Check, Clipboard } from 'lucide-react';
+import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Plus, Check, Clipboard, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { compressBase64Image } from '../../utils/imageCompressor';
+import { uploadImageToStorage } from '../../utils/cloudStorage';
 
 export default function TOEICImageUploader({
   images = [],
@@ -13,6 +15,7 @@ export default function TOEICImageUploader({
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlInputValue, setUrlInputValue] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const containerRef = useRef(null);
 
@@ -21,22 +24,46 @@ export default function TOEICImageUploader({
     setTimeout(() => setToastMessage(''), 2500);
   };
 
-  const handleFiles = (files) => {
+  const handleFiles = async (files) => {
     if (!files || files.length === 0) return;
     const fileArray = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (fileArray.length === 0) return;
 
-    const readPromises = fileArray.map(file => new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = ev => resolve({ id: uuidv4(), name: file.name || 'Image', data: ev.target.result });
-      reader.readAsDataURL(file);
-    }));
+    setIsCompressing(true);
+    try {
+      const readPromises = fileArray.map(file => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          try {
+            const rawDataUrl = ev.target.result;
+            // Compress raw Base64 image data (e.g. 5MB -> 80KB)
+            const compressed = await compressBase64Image(rawDataUrl, 1200, 1200, 0.75);
+            // Optionally upload to Firebase Storage if online/authenticated
+            const finalUrl = await uploadImageToStorage(compressed, file.name || 'image');
+            resolve({
+              id: uuidv4(),
+              name: file.name || 'Image',
+              data: finalUrl,
+              url: finalUrl
+            });
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = (e) => reject(e);
+        reader.readAsDataURL(file);
+      }));
 
-    Promise.all(readPromises).then(newImgs => {
+      const newImgs = await Promise.all(readPromises);
       const updated = [...(images || []), ...newImgs];
       onImagesChange(updated);
-      showToast(`🎉 Đã thêm ${newImgs.length} ảnh mới!`);
-    });
+      showToast(`🎉 Đã nén & thêm ${newImgs.length} ảnh mới!`);
+    } catch (err) {
+      console.error('Error processing image upload:', err);
+      showToast('❌ Có lỗi khi xử lý hình ảnh');
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   const handleFileInputChange = (e) => {
@@ -44,7 +71,7 @@ export default function TOEICImageUploader({
     e.target.value = '';
   };
 
-  const handleAddUrlImage = () => {
+  const handleAddUrlImage = async () => {
     const url = urlInputValue.trim();
     if (!url) return;
     if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:image/')) {
@@ -52,20 +79,33 @@ export default function TOEICImageUploader({
       return;
     }
 
-    const newImg = {
-      id: uuidv4(),
-      name: 'Link Image',
-      data: url,
-      url: url
-    };
+    setIsCompressing(true);
+    try {
+      let finalUrl = url;
+      if (url.startsWith('data:image/')) {
+        const compressed = await compressBase64Image(url);
+        finalUrl = await uploadImageToStorage(compressed, 'pasted_link');
+      }
 
-    onImagesChange([...(images || []), newImg]);
-    setUrlInputValue('');
-    setShowUrlInput(false);
-    showToast('🎉 Đã thêm ảnh từ Link!');
+      const newImg = {
+        id: uuidv4(),
+        name: 'Link Image',
+        data: finalUrl,
+        url: finalUrl
+      };
+
+      onImagesChange([...(images || []), newImg]);
+      setUrlInputValue('');
+      setShowUrlInput(false);
+      showToast('🎉 Đã thêm ảnh từ Link!');
+    } catch (err) {
+      console.error('Error adding url image:', err);
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
-  const handlePaste = (e) => {
+  const handlePaste = async (e) => {
     // 1. Check for image files in clipboard (Snipping Tool, Ctrl+C image)
     const items = e.clipboardData?.items;
     let foundImage = false;
@@ -76,7 +116,7 @@ export default function TOEICImageUploader({
           const blob = items[i].getAsFile();
           if (blob) {
             foundImage = true;
-            handleFiles([blob]);
+            await handleFiles([blob]);
           }
         }
       }
@@ -87,8 +127,18 @@ export default function TOEICImageUploader({
       const pastedText = e.clipboardData?.getData('text')?.trim();
       if (pastedText && (pastedText.startsWith('http://') || pastedText.startsWith('https://') || pastedText.startsWith('data:image/'))) {
         e.preventDefault();
-        onImagesChange([...(images || []), { id: uuidv4(), name: 'Pasted URL', data: pastedText, url: pastedText }]);
-        showToast('🎉 Đã nhận diện & thêm ảnh từ Link dán!');
+        setIsCompressing(true);
+        try {
+          let finalUrl = pastedText;
+          if (pastedText.startsWith('data:image/')) {
+            const compressed = await compressBase64Image(pastedText);
+            finalUrl = await uploadImageToStorage(compressed, 'pasted_clipboard');
+          }
+          onImagesChange([...(images || []), { id: uuidv4(), name: 'Pasted URL', data: finalUrl, url: finalUrl }]);
+          showToast('🎉 Đã nhận diện & dán ảnh thành công!');
+        } finally {
+          setIsCompressing(false);
+        }
       }
     }
   };
@@ -168,6 +218,27 @@ export default function TOEICImageUploader({
           zIndex: 10
         }}>
           {toastMessage}
+        </div>
+      )}
+
+      {isCompressing && (
+        <div style={{
+          position: 'absolute',
+          top: '-12px',
+          left: '12px',
+          background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+          color: '#fff',
+          fontSize: '11px',
+          fontWeight: 700,
+          padding: '3px 10px',
+          borderRadius: '12px',
+          boxShadow: '0 4px 12px rgba(99,102,241,0.4)',
+          zIndex: 10,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px'
+        }}>
+          <Loader2 size={12} className="animate-spin" /> ⚡ Đang tối ưu hóa & nén ảnh...
         </div>
       )}
 

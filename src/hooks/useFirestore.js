@@ -9,7 +9,89 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/useAuth';
 import { saveAudioToIDB } from '../utils/audioStorage';
-import { compressHtmlImages } from '../utils/imageCompressor';
+import { compressHtmlImages, compressBase64Image } from '../utils/imageCompressor';
+
+/**
+ * Helper to recursively sanitize and compress all Base64 images & audio refs in an item before Firestore sync
+ */
+async function sanitizeItemForFirestore(item) {
+  if (!item || typeof item !== 'object') return item;
+  let sanitized = JSON.parse(JSON.stringify(item));
+
+  // 1. Compress HTML content images (NotesView / Tiptap)
+  if (sanitized.content && typeof sanitized.content === 'string' && sanitized.content.includes('data:image/')) {
+    sanitized.content = await compressHtmlImages(sanitized.content);
+  }
+
+  // 2. Compress images & sanitize audio in listeningPassages
+  if (Array.isArray(sanitized.listeningPassages)) {
+    for (let p of sanitized.listeningPassages) {
+      if (p.audioUrl && p.audioUrl.length > 200000) {
+        p.audioUrl = '[STORED_IN_INDEXEDDB]';
+        p.isLocalAudio = true;
+      }
+      if (Array.isArray(p.images)) {
+        for (let img of p.images) {
+          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+            img.data = await compressBase64Image(img.data);
+            if (img.url && img.url.startsWith('data:image/')) {
+              img.url = img.data;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Compress images in readingPassages
+  if (Array.isArray(sanitized.readingPassages)) {
+    for (let p of sanitized.readingPassages) {
+      if (Array.isArray(p.images)) {
+        for (let img of p.images) {
+          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+            img.data = await compressBase64Image(img.data);
+            if (img.url && img.url.startsWith('data:image/')) {
+              img.url = img.data;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Compress images in questions
+  if (Array.isArray(sanitized.questions)) {
+    for (let q of sanitized.questions) {
+      if (q.image && typeof q.image === 'string' && q.image.startsWith('data:image/')) {
+        q.image = await compressBase64Image(q.image);
+      }
+      if (Array.isArray(q.images)) {
+        for (let img of q.images) {
+          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+            img.data = await compressBase64Image(img.data);
+            if (img.url && img.url.startsWith('data:image/')) {
+              img.url = img.data;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 5. Compress root images array
+  if (Array.isArray(sanitized.images)) {
+    for (let img of sanitized.images) {
+      if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+        img.data = await compressBase64Image(img.data);
+        if (img.url && img.url.startsWith('data:image/')) {
+          img.url = img.data;
+        }
+      }
+    }
+  }
+
+  return sanitized;
+}
 
 /**
  * Hook that syncs a Firestore collection with local state.
@@ -271,7 +353,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
 
 /**
  * Efficiently sync local state changes to Firestore using batch writes.
- * Sanitizes items > 850KB (e.g. large audio Base64 strings) so Firestore 1MB doc limit is never broken.
+ * Sanitizes items > 850KB (e.g. large audio Base64 strings, uncompressed images) so Firestore 1MB doc limit is never broken.
  */
 async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
   try {
@@ -285,29 +367,13 @@ async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
       const oldItem = oldMap.get(item.id);
       if (!oldItem || JSON.stringify(oldItem) !== JSON.stringify(item)) {
         const docRef = doc(colRef, item.id);
-        const itemJson = JSON.stringify(item);
+        const sanitizedItem = await sanitizeItemForFirestore(item);
+        const itemJson = JSON.stringify(sanitizedItem);
 
         if (itemJson.length > 850000) {
-          // Sanitize item for Firestore document limit (<1MB)
-          const sanitizedItem = JSON.parse(itemJson);
-          if (sanitizedItem.content && typeof sanitizedItem.content === 'string' && sanitizedItem.content.includes('data:image/')) {
-            sanitizedItem.content = await compressHtmlImages(sanitizedItem.content);
-          }
-          if (JSON.stringify(sanitizedItem).length > 850000) {
-            hasOversizedDoc = true;
-          }
-          if (sanitizedItem.listeningPassages) {
-            sanitizedItem.listeningPassages = sanitizedItem.listeningPassages.map(p => {
-              if (p.audioUrl && p.audioUrl.length > 200000) {
-                return { ...p, audioUrl: '[STORED_IN_INDEXEDDB]', isLocalAudio: true };
-              }
-              return p;
-            });
-          }
-          batch.set(docRef, sanitizedItem, { merge: true });
-        } else {
-          batch.set(docRef, { ...item }, { merge: true });
+          hasOversizedDoc = true;
         }
+        batch.set(docRef, sanitizedItem, { merge: true });
       }
     }
 
@@ -323,8 +389,8 @@ async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
 
     if (hasOversizedDoc) {
       setSyncState({
-        status: 'local_only',
-        error: 'File âm thanh bài nghe >1MB. Đã lưu câu hỏi & kịch bản lên Cloud, lưu file âm thanh an toàn tại máy (IndexedDB).',
+        status: 'synced',
+        error: 'Đã nén ảnh & lưu bài nghe lên Cloud thành công! (Dữ liệu âm thanh lớn được giữ an toàn tại IndexedDB)',
         lastSaved: Date.now()
       });
     } else {
@@ -339,3 +405,4 @@ async function syncToFirestore(colRef, oldItems, newItems, setSyncState) {
     });
   }
 }
+
