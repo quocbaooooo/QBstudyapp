@@ -3355,11 +3355,10 @@ ${optionsText}`;
   };
 
   const handleUpdateReadingPassageProp = (passageId, prop, value) => {
-    if (!activeQuiz) return;
-    const newReadingPassages = (activeQuiz.readingPassages || []).map(p => 
+    const newReadingPassages = activeQuiz.readingPassages.map(p => 
       p.id === passageId ? { ...p, [prop]: value } : p
     );
-    setQuizzes(prev => prev.map(q => q.id === activeQuizId ? { ...q, readingPassages: newReadingPassages, updatedAt: Date.now() } : q));
+    setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, readingPassages: newReadingPassages } : q));
   };
 
   const handleUpdateReadingPassageRange = (passageId, startNum, endNum) => {
@@ -3477,14 +3476,11 @@ ${optionsText}`;
     const readPromises = imageFiles.map(file => {
       return new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = async (e) => {
-          const rawData = e.target.result;
-          const compressed = await compressBase64Image(rawData, 1000, 1000, 0.7);
+        reader.onload = (e) => {
           resolve({
             id: uuidv4(),
             name: file.name,
-            data: compressed,
-            url: compressed
+            data: e.target.result
           });
         };
         reader.readAsDataURL(file);

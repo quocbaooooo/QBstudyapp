@@ -2,7 +2,6 @@ import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
 import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, EyeOff, Sparkles, Edit3, StickyNote } from 'lucide-react';
 import ResizableSplitPanel from './ResizableSplitPanel';
 import TOEICImageUploader from './TOEICImageUploader';
-import SmartImage from './SmartImage';
 
 function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 6, ...props }) {
   const textareaRef = useRef(null);
@@ -96,13 +95,6 @@ export default function TOEICReadingBlock({
     }
   };
 
-  const handleImageFileChange = (e) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleUploadReadingPassageImages(passageObj.id, files);
-    }
-  };
-
   const passageHeaderUI = (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px', borderBottom: '1px solid rgba(6,182,212,0.2)', paddingBottom: '10px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -142,34 +134,6 @@ export default function TOEICReadingBlock({
             </button>
           </div>
 
-          {/* Upload Images & Link Button */}
-          <button
-            type="button"
-            onClick={() => {
-              const url = prompt('Dán URL link hình ảnh bài đọc (https://...)\nHoặc bấm OK (để trống) để chọn file ảnh từ máy tính:');
-              if (url !== null) {
-                if (url.trim()) {
-                  const newImg = { id: uuidv4(), name: 'Link Image', data: url.trim(), url: url.trim() };
-                  handleUpdateReadingPassageProp(passageObj.id, 'images', [...(passageObj.images || []), newImg]);
-                } else {
-                  document.getElementById(`file-input-reading-${passageObj.id}`)?.click();
-                }
-              }
-            }}
-            style={{ fontSize: '11px', padding: '4px 8px', background: 'rgba(6,182,212,0.15)', color: '#8eefff', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
-            title="Tải ảnh từ máy hoặc dán link URL ảnh"
-          >
-            <Upload size={12} /> 🖼️ Tải Ảnh / Dán Link...
-          </button>
-          <input
-            id={`file-input-reading-${passageObj.id}`}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleImageFileChange}
-            style={{ display: 'none' }}
-          />
-
           {/* Delete Block Button */}
           <button
             type="button"
@@ -196,32 +160,62 @@ export default function TOEICReadingBlock({
               <BookOpen size={15} /> Đoạn văn bài đọc
             </div>
 
-            {/* Images displayed FIRST at top before reading passage text */}
+            {/* 1. HÌNH ẢNH BÀI ĐỌC HIỂN THỊ ĐẦU TIÊN (CO GIÃN THEO KHUNG) */}
             {passageObj.images && passageObj.images.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', margin: '4px 0 8px 0' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', marginBottom: '4px' }}>
                 {passageObj.images.map(img => (
-                  <SmartImage
-                    key={img.id}
-                    img={img}
-                    onClick={(src) => setActiveLightboxImage && setActiveLightboxImage(src)}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      height: 'auto',
-                      maxHeight: '650px',
-                      objectFit: 'contain',
-                      borderRadius: '10px',
-                      border: '1px solid rgba(0, 227, 253, 0.35)',
-                      cursor: 'pointer',
-                      background: '#000',
-                      transition: 'all 0.2s ease'
-                    }}
-                    title="Click để phóng to ảnh (Lightbox)"
-                  />
+                  <div key={img.id} style={{ position: 'relative', width: '100%' }}>
+                    <img
+                      src={img.data || img.url}
+                      alt={img.name || 'Reading Passage Image'}
+                      onClick={() => setActiveLightboxImage && setActiveLightboxImage(img.data || img.url)}
+                      style={{
+                        width: '100%',
+                        height: 'auto',
+                        maxHeight: '650px',
+                        objectFit: 'contain',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(6,182,212,0.35)',
+                        cursor: 'pointer',
+                        background: '#000',
+                        display: 'block'
+                      }}
+                      title="Click để xem phóng to ảnh (Lightbox)"
+                    />
+                    {!isTesting && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteReadingPassageImage(passageObj.id, img.id)}
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          background: 'rgba(239,68,68,0.85)',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '24px',
+                          height: '24px',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+                        }}
+                        title="Xóa ảnh này"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
 
+            {/* 2. NỘI DUNG ĐOẠN VĂN TIẾNG ANH */}
             {isTesting ? (
               <div style={{
                 whiteSpace: 'pre-wrap',
@@ -417,6 +411,7 @@ export default function TOEICReadingBlock({
               )}
             </div>
 
+            {/* TOEIC IMAGE UPLOADER FOR READING BLOCK */}
             {!isTesting && (
               <TOEICImageUploader
                 images={passageObj.images || []}

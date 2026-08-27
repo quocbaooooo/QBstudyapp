@@ -1,13 +1,12 @@
 /**
- * IndexedDB storage utility for large audio files & media blobs (images/audio).
+ * IndexedDB storage utility for large audio files & media blobs.
  * Bypasses 5MB localStorage limits and 1MB Firestore document limits.
  * Supports up to hundreds of MBs of local media storage.
  */
 
-const DB_NAME = 'QBStudyMediaDB';
-const DB_VERSION = 2;
+const DB_NAME = 'QBStudyAudioDB';
+const DB_VERSION = 1;
 const STORE_NAME = 'audio_files';
-const MEDIA_STORE_NAME = 'media_files';
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -23,9 +22,6 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
-      if (!db.objectStoreNames.contains(MEDIA_STORE_NAME)) {
-        db.createObjectStore(MEDIA_STORE_NAME);
-      }
     };
 
     request.onsuccess = (e) => resolve(e.target.result);
@@ -34,64 +30,59 @@ function openDB() {
 }
 
 /**
- * Save media DataURL / Blob by ID to IndexedDB
+ * Save audio DataURL / Blob by ID
  */
-export async function saveMediaToIDB(id, data) {
-  if (!id || !data) return;
+export async function saveAudioToIDB(id, audioData) {
+  if (!id || !audioData) return;
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
-      const store = tx.objectStore(MEDIA_STORE_NAME);
-      const req = store.put(data, id);
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.put(audioData, id);
       req.onsuccess = () => resolve(true);
       req.onerror = (e) => reject(e.target.error);
     });
   } catch (err) {
-    console.error('Error saving media to IndexedDB:', err);
+    console.error('Error saving audio to IndexedDB:', err);
   }
 }
 
 /**
- * Get media DataURL / Blob by ID from IndexedDB
+ * Get audio DataURL / Blob by ID
  */
-export async function getMediaFromIDB(id) {
+export async function getAudioFromIDB(id) {
   if (!id) return null;
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(MEDIA_STORE_NAME, 'readonly');
-      const store = tx.objectStore(MEDIA_STORE_NAME);
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
       const req = store.get(id);
       req.onsuccess = (e) => resolve(e.target.result || null);
       req.onerror = (e) => reject(e.target.error);
     });
   } catch (err) {
-    console.error('Error getting media from IndexedDB:', err);
+    console.error('Error getting audio from IndexedDB:', err);
     return null;
   }
 }
 
 /**
- * Delete media by ID from IndexedDB
+ * Delete audio by ID
  */
-export async function deleteMediaFromIDB(id) {
+export async function deleteAudioFromIDB(id) {
   if (!id) return;
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
-      const store = tx.objectStore(MEDIA_STORE_NAME);
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
       const req = store.delete(id);
       req.onsuccess = () => resolve(true);
       req.onerror = (e) => reject(e.target.error);
     });
   } catch (err) {
-    console.error('Error deleting media from IndexedDB:', err);
+    console.error('Error deleting audio from IndexedDB:', err);
   }
 }
-
-// Backward compatibility exports for Audio
-export const saveAudioToIDB = saveMediaToIDB;
-export const getAudioFromIDB = getMediaFromIDB;
-export const deleteAudioFromIDB = deleteMediaFromIDB;
