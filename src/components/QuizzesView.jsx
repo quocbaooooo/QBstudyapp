@@ -643,7 +643,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     // Helper to parse individual question blocks
     const parseQuestionBlocksFromText = (qChunkText, defaultStartNum) => {
       const qBlocks = qChunkText
-        .split(/(?=(?:^|\n)\s*(?:Câu|Question|Q)?\s*\d{1,4}\s*[\.\:\)]?\s*(?:\n|\s*[\(\[]?[A-D][\)\.\:]|\s*Answer))/i)
+        .split(/(?=(?:^|\n)\s*(?:Câu|Question|Q)?\s*\d{1,4}\s*[\.\:\)]?\s*(?:\n|\s*[\(\[]?[A-D][\)\.\:]|\s*Answer|\s+[^\d\s]))/i)
         .filter(b => b.trim());
 
       qBlocks.forEach((block, idx) => {
@@ -662,13 +662,17 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         let answer = null;
 
         lines.forEach(line => {
-          const optMatch = line.match(/^\s*[\(\[]?\s*(\*?)\s*([A-D])\s*[\)\]\.\:\-]\s*(.*)/i);
-          if (optMatch) {
-            const isMarkedAnswer = !!optMatch[1];
-            const letter = optMatch[2].toUpperCase();
-            const optContent = optMatch[3].trim();
-            options[letter] = optContent;
-            if (isMarkedAnswer) answer = letter;
+          const inlineMatches = [...line.matchAll(/[\(\[]?\s*(\*?)\s*([A-D])\s*[\)\]\.\:\-]\s*([^(\n]+?)(?=(?:[\(\[]?\s*\*?\s*[A-D]\s*[\)\]\.\:\-])|Answer|Đáp án|$)/gi)];
+          if (inlineMatches.length > 0) {
+            inlineMatches.forEach(m => {
+              const isMarkedAnswer = !!m[1];
+              const letter = m[2].toUpperCase();
+              const optContent = m[3].trim();
+              if (optContent) {
+                options[letter] = optContent;
+                if (isMarkedAnswer) answer = letter;
+              }
+            });
           } else {
             const ansMatch = line.match(/^(?:Đáp án|Answer|Ans)[\.\:]*\s*([A-D])/i);
             if (ansMatch) answer = ansMatch[1].toUpperCase();
@@ -696,7 +700,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         let startNum = headerMatch ? parseInt(headerMatch[1], 10) : 131;
         let endNum = headerMatch ? parseInt(headerMatch[2], 10) : (startNum + 3);
 
-        const firstQMatch = sectionText.match(/(?:^|\n)\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[\.\:\)]?\s*(?=\n\s*[\(\[]?[A-D][\)\.\:]|\s*Answer)/i);
+        const firstQMatch = sectionText.match(/(?:^|\n)\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[\.\:\)]?\s*(?:\n|\s*[\(\[]?[A-D][\)\.\:]|\s*Answer|\s+[^\d\s])/i);
         let passageBody = '';
         let questionsBody = '';
 
@@ -729,7 +733,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       let text = rawText;
 
       if (!readingText) {
-        const qFirstMatch = text.match(/(?:^|\n)\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[\.\:\)]?\s*(?=\n\s*[\(\[]?[A-D][\)\.\:]|\s*Answer)/i);
+        const qFirstMatch = text.match(/(?:^|\n)\s*(?:Câu|Question|Q)?\s*(\d{1,4})\s*[\.\:\)]?\s*(?:\n|\s*[\(\[]?[A-D][\)\.\:]|\s*Answer|\s+[^\d\s])/i);
         if (qFirstMatch && qFirstMatch.index > 0) {
           const potentialPassage = text.substring(0, qFirstMatch.index).trim();
           if (potentialPassage.length > 15) {
@@ -2660,7 +2664,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     let lastOption = ''; 
     let mode = 'question'; // 'question', 'options', 'answer', 'explanation'
 
-    const optionRe = /^\s*([A-F])\s*[.)]\s*(.*)/i;
+    const optionRe = /^\s*[\(\[]?\s*([A-F])\s*[\)\.\:\-]\s*(.*)/i;
     const answerRe = /^\s*(?:Đáp án|Answer|Đáp Án)\s*[:.]\s*([A-F]?)/i;
     const explainRe = /^\s*(?:Giải thích|Explanation|Giải Thích)\s*[:.]\s*(.*)/i;
 
