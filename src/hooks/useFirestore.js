@@ -13,7 +13,7 @@ import { saveAudioToIDB, saveMediaToIDB } from '../utils/audioStorage';
 import { compressHtmlImages, compressBase64Image } from '../utils/imageCompressor';
 
 /**
- * Helper to preserve local in-memory image data when Firestore snapshot updates
+ * Helper to preserve local in-memory image data & edited content when Firestore snapshot updates
  */
 function mergeLocalMediaWithFirestore(firestoreItems, localItems) {
   if (!Array.isArray(firestoreItems) || !Array.isArray(localItems)) return firestoreItems;
@@ -23,10 +23,12 @@ function mergeLocalMediaWithFirestore(firestoreItems, localItems) {
     const lItem = localMap.get(fItem.id);
     if (!lItem) return fItem;
 
-    let merged = { ...fItem };
+    // Prefer local item for text/content, but take Firestore ID & updatedAt
+    let merged = { ...fItem, ...lItem };
 
+    // Restore or hydrate readingPassages
     if (Array.isArray(lItem.readingPassages)) {
-      const fPassagesMap = new Map((merged.readingPassages || []).map(p => [p.id, p]));
+      const fPassagesMap = new Map((fItem.readingPassages || []).map(p => [p.id, p]));
       merged.readingPassages = lItem.readingPassages.map(lPassage => {
         const fPassage = fPassagesMap.get(lPassage.id);
         if (!fPassage) return lPassage;
@@ -44,12 +46,17 @@ function mergeLocalMediaWithFirestore(firestoreItems, localItems) {
           return fImg || lImg;
         }).filter(Boolean);
 
-        return { ...fPassage, images: mergedImages };
+        return {
+          ...fPassage,
+          ...lPassage,
+          images: mergedImages
+        };
       });
     }
 
+    // Restore or hydrate listeningPassages
     if (Array.isArray(lItem.listeningPassages)) {
-      const fPassagesMap = new Map((merged.listeningPassages || []).map(p => [p.id, p]));
+      const fPassagesMap = new Map((fItem.listeningPassages || []).map(p => [p.id, p]));
       merged.listeningPassages = lItem.listeningPassages.map(lPassage => {
         const fPassage = fPassagesMap.get(lPassage.id);
         if (!fPassage) return lPassage;
@@ -67,7 +74,21 @@ function mergeLocalMediaWithFirestore(firestoreItems, localItems) {
           return fImg || lImg;
         }).filter(Boolean);
 
-        return { ...fPassage, images: mergedImages };
+        return {
+          ...fPassage,
+          ...lPassage,
+          audioUrl: (lPassage.audioUrl && lPassage.audioUrl !== '[STORED_IN_INDEXEDDB]') ? lPassage.audioUrl : fPassage.audioUrl,
+          images: mergedImages
+        };
+      });
+    }
+
+    // Restore local questions if present
+    if (Array.isArray(lItem.questions)) {
+      const fQMap = new Map((fItem.questions || []).map(q => [q.id, q]));
+      merged.questions = lItem.questions.map(lQ => {
+        const fQ = fQMap.get(lQ.id);
+        return fQ ? { ...fQ, ...lQ } : lQ;
       });
     }
 
@@ -232,7 +253,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
     if (!colRef) return;
 
     const unsubscribe = onSnapshot(colRef, (snapshot) => {
-      if (pendingWrites.current) return; // Skip if we're writing
+      if (pendingWrites.current || snapshot.metadata.hasPendingWrites) return; // Skip if writing or local pending echo write
       
       const firestoreItems = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -373,7 +394,9 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
       console.error('Firestore save error:', err);
       setSyncState({ status: 'error', error: `Lỗi lưu Cloud: ${err.message}`, lastSaved: Date.now() });
     } finally {
-      pendingWrites.current = false;
+      setTimeout(() => {
+        pendingWrites.current = false;
+      }, 1500);
     }
   }, [user, getCollectionRef]);
 
