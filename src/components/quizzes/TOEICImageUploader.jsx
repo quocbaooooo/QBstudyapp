@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Plus, Check, Clipboard, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { compressBase64Image } from '../../utils/imageCompressor';
+import { saveMediaToIDB } from '../../utils/audioStorage';
+import SmartImage from './SmartImage';
 
 export default function TOEICImageUploader({
   images = [],
@@ -37,8 +39,11 @@ export default function TOEICImageUploader({
             const rawDataUrl = ev.target.result;
             // Fast local canvas compression (e.g. 5MB -> 80KB in ~20ms)
             const compressed = await compressBase64Image(rawDataUrl, 1000, 1000, 0.7);
+            const imgId = uuidv4();
+            // Save to IndexedDB safely
+            saveMediaToIDB(imgId, compressed);
             resolve({
-              id: uuidv4(),
+              id: imgId,
               name: file.name || 'Image',
               data: compressed,
               url: compressed
@@ -54,7 +59,7 @@ export default function TOEICImageUploader({
       const newImgs = await Promise.all(readPromises);
       const updated = [...(images || []), ...newImgs];
       onImagesChange(updated);
-      showToast(`🎉 Đã thêm ${newImgs.length} ảnh!`);
+      showToast(`🎉 Đã thêm & lưu ${newImgs.length} ảnh!`);
     } catch (err) {
       console.error('Error processing image upload:', err);
       showToast('❌ Có lỗi khi xử lý hình ảnh');
@@ -81,8 +86,11 @@ export default function TOEICImageUploader({
       finalUrl = await compressBase64Image(url, 1000, 1000, 0.7);
     }
 
+    const imgId = uuidv4();
+    if (finalUrl) saveMediaToIDB(imgId, finalUrl);
+
     const newImg = {
-      id: uuidv4(),
+      id: imgId,
       name: 'Link Image',
       data: finalUrl,
       url: finalUrl
@@ -120,7 +128,9 @@ export default function TOEICImageUploader({
         if (pastedText.startsWith('data:image/')) {
           finalUrl = await compressBase64Image(pastedText, 1000, 1000, 0.7);
         }
-        onImagesChange([...(images || []), { id: uuidv4(), name: 'Pasted URL', data: finalUrl, url: finalUrl }]);
+        const imgId = uuidv4();
+        if (finalUrl) saveMediaToIDB(imgId, finalUrl);
+        onImagesChange([...(images || []), { id: imgId, name: 'Pasted URL', data: finalUrl, url: finalUrl }]);
         showToast('🎉 Đã nhận diện & dán ảnh thành công!');
       }
     }

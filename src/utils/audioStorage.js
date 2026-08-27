@@ -30,7 +30,7 @@ function openDB() {
 }
 
 /**
- * Save audio DataURL / Blob by ID
+ * Save audio or image DataURL / Blob by ID to IndexedDB
  */
 export async function saveAudioToIDB(id, audioData) {
   if (!id || !audioData) return;
@@ -48,8 +48,10 @@ export async function saveAudioToIDB(id, audioData) {
   }
 }
 
+export const saveMediaToIDB = saveAudioToIDB;
+
 /**
- * Get audio DataURL / Blob by ID
+ * Get audio or image DataURL / Blob by ID from IndexedDB
  */
 export async function getAudioFromIDB(id) {
   if (!id) return null;
@@ -68,8 +70,10 @@ export async function getAudioFromIDB(id) {
   }
 }
 
+export const getMediaFromIDB = getAudioFromIDB;
+
 /**
- * Delete audio by ID
+ * Delete audio or image by ID from IndexedDB
  */
 export async function deleteAudioFromIDB(id) {
   if (!id) return;
@@ -86,3 +90,6 @@ export async function deleteAudioFromIDB(id) {
     console.error('Error deleting audio from IndexedDB:', err);
   }
 }
+
+export const deleteMediaFromIDB = deleteAudioFromIDB;
+
