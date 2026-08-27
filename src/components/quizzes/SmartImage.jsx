@@ -6,15 +6,21 @@ import { getMediaFromIDB } from '../../utils/audioStorage';
  * if data was sanitized for Firestore/localStorage quota limits.
  */
 export default function SmartImage({ img, alt, onClick, style, title, className }) {
-  const initialSrc = (img && img.data !== '[STORED_IN_INDEXEDDB]') ? (img.data || img.url) : '';
-  const [src, setSrc] = useState(initialSrc);
+  const getValidSrc = (item) => {
+    if (!item) return '';
+    if (item.data && item.data !== '[STORED_IN_INDEXEDDB]') return item.data;
+    if (item.url && item.url !== '[STORED_IN_INDEXEDDB]') return item.url;
+    return '';
+  };
+
+  const [src, setSrc] = useState(() => getValidSrc(img));
 
   useEffect(() => {
     let isMounted = true;
     if (!img) return;
 
-    const currentSrc = img.data || img.url;
-    if (!currentSrc || currentSrc === '[STORED_IN_INDEXEDDB]') {
+    const currentSrc = getValidSrc(img);
+    if (!currentSrc) {
       getMediaFromIDB(img.id).then(storedData => {
         if (isMounted && storedData) {
           setSrc(storedData);
@@ -25,27 +31,9 @@ export default function SmartImage({ img, alt, onClick, style, title, className 
     }
 
     return () => { isMounted = false; };
-  }, [img]);
+  }, [img?.id, img?.data, img?.url]);
 
-  if (!src) {
-    return (
-      <div 
-        style={{ 
-          display: 'inline-flex', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          background: 'rgba(0,0,0,0.4)', 
-          borderRadius: '8px', 
-          padding: '12px', 
-          color: 'rgba(255,255,255,0.4)',
-          fontSize: '12px',
-          ...style 
-        }}
-      >
-        📷 Đang tải ảnh...
-      </div>
-    );
-  }
+  if (!src) return null;
 
   return (
     <img

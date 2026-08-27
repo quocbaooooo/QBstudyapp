@@ -12,6 +12,61 @@ import { saveAudioToIDB, saveMediaToIDB } from '../utils/audioStorage';
 import { compressHtmlImages, compressBase64Image } from '../utils/imageCompressor';
 
 /**
+ * Helper to preserve local in-memory image data when Firestore snapshot updates
+ */
+function mergeLocalMediaWithFirestore(firestoreItems, localItems) {
+  if (!Array.isArray(firestoreItems) || !Array.isArray(localItems)) return firestoreItems;
+  const localMap = new Map(localItems.map(item => [item.id, item]));
+
+  return firestoreItems.map(fItem => {
+    const lItem = localMap.get(fItem.id);
+    if (!lItem) return fItem;
+
+    let merged = { ...fItem };
+
+    if (Array.isArray(merged.readingPassages) && Array.isArray(lItem.readingPassages)) {
+      const lPassagesMap = new Map(lItem.readingPassages.map(p => [p.id, p]));
+      merged.readingPassages = merged.readingPassages.map(fPassage => {
+        const lPassage = lPassagesMap.get(fPassage.id);
+        if (!lPassage || !Array.isArray(lPassage.images)) return fPassage;
+
+        const lImgMap = new Map(lPassage.images.map(img => [img.id, img]));
+        const mergedImages = (fPassage.images || []).map(fImg => {
+          const lImg = lImgMap.get(fImg.id);
+          if (lImg && lImg.data && lImg.data !== '[STORED_IN_INDEXEDDB]') {
+            return { ...fImg, data: lImg.data, url: lImg.url || fImg.url };
+          }
+          return fImg;
+        });
+
+        return { ...fPassage, images: mergedImages };
+      });
+    }
+
+    if (Array.isArray(merged.listeningPassages) && Array.isArray(lItem.listeningPassages)) {
+      const lPassagesMap = new Map(lItem.listeningPassages.map(p => [p.id, p]));
+      merged.listeningPassages = merged.listeningPassages.map(fPassage => {
+        const lPassage = lPassagesMap.get(fPassage.id);
+        if (!lPassage || !Array.isArray(lPassage.images)) return fPassage;
+
+        const lImgMap = new Map(lPassage.images.map(img => [img.id, img]));
+        const mergedImages = (fPassage.images || []).map(fImg => {
+          const lImg = lImgMap.get(fImg.id);
+          if (lImg && lImg.data && lImg.data !== '[STORED_IN_INDEXEDDB]') {
+            return { ...fImg, data: lImg.data, url: lImg.url || fImg.url };
+          }
+          return fImg;
+        });
+
+        return { ...fPassage, images: mergedImages };
+      });
+    }
+
+    return merged;
+  });
+}
+
+/**
  * Helper to recursively sanitize and compress all Base64 images & audio refs in an item before Firestore sync
  */
 async function sanitizeItemForFirestore(item) {
@@ -23,7 +78,41 @@ async function sanitizeItemForFirestore(item) {
     sanitized.content = await compressHtmlImages(sanitized.content);
   }
 
-  // 2. Compress images & sanitize audio in listeningPassages + backup to IndexedDB
+  // Helper to process & sanitize passage images
+  const processPassageImages = async (passages) => {
+    if (!Array.isArray(passages)) return;
+    for (let p of passages) {
+      if (Array.isArray(p.images)) {
+        for (let img of p.images) {
+          if (!img || !img.id) continue;
+          const rawData = img.data || img.url;
+          if (rawData && rawData.length > 100) {
+            // Save to IndexedDB
+            saveMediaToIDB(img.id, rawData);
+
+            if (typeof rawData === 'string' && rawData.startsWith('data:image/')) {
+              const compressed = await compressBase64Image(rawData, 900, 900, 0.65);
+              saveMediaToIDB(img.id, compressed);
+
+              if (compressed.length > 120000) {
+                img.data = '[STORED_IN_INDEXEDDB]';
+                if (img.url && img.url.startsWith('data:image/')) {
+                  img.url = '[STORED_IN_INDEXEDDB]';
+                }
+              } else {
+                img.data = compressed;
+                if (img.url && img.url.startsWith('data:image/')) {
+                  img.url = compressed;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+
+  // 2. Compress images & sanitize audio in listeningPassages
   if (Array.isArray(sanitized.listeningPassages)) {
     for (let p of sanitized.listeningPassages) {
       if (p.audioUrl && p.audioUrl.length > 200000) {
@@ -31,35 +120,13 @@ async function sanitizeItemForFirestore(item) {
         p.audioUrl = '[STORED_IN_INDEXEDDB]';
         p.isLocalAudio = true;
       }
-      if (Array.isArray(p.images)) {
-        for (let img of p.images) {
-          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
-            img.data = await compressBase64Image(img.data);
-            if (img.url && img.url.startsWith('data:image/')) {
-              img.url = img.data;
-            }
-            saveMediaToIDB(img.id, img.data);
-          }
-        }
-      }
     }
+    await processPassageImages(sanitized.listeningPassages);
   }
 
-  // 3. Compress images in readingPassages + backup to IndexedDB
+  // 3. Compress images in readingPassages
   if (Array.isArray(sanitized.readingPassages)) {
-    for (let p of sanitized.readingPassages) {
-      if (Array.isArray(p.images)) {
-        for (let img of p.images) {
-          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
-            img.data = await compressBase64Image(img.data);
-            if (img.url && img.url.startsWith('data:image/')) {
-              img.url = img.data;
-            }
-            saveMediaToIDB(img.id, img.data);
-          }
-        }
-      }
-    }
+    await processPassageImages(sanitized.readingPassages);
   }
 
   // 4. Compress images in questions
@@ -71,7 +138,7 @@ async function sanitizeItemForFirestore(item) {
       }
       if (Array.isArray(q.images)) {
         for (let img of q.images) {
-          if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+          if (img && img.id && img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
             img.data = await compressBase64Image(img.data);
             if (img.url && img.url.startsWith('data:image/')) {
               img.url = img.data;
@@ -86,7 +153,7 @@ async function sanitizeItemForFirestore(item) {
   // 5. Compress root images array
   if (Array.isArray(sanitized.images)) {
     for (let img of sanitized.images) {
-      if (img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
+      if (img && img.id && img.data && typeof img.data === 'string' && img.data.startsWith('data:image/')) {
         img.data = await compressBase64Image(img.data);
         if (img.url && img.url.startsWith('data:image/')) {
           img.url = img.data;
@@ -179,7 +246,8 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
         // migration effect will handle pushing default/local data
       } else {
         if (!hasUnsavedChanges) {
-          setItemsState(firestoreItems);
+          const mergedItems = mergeLocalMediaWithFirestore(firestoreItems, currentItemsRef.current);
+          setItemsState(mergedItems);
           
           // Save clean version to localStorage (sanitize large audio & image Base64)
           try {

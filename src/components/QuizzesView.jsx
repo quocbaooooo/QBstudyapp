@@ -3355,10 +3355,11 @@ ${optionsText}`;
   };
 
   const handleUpdateReadingPassageProp = (passageId, prop, value) => {
-    const newReadingPassages = activeQuiz.readingPassages.map(p => 
+    if (!activeQuiz) return;
+    const newReadingPassages = (activeQuiz.readingPassages || []).map(p => 
       p.id === passageId ? { ...p, [prop]: value } : p
     );
-    setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, readingPassages: newReadingPassages } : q));
+    setQuizzes(prev => prev.map(q => q.id === activeQuizId ? { ...q, readingPassages: newReadingPassages, updatedAt: Date.now() } : q));
   };
 
   const handleUpdateReadingPassageRange = (passageId, startNum, endNum) => {
