@@ -1306,8 +1306,9 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   };
 
   // Global text selection listener for active quiz view (handles inputs, textareas, and body text)
+  // Trigger built-in translation popup ONLY when ENVI dictionary is OFF (enviDictEnabled === false)
   useEffect(() => {
-    if (!activeQuizId || enviDictEnabled === false) return;
+    if (!activeQuizId || enviDictEnabled === true) return;
 
     const handleGlobalSelection = (e) => {
       // Don't trigger if click/key was inside translation-popup
@@ -1395,7 +1396,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   }, [activeQuizId, enviDictEnabled]);
 
   const handleTextSelection = useCallback((e, questionId = null, field = null) => {
-    if (enviDictEnabled === false) return;
+    if (enviDictEnabled === true) return;
     e.stopPropagation();
     if (translationTimeoutRef.current) clearTimeout(translationTimeoutRef.current);
     translationTimeoutRef.current = setTimeout(() => {

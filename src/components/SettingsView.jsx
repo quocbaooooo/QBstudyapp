@@ -309,9 +309,11 @@ export default function SettingsView({
             <div className="bg-white/5 border border-white/10 rounded-xl p-5 hover:border-white/20 transition-all duration-300 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-semibold text-white text-[14px]">Từ điển Anh-Việt ENVI (Popup tự động)</div>
+                  <div className="font-semibold text-white text-[14px]">Sử dụng Từ điển ENVI / Popup ứng dụng</div>
                   <div className="text-[12px] text-slate-400 mt-1 max-w-lg leading-relaxed">
-                    Tự động hiển thị popup tra từ nhanh của ENVI khi bôi đen từ/đoạn văn tiếng Anh trên màn hình.
+                    {enviDictEnabled 
+                      ? '⚡ Đang bật: Sử dụng tiện ích Từ điển Anh-Việt ENVI tự động khi bôi đen từ.' 
+                      : '💡 Đã tắt: Chuyển sang sử dụng Popup dịch thuật & tra từ thông minh của Ứng dụng.'}
                   </div>
                 </div>
                 <button 
@@ -322,7 +324,7 @@ export default function SettingsView({
                       : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
                   }`}
                 >
-                  {enviDictEnabled ? 'Đang bật' : 'Đã tắt'}
+                  {enviDictEnabled ? 'Dùng ENVI' : 'Dùng App'}
                 </button>
               </div>
             </div>
