@@ -527,7 +527,10 @@ export default function TiptapEditor({ title, content, onChange = () => {}, vari
   const editor = useEditor({
     editable: !readOnly,
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        link: false,
+        underline: false,
+      }),
       Highlight.configure({ HTMLAttributes: { class: 'tiptap-highlight' } }),
       Underline,
       TextStyle, Color,

@@ -532,6 +532,108 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [showBulkAnswerKeyModal, setShowBulkAnswerKeyModal] = useState(false);
   const [bulkAnswerKeyInput, setBulkAnswerKeyInput] = useState('');
 
+  const handleToggleTestingMode = (newIsTesting) => {
+    if (newIsTesting === isTesting) return;
+
+    const toeicParts = [
+      { id: 'part1', label: 'Part 1', start: 1, end: 6, title: 'Photographs (Câu 1–6)' },
+      { id: 'part2', label: 'Part 2', start: 7, end: 31, title: 'Question–Response (Câu 7–31)' },
+      { id: 'part3', label: 'Part 3', start: 32, end: 70, title: 'Conversations (Câu 32–70)' },
+      { id: 'part4', label: 'Part 4', start: 71, end: 100, title: 'Talks (Câu 71–100)' },
+      { id: 'part5', label: 'Part 5', start: 101, end: 130, title: 'Incomplete Sentences (Câu 101–130)' },
+      { id: 'part6', label: 'Part 6', start: 131, end: 146, title: 'Text Completion (Câu 131–146)' },
+      { id: 'part7', label: 'Part 7', start: 147, end: 200, title: 'Reading Comprehension (Câu 147–200)' },
+      { id: 'all', label: 'Tất cả', start: 1, end: 200, title: 'Toàn bộ 200 câu (1–200)' }
+    ];
+
+    const currentPartInfo = toeicParts.find(p => p.id === activePartId) || toeicParts[0];
+
+    let rawQuestions = activeQuiz?.questions || [];
+    if (isTesting && testMode === 'starred') {
+      rawQuestions = rawQuestions.filter(q => q.isStarred);
+    }
+
+    const questionsForDisplay = (activePartId === 'all' || !activePartId)
+      ? rawQuestions
+      : rawQuestions.filter(q => {
+          const num = Number(q.blankNumber);
+          return num >= currentPartInfo.start && num <= currentPartInfo.end;
+        });
+
+    const questionBlocks = [];
+    questionsForDisplay.forEach((q, i) => {
+      if (q.listeningGroupId) {
+        const firstInGroup = questionsForDisplay.findIndex(item => item.listeningGroupId === q.listeningGroupId);
+        if (firstInGroup === i) {
+          questionBlocks.push({ type: 'listening', id: q.listeningGroupId });
+        }
+      } else if (q.readingGroupId) {
+        const firstInGroup = questionsForDisplay.findIndex(item => item.readingGroupId === q.readingGroupId);
+        if (firstInGroup === i) {
+          questionBlocks.push({ type: 'reading', id: q.readingGroupId });
+        }
+      } else {
+        questionBlocks.push({ type: 'question', id: q.id });
+      }
+    });
+
+    if (newIsTesting) {
+      let targetIdx = 0;
+      let minDistance = Infinity;
+
+      questionBlocks.forEach((block, idx) => {
+        let domId = null;
+        if (block.type === 'listening') domId = `listening-block-${block.id}`;
+        else if (block.type === 'reading') domId = `reading-block-${block.id}`;
+        else if (block.type === 'question') domId = `question-card-${block.id}`;
+
+        if (domId) {
+          const el = document.getElementById(domId);
+          if (el) {
+            const rect = el.getBoundingClientRect();
+            const distance = Math.abs(rect.top - 120);
+            if (distance < minDistance) {
+              minDistance = distance;
+              targetIdx = idx;
+            }
+          }
+        }
+      });
+
+      const newQuestions = activeQuiz?.questions ? activeQuiz.questions.map(q => ({ ...q, userAnswer: null })) : [];
+      if (newQuestions.length > 0) {
+        setQuizzes(prev => prev.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
+      }
+
+      setActiveBlockIndex(targetIdx);
+      setIsTesting(true);
+
+      setTimeout(() => {
+        document.querySelectorAll('.reading-block-scrollbar').forEach(el => el.scrollTop = 0);
+      }, 10);
+    } else {
+      const safeIdx = Math.min(activeBlockIndex, Math.max(0, questionBlocks.length - 1));
+      const currentBlock = questionBlocks[safeIdx];
+      let targetDomId = null;
+      if (currentBlock) {
+        if (currentBlock.type === 'listening') targetDomId = `listening-block-${currentBlock.id}`;
+        else if (currentBlock.type === 'reading') targetDomId = `reading-block-${currentBlock.id}`;
+        else if (currentBlock.type === 'question') targetDomId = `question-card-${currentBlock.id}`;
+      }
+
+      setIsTesting(false);
+
+      if (targetDomId) {
+        setTimeout(() => {
+          const el = document.getElementById(targetDomId);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 100);
+      }
+    }
+  };
+
   function parse200AnswerKeys(text) {
     if (!text || !text.trim()) return [];
     const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
@@ -4485,7 +4587,7 @@ ${questionsText}`;
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsTesting(false)}
+                  onClick={() => handleToggleTestingMode(false)}
                   style={{
                     background: 'rgba(234, 179, 8, 0.15)',
                     border: '1px solid rgba(234, 179, 8, 0.35)',
@@ -4646,13 +4748,7 @@ ${questionsText}`;
                 </button>
                 <button 
                   className="btn btn-primary" 
-                  onClick={() => {
-                    if (!isTesting) {
-                      const newQuestions = activeQuiz.questions.map(q => ({ ...q, userAnswer: null }));
-                      setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
-                    }
-                    setIsTesting(!isTesting);
-                  }}
+                  onClick={() => handleToggleTestingMode(!isTesting)}
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '13px' }}
                 >
                   {isTesting ? 'Sửa đề' : <><Play size={16}/> Tự Luyện</>}
