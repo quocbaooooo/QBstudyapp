@@ -34,6 +34,7 @@ function openDB() {
  */
 export async function saveAudioToIDB(id, audioData) {
   if (!id || !audioData) return;
+  if (typeof audioData === 'string' && audioData.startsWith('[STORED_')) return;
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -61,7 +62,14 @@ export async function getAudioFromIDB(id) {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
       const req = store.get(id);
-      req.onsuccess = (e) => resolve(e.target.result || null);
+      req.onsuccess = (e) => {
+        const result = e.target.result || null;
+        if (typeof result === 'string' && result.startsWith('[STORED_')) {
+          resolve(null);
+        } else {
+          resolve(result);
+        }
+      };
       req.onerror = (e) => reject(e.target.error);
     });
   } catch (err) {

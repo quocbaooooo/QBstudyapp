@@ -41,7 +41,7 @@ export default function TOEICImageUploader({
             const compressed = await compressBase64Image(rawDataUrl, 1000, 1000, 0.7);
             const imgId = uuidv4();
             // Save to IndexedDB safely
-            saveMediaToIDB(imgId, compressed);
+            await saveMediaToIDB(imgId, compressed);
             resolve({
               id: imgId,
               name: file.name || 'Image',
@@ -87,7 +87,7 @@ export default function TOEICImageUploader({
     }
 
     const imgId = uuidv4();
-    if (finalUrl) saveMediaToIDB(imgId, finalUrl);
+    if (finalUrl) await saveMediaToIDB(imgId, finalUrl);
 
     const newImg = {
       id: imgId,
@@ -129,7 +129,7 @@ export default function TOEICImageUploader({
           finalUrl = await compressBase64Image(pastedText, 1000, 1000, 0.7);
         }
         const imgId = uuidv4();
-        if (finalUrl) saveMediaToIDB(imgId, finalUrl);
+        if (finalUrl) await saveMediaToIDB(imgId, finalUrl);
         onImagesChange([...(images || []), { id: imgId, name: 'Pasted URL', data: finalUrl, url: finalUrl }]);
         showToast('🎉 Đã nhận diện & dán ảnh thành công!');
       }

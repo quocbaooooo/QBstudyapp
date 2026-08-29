@@ -26,61 +26,68 @@ function mergeLocalMediaWithFirestore(firestoreItems, localItems) {
     // Prefer local item for text/content, but take Firestore ID & updatedAt
     let merged = { ...fItem, ...lItem };
 
+    // Helper to merge passage images safely
+    const mergePassageImages = (fPassage, lPassage) => {
+      const fImgMap = new Map((fPassage?.images || []).map(img => [img.id, img]));
+      const lImgMap = new Map((lPassage?.images || []).map(img => [img.id, img]));
+
+      const allImgIds = new Set([...lImgMap.keys(), ...fImgMap.keys()]);
+      return Array.from(allImgIds).map(id => {
+        const lImg = lImgMap.get(id);
+        const fImg = fImgMap.get(id);
+
+        if (!lImg) return fImg;
+        if (!fImg) return lImg;
+
+        const lHasRealData = lImg.data && typeof lImg.data === 'string' && !lImg.data.startsWith('[STORED_');
+        const fHasRealData = fImg.data && typeof fImg.data === 'string' && !fImg.data.startsWith('[STORED_');
+
+        if (lHasRealData) return lImg;
+        if (fHasRealData) return fImg;
+
+        return { ...fImg, ...lImg };
+      }).filter(Boolean);
+    };
+
     // Restore or hydrate readingPassages
-    if (Array.isArray(lItem.readingPassages)) {
+    if (Array.isArray(lItem.readingPassages) || Array.isArray(fItem.readingPassages)) {
       const fPassagesMap = new Map((fItem.readingPassages || []).map(p => [p.id, p]));
-      merged.readingPassages = lItem.readingPassages.map(lPassage => {
-        const fPassage = fPassagesMap.get(lPassage.id);
+      const lPassagesMap = new Map((lItem.readingPassages || []).map(p => [p.id, p]));
+      const allPassageIds = new Set([...lPassagesMap.keys(), ...fPassagesMap.keys()]);
+
+      merged.readingPassages = Array.from(allPassageIds).map(id => {
+        const lPassage = lPassagesMap.get(id);
+        const fPassage = fPassagesMap.get(id);
         if (!fPassage) return lPassage;
-
-        const fImgMap = new Map((fPassage.images || []).map(img => [img.id, img]));
-        const lImgMap = new Map((lPassage.images || []).map(img => [img.id, img]));
-
-        const allImgIds = new Set([...lImgMap.keys(), ...fImgMap.keys()]);
-        const mergedImages = Array.from(allImgIds).map(id => {
-          const lImg = lImgMap.get(id);
-          const fImg = fImgMap.get(id);
-          if (lImg && lImg.data && lImg.data !== '[STORED_IN_INDEXEDDB]') {
-            return lImg;
-          }
-          return fImg || lImg;
-        }).filter(Boolean);
+        if (!lPassage) return fPassage;
 
         return {
           ...fPassage,
           ...lPassage,
-          images: mergedImages
+          images: mergePassageImages(fPassage, lPassage)
         };
-      });
+      }).filter(Boolean);
     }
 
     // Restore or hydrate listeningPassages
-    if (Array.isArray(lItem.listeningPassages)) {
+    if (Array.isArray(lItem.listeningPassages) || Array.isArray(fItem.listeningPassages)) {
       const fPassagesMap = new Map((fItem.listeningPassages || []).map(p => [p.id, p]));
-      merged.listeningPassages = lItem.listeningPassages.map(lPassage => {
-        const fPassage = fPassagesMap.get(lPassage.id);
+      const lPassagesMap = new Map((lItem.listeningPassages || []).map(p => [p.id, p]));
+      const allPassageIds = new Set([...lPassagesMap.keys(), ...fPassagesMap.keys()]);
+
+      merged.listeningPassages = Array.from(allPassageIds).map(id => {
+        const lPassage = lPassagesMap.get(id);
+        const fPassage = fPassagesMap.get(id);
         if (!fPassage) return lPassage;
-
-        const fImgMap = new Map((fPassage.images || []).map(img => [img.id, img]));
-        const lImgMap = new Map((lPassage.images || []).map(img => [img.id, img]));
-
-        const allImgIds = new Set([...lImgMap.keys(), ...fImgMap.keys()]);
-        const mergedImages = Array.from(allImgIds).map(id => {
-          const lImg = lImgMap.get(id);
-          const fImg = fImgMap.get(id);
-          if (lImg && lImg.data && lImg.data !== '[STORED_IN_INDEXEDDB]') {
-            return lImg;
-          }
-          return fImg || lImg;
-        }).filter(Boolean);
+        if (!lPassage) return fPassage;
 
         return {
           ...fPassage,
           ...lPassage,
-          audioUrl: (lPassage.audioUrl && lPassage.audioUrl !== '[STORED_IN_INDEXEDDB]') ? lPassage.audioUrl : fPassage.audioUrl,
-          images: mergedImages
+          audioUrl: (lPassage.audioUrl && !lPassage.audioUrl.startsWith('[STORED_')) ? lPassage.audioUrl : fPassage.audioUrl,
+          images: mergePassageImages(fPassage, lPassage)
         };
-      });
+      }).filter(Boolean);
     }
 
     // Restore local questions if present
@@ -125,7 +132,7 @@ async function sanitizeItemForFirestore(item) {
               const compressed = await compressBase64Image(rawData, 900, 900, 0.65);
               await saveMediaToIDB(img.id, compressed);
 
-              if (compressed.length > 120000) {
+              if (compressed.length > 350000) {
                 img.data = '[STORED_IN_INDEXEDDB]';
                 if (img.url && img.url.startsWith('data:image/')) {
                   img.url = '[STORED_IN_INDEXEDDB]';
@@ -295,8 +302,8 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
                   audioUrl: (p.audioUrl && p.audioUrl.length > 200000) ? '[STORED_IN_INDEXEDDB]' : p.audioUrl,
                   images: Array.isArray(p.images) ? p.images.map(img => ({
                     ...img,
-                    data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
-                    url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+                    data: (img.data && img.data.length > 200000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                    url: (img.url && img.url.length > 200000) ? '[STORED_IN_INDEXEDDB]' : img.url
                   })) : []
                 }));
               }
@@ -305,8 +312,8 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
                   ...p,
                   images: Array.isArray(p.images) ? p.images.map(img => ({
                     ...img,
-                    data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
-                    url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+                    data: (img.data && img.data.length > 200000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                    url: (img.url && img.url.length > 200000) ? '[STORED_IN_INDEXEDDB]' : img.url
                   })) : []
                 }));
               }
@@ -450,8 +457,8 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
               audioUrl: (p.audioUrl && p.audioUrl.length > 200000) ? '[STORED_IN_INDEXEDDB]' : p.audioUrl,
               images: Array.isArray(p.images) ? p.images.map(img => ({
                 ...img,
-                data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
-                url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+                data: (img.data && img.data.length > 200000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                url: (img.url && img.url.length > 200000) ? '[STORED_IN_INDEXEDDB]' : img.url
               })) : []
             }));
           }
@@ -460,8 +467,8 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
               ...p,
               images: Array.isArray(p.images) ? p.images.map(img => ({
                 ...img,
-                data: (img.data && img.data.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.data,
-                url: (img.url && img.url.length > 80000) ? '[STORED_IN_INDEXEDDB]' : img.url
+                data: (img.data && img.data.length > 200000) ? '[STORED_IN_INDEXEDDB]' : img.data,
+                url: (img.url && img.url.length > 200000) ? '[STORED_IN_INDEXEDDB]' : img.url
               })) : []
             }));
           }
