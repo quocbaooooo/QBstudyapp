@@ -3,8 +3,9 @@ import { getMediaFromIDB } from '../../utils/audioStorage';
 
 export default function SmartImage({ img, src, alt = 'Image', style, title, onClick, ...props }) {
   const initialSrc = typeof img === 'object' ? (img.data || img.url) : src;
+  const isStoredInIDB = initialSrc === '[STORED_IN_INDEXEDDB]';
   const [resolvedSrc, setResolvedSrc] = useState(() => {
-    return initialSrc && initialSrc !== '[STORED_IN_INDEXEDDB]' ? initialSrc : '';
+    return initialSrc && !isStoredInIDB ? initialSrc : '';
   });
 
   useEffect(() => {
@@ -29,16 +30,19 @@ export default function SmartImage({ img, src, alt = 'Image', style, title, onCl
     };
   }, [img, src]);
 
+  const displaySrc = resolvedSrc || (!isStoredInIDB ? initialSrc : '');
+
   return (
     <img
-      src={resolvedSrc || initialSrc || ''}
+      src={displaySrc || ''}
       alt={typeof img === 'object' ? (img.name || alt) : alt}
       style={style}
       title={title}
       onClick={() => {
-        if (onClick) onClick(resolvedSrc || initialSrc);
+        if (onClick && displaySrc) onClick(displaySrc);
       }}
       {...props}
     />
   );
 }
+

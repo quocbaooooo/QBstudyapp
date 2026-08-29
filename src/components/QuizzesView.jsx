@@ -21,6 +21,8 @@ import TOEICAudioPlayer from './quizzes/TOEICAudioPlayer';
 import ResizableSplitPanel from './quizzes/ResizableSplitPanel';
 import TOEICListeningBlock from './quizzes/TOEICListeningBlock';
 import TOEICReadingBlock from './quizzes/TOEICReadingBlock';
+import { compressBase64Image } from '../utils/imageCompressor';
+import { saveMediaToIDB } from '../utils/audioStorage';
 
 const DEMO_QUIZ = {
   id: uuidv4(),
@@ -3476,12 +3478,25 @@ ${optionsText}`;
     const readPromises = imageFiles.map(file => {
       return new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = (e) => {
-          resolve({
-            id: uuidv4(),
-            name: file.name,
-            data: e.target.result
-          });
+        reader.onload = async (e) => {
+          try {
+            const rawDataUrl = e.target.result;
+            const compressed = await compressBase64Image(rawDataUrl, 1000, 1000, 0.7);
+            const imgId = uuidv4();
+            await saveMediaToIDB(imgId, compressed);
+            resolve({
+              id: imgId,
+              name: file.name || 'Image',
+              data: compressed,
+              url: compressed
+            });
+          } catch (err) {
+            resolve({
+              id: uuidv4(),
+              name: file.name,
+              data: e.target.result
+            });
+          }
         };
         reader.readAsDataURL(file);
       });
