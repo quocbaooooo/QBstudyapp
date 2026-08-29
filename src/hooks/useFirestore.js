@@ -294,7 +294,7 @@ export function useFirestore(collectionName, localStorageKey, defaultValue = [],
           
           // Save clean version to localStorage (sanitize large audio & image Base64)
           try {
-            const sanitizedForLocalStorage = firestoreItems.map(item => {
+            const sanitizedForLocalStorage = mergedItems.map(item => {
               let sanitized = { ...item };
               if (sanitized.listeningPassages) {
                 sanitized.listeningPassages = sanitized.listeningPassages.map(p => ({
