@@ -1,5 +1,5 @@
 import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
-import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, EyeOff, Sparkles, Edit3, StickyNote } from 'lucide-react';
+import { BookOpen, Upload, Trash2, Save, CheckCircle, Copy, Star, XCircle, Image as ImageIcon, Eye, EyeOff, Sparkles, Edit3, StickyNote, Maximize2, Minimize2 } from 'lucide-react';
 import ResizableSplitPanel from './ResizableSplitPanel';
 import TOEICImageUploader from './TOEICImageUploader';
 import SmartImage from './SmartImage';
@@ -11,9 +11,10 @@ function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 6, 
     const el = textareaRef.current;
     if (el) {
       el.style.height = 'auto';
-      el.style.height = `${Math.max(el.scrollHeight, 140)}px`;
+      const targetHeight = Math.max(el.scrollHeight, minRows * 24);
+      el.style.height = `${targetHeight}px`;
     }
-  }, []);
+  }, [minRows]);
 
   useLayoutEffect(() => {
     adjustHeight();
@@ -41,6 +42,7 @@ function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 6, 
         fontFamily: 'inherit',
         resize: 'vertical',
         boxSizing: 'border-box',
+        flexShrink: 0,
         ...style
       }}
       {...props}
@@ -85,6 +87,7 @@ export default function TOEICReadingBlock({
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isEditingTranslation, setIsEditingTranslation] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
+  const [isFullHeight, setIsFullHeight] = useState(false);
 
   const handleSaveRange = () => {
     const s = parseInt(startRangeInput, 10);
@@ -105,58 +108,86 @@ export default function TOEICReadingBlock({
         </span>
       </div>
 
-      {!isTesting && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          {/* Custom Question Range Editor */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(0,0,0,0.3)', padding: '3px 6px', borderRadius: '6px', border: '1px solid rgba(6,182,212,0.25)' }}>
-            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Dải câu:</span>
-            <input
-              type="number"
-              value={startRangeInput}
-              onChange={(e) => setStartRangeInput(e.target.value)}
-              placeholder="Từ"
-              style={{ width: '42px', background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', padding: '2px 4px', fontSize: '11.5px', textAlign: 'center' }}
-            />
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>–</span>
-            <input
-              type="number"
-              value={endRangeInput}
-              onChange={(e) => setEndRangeInput(e.target.value)}
-              placeholder="Đến"
-              style={{ width: '42px', background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', padding: '2px 4px', fontSize: '11.5px', textAlign: 'center' }}
-            />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        {/* Toggle Scroll / Full Height Mode */}
+        <button
+          type="button"
+          onClick={() => setIsFullHeight(!isFullHeight)}
+          style={{
+            background: isFullHeight ? 'rgba(6,182,212,0.15)' : 'rgba(6,182,212,0.25)',
+            border: '1px solid rgba(6,182,212,0.4)',
+            color: '#8eefff',
+            padding: '4px 9px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '11.5px',
+            fontWeight: 600,
+            transition: 'all 0.2s ease'
+          }}
+          title={isFullHeight ? "Thu gọn thành khung cuộn độc lập" : "Mở rộng full chiều cao trang"}
+        >
+          {isFullHeight ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          {isFullHeight ? 'Chế độ cuộn' : 'Mở rộng'}
+        </button>
+
+        {!isTesting && (
+          <>
+            {/* Custom Question Range Editor */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(0,0,0,0.3)', padding: '3px 6px', borderRadius: '6px', border: '1px solid rgba(6,182,212,0.25)' }}>
+              <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Dải câu:</span>
+              <input
+                type="number"
+                value={startRangeInput}
+                onChange={(e) => setStartRangeInput(e.target.value)}
+                placeholder="Từ"
+                style={{ width: '42px', background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', padding: '2px 4px', fontSize: '11.5px', textAlign: 'center' }}
+              />
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>–</span>
+              <input
+                type="number"
+                value={endRangeInput}
+                onChange={(e) => setEndRangeInput(e.target.value)}
+                placeholder="Đến"
+                style={{ width: '42px', background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', padding: '2px 4px', fontSize: '11.5px', textAlign: 'center' }}
+              />
+              <button
+                type="button"
+                onClick={handleSaveRange}
+                style={{ background: 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.4)', color: '#8eefff', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+                title="Lưu dải câu hỏi cho Block này"
+              >
+                <Save size={11} /> Lưu
+              </button>
+            </div>
+
+            {/* Delete Block Button */}
             <button
               type="button"
-              onClick={handleSaveRange}
-              style={{ background: 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.4)', color: '#8eefff', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
-              title="Lưu dải câu hỏi cho Block này"
+              onClick={() => handleDeleteReadingPassage(passageObj.id)}
+              style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '4px 7px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}
+              title="Xóa Reading Block này"
             >
-              <Save size={11} /> Lưu
+              <Trash2 size={12} /> Xóa Block
             </button>
-          </div>
-
-          {/* Delete Block Button */}
-          <button
-            type="button"
-            onClick={() => handleDeleteReadingPassage(passageObj.id)}
-            style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '4px 7px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}
-            title="Xóa Reading Block này"
-          >
-            <Trash2 size={12} /> Xóa Block
-          </button>
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 
   return (
-    <div key={`reading-group-wrapper-${passageObj.id}`} id={`reading-block-${passageObj.id}`} className="glass-panel" style={{ padding: '16px', marginBottom: '20px', border: '1px solid rgba(6,182,212,0.35)', borderRadius: '16px' }}>
+    <div key={`reading-group-wrapper-${passageObj.id}`} id={`reading-block-${passageObj.id}`} className="glass-panel" style={{ padding: '16px', marginBottom: isTesting ? 0 : '20px', border: '1px solid rgba(6,182,212,0.35)', borderRadius: '16px', flex: isTesting ? 1 : 'none', minHeight: 0, height: isTesting ? '100%' : 'auto', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
       {passageHeaderUI}
 
       <ResizableSplitPanel
         defaultLeftPercent={45}
+        isFullHeight={isFullHeight}
+        height={isTesting ? '100%' : undefined}
         leftContent={
-          <div style={{ background: 'rgba(15,23,42,0.4)', border: '1px solid rgba(6,182,212,0.25)', borderRadius: '14px', padding: '14px', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="reading-block-scrollbar" style={{ background: 'rgba(15,23,42,0.4)', border: '1px solid rgba(6,182,212,0.25)', borderRadius: '14px', padding: '14px', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '8px' }}>
             <div style={{ fontSize: '13px', fontWeight: 700, color: '#8eefff', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <BookOpen size={15} /> Đoạn văn bài đọc
             </div>
@@ -262,84 +293,7 @@ export default function TOEICReadingBlock({
               </div>
             )}
 
-            {/* BẢN DỊCH TIẾNG VIỆT (TRANSLATION) SECTION */}
-            {(!isTesting || showTranslation) && (
-              <div style={{
-                background: 'rgba(15, 23, 42, 0.65)',
-                border: '1px solid rgba(0, 227, 253, 0.45)',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                marginTop: '4px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#00e3fd', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>🌐</span> <span>🇻🇳</span> BẢN DỊCH TIẾNG VIỆT (TRANSLATION):
-                  </div>
-                  {!isTesting && (
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingTranslation(!isEditingTranslation)}
-                      style={{
-                        background: isEditingTranslation ? 'rgba(0,227,253,0.3)' : 'rgba(0,227,253,0.12)',
-                        border: '1px solid rgba(0,227,253,0.35)',
-                        color: '#8eefff',
-                        borderRadius: '6px',
-                        padding: '3px 8px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                      title="Bấm để chỉnh sửa bản dịch tiếng Việt"
-                    >
-                      {isEditingTranslation ? <CheckCircle size={12} /> : <Edit3 size={12} />}
-                      {isEditingTranslation ? 'Xong' : 'Sửa Bản Dịch'}
-                    </button>
-                  )}
-                </div>
 
-                {!isTesting || isEditingTranslation ? (
-                  <AutoResizeTextarea
-                    value={passageObj.translation || passageObj.contentTranslation || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      handleUpdateReadingPassageProp(passageObj.id, 'translation', val);
-                      handleUpdateReadingPassageProp(passageObj.id, 'contentTranslation', val);
-                    }}
-                    placeholder="Nhập hoặc dán bản dịch tiếng Việt của đoạn văn bài đọc tại đây..."
-                    minRows={3}
-                    style={{
-                      background: 'rgba(0,0,0,0.35)',
-                      color: '#8eefff',
-                      border: '1px solid rgba(0,227,253,0.35)',
-                      outline: 'none'
-                    }}
-                  />
-                ) : (
-                  <div style={{
-                    color: '#8eefff',
-                    fontSize: '13.5px',
-                    lineHeight: '1.7',
-                    whiteSpace: 'pre-wrap',
-                    fontFamily: 'inherit',
-                    padding: '2px 0'
-                  }}>
-                    {(passageObj.translation || passageObj.contentTranslation) ? (
-                      passageObj.translation || passageObj.contentTranslation
-                    ) : (
-                      <span style={{ color: 'rgba(0,227,253,0.5)', fontStyle: 'italic', fontSize: '12px' }}>
-                        Chưa có bản dịch tiếng Việt cho bài đọc này. (Bấm "Sửa Bản Dịch" để thêm bản dịch)
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* GHI CHÚ & TỪ VỰNG (NOTES) SECTION */}
             <div style={{
@@ -350,7 +304,8 @@ export default function TOEICReadingBlock({
               display: 'flex',
               flexDirection: 'column',
               gap: '8px',
-              marginTop: '4px'
+              marginTop: '4px',
+              flexShrink: 0
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -414,19 +369,21 @@ export default function TOEICReadingBlock({
 
             {/* TOEIC IMAGE UPLOADER FOR READING BLOCK */}
             {!isTesting && (
-              <TOEICImageUploader
-                images={passageObj.images || []}
-                onImagesChange={(updatedImgs) => handleUpdateReadingPassageProp(passageObj.id, 'images', updatedImgs)}
-                setActiveLightboxImage={setActiveLightboxImage}
-                accentColor="#8eefff"
-                label="🖼️ HÌNH ẢNH BÀI ĐỌC:"
-                isTesting={isTesting}
-              />
+              <div style={{ flexShrink: 0 }}>
+                <TOEICImageUploader
+                  images={passageObj.images || []}
+                  onImagesChange={(updatedImgs) => handleUpdateReadingPassageProp(passageObj.id, 'images', updatedImgs)}
+                  setActiveLightboxImage={setActiveLightboxImage}
+                  accentColor="#8eefff"
+                  label="🖼️ HÌNH ẢNH BÀI ĐỌC:"
+                  isTesting={isTesting}
+                />
+              </div>
             )}
           </div>
         }
         rightContent={
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%', overflowY: 'auto' }}>
+          <div className="reading-block-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
             {groupQuestions.map((item) => {
               const itemIndex = questionsForDisplay.findIndex(x => x.id === item.id);
               const answerRevealed = isTesting && item.userAnswer;
@@ -444,7 +401,8 @@ export default function TOEICReadingBlock({
                     borderRadius: '12px',
                     border: '1px solid rgba(148,163,184,0.22)',
                     background: 'rgba(2,6,23,0.25)',
-                    padding: '14px'
+                    padding: '14px',
+                    flexShrink: 0
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '12px' }}>
@@ -622,6 +580,86 @@ export default function TOEICReadingBlock({
                 </div>
               );
             })}
+
+            {/* BẢN DỊCH TIẾNG VIỆT (TRANSLATION) SECTION - MOVED TO RIGHT COLUMN */}
+            {(!isTesting || showTranslation) && (
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.65)',
+                border: '1px solid rgba(0, 227, 253, 0.45)',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginTop: '4px',
+                flexShrink: 0
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#00e3fd', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🌐</span> <span>🇻🇳</span> BẢN DỊCH TIẾNG VIỆT (TRANSLATION):
+                  </div>
+                  {!isTesting && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingTranslation(!isEditingTranslation)}
+                      style={{
+                        background: isEditingTranslation ? 'rgba(0,227,253,0.3)' : 'rgba(0,227,253,0.12)',
+                        border: '1px solid rgba(0,227,253,0.35)',
+                        color: '#8eefff',
+                        borderRadius: '6px',
+                        padding: '3px 8px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="Bấm để chỉnh sửa bản dịch tiếng Việt"
+                    >
+                      {isEditingTranslation ? <CheckCircle size={12} /> : <Edit3 size={12} />}
+                      {isEditingTranslation ? 'Xong' : 'Sửa Bản Dịch'}
+                    </button>
+                  )}
+                </div>
+
+                {!isTesting || isEditingTranslation ? (
+                  <AutoResizeTextarea
+                    value={passageObj.translation || passageObj.contentTranslation || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleUpdateReadingPassageProp(passageObj.id, 'translation', val);
+                      handleUpdateReadingPassageProp(passageObj.id, 'contentTranslation', val);
+                    }}
+                    placeholder="Nhập hoặc dán bản dịch tiếng Việt của đoạn văn bài đọc tại đây..."
+                    minRows={3}
+                    style={{
+                      background: 'rgba(0,0,0,0.35)',
+                      color: '#8eefff',
+                      border: '1px solid rgba(0,227,253,0.35)',
+                      outline: 'none'
+                    }}
+                  />
+                ) : (
+                  <div style={{
+                    color: '#8eefff',
+                    fontSize: '13.5px',
+                    lineHeight: '1.7',
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'inherit',
+                    padding: '2px 0'
+                  }}>
+                    {(passageObj.translation || passageObj.contentTranslation) ? (
+                      passageObj.translation || passageObj.contentTranslation
+                    ) : (
+                      <span style={{ color: 'rgba(0,227,253,0.5)', fontStyle: 'italic', fontSize: '12px' }}>
+                        Chưa có bản dịch tiếng Việt cho bài đọc này. (Bấm "Sửa Bản Dịch" để thêm bản dịch)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         }
       />

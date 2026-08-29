@@ -462,6 +462,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [shuffledIds, setShuffledIds] = useState(null);
   const [shuffledOptions, setShuffledOptions] = useState(null);
   const [activePartId, setActivePartId] = useState('part1');
+  const [activeBlockIndex, setActiveBlockIndex] = useState(0);
   const [showPartQuickInput, setShowPartQuickInput] = useState(true);
   const [partQuickText, setPartQuickText] = useState('');
   const [partQuickPreviewData, setPartQuickPreviewData] = useState(null);
@@ -4355,6 +4356,158 @@ ${questionsText}`;
         /* ========== DETAIL / EDITOR VIEW ========== */
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           {/* Detail View Top bar */}
+          {/* Focus Header Bar - only visible in Practice Mode */}
+          {isTesting && (
+            <div style={{
+              height: '38px',
+              minHeight: '38px',
+              background: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(0, 227, 253, 0.25)',
+              borderRadius: '10px',
+              padding: '0 12px',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              flexShrink: 0,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.4)'
+            }}>
+              {/* Left: Exit button & Quiz Title */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexShrink: 1 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    requestExitQuiz(() => {
+                      setActiveQuizId(null);
+                      setIsTesting(false);
+                    });
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#fff',
+                    padding: '3px 9px',
+                    borderRadius: '6px',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title="Thoát chế độ luyện tập"
+                >
+                  <ArrowLeft size={13} /> Thoát
+                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
+                  <span style={{ fontSize: '13px' }}>👓</span>
+                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#8eefff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>
+                    {activeQuiz?.title || 'Bộ đề TOEIC'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '4px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    Câu <strong style={{ color: '#60a5fa', fontSize: '13.5px' }}>
+                      {(activeQuiz?.questions || []).findIndex(q => q && q.userAnswer === null) !== -1 
+                        ? (activeQuiz?.questions || []).findIndex(q => q && q.userAnswer === null) + 1 
+                        : 1}
+                    </strong>/{activeQuizStats.total}
+                  </div>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#34d399',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap'
+                  }}>
+                    <CheckCircle size={13} />
+                    {activeQuizStats.correct}/{activeQuizStats.answered}
+                  </div>
+                </div>
+              </div>
+              {/* Center: Part selector pill tabs */}
+              <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', scrollbarWidth: 'none', alignItems: 'center' }}>
+                {[
+                  { id: 'part1', label: 'Part 1', title: 'Photographs (Câu 1–6)' },
+                  { id: 'part2', label: 'Part 2', title: 'Question–Response (Câu 7–31)' },
+                  { id: 'part3', label: 'Part 3', title: 'Conversations (Câu 32–70)' },
+                  { id: 'part4', label: 'Part 4', title: 'Talks (Câu 71–100)' },
+                  { id: 'part5', label: 'Part 5', title: 'Incomplete Sentences (Câu 101–130)' },
+                  { id: 'part6', label: 'Part 6', title: 'Text Completion (Câu 131–146)' },
+                  { id: 'part7', label: 'Part 7', title: 'Reading Comprehension (Câu 147–200)' },
+                  { id: 'all', label: 'Tất cả', title: 'Toàn bộ 200 câu (1–200)' }
+                ].map(p => {
+                  const isActive = activePartId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setActivePartId(p.id);
+                        setActiveBlockIndex(0);
+                        setTimeout(() => {
+                          document.querySelectorAll('.reading-block-scrollbar').forEach(el => el.scrollTop = 0);
+                        }, 10);
+                      }}
+                      style={{
+                        padding: '3px 9px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: isActive ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(255, 255, 255, 0.06)',
+                        color: isActive ? '#ffffff' : 'var(--text-muted)',
+                        whiteSpace: 'nowrap',
+                        boxShadow: isActive ? '0 2px 8px rgba(99, 102, 241, 0.4)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={p.title}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Right: Progress & Sửa đề button */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                <div style={{ fontSize: '11.5px', color: '#94a3b8', fontWeight: 600 }}>
+                  Đã làm: <strong style={{ color: '#34d399', fontSize: '12.5px' }}>{activeQuizStats.answered}/{activeQuizStats.total}</strong>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTesting(false)}
+                  style={{
+                    background: 'rgba(234, 179, 8, 0.15)',
+                    border: '1px solid rgba(234, 179, 8, 0.35)',
+                    color: '#facc15',
+                    padding: '3px 9px',
+                    borderRadius: '6px',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Quay lại chế độ sửa đề"
+                >
+                  <Edit3 size={12} /> Sửa đề
+                </button>
+              </div>
+            </div>
+          )}
+          {/* Standard Header Bar - hidden in Practice Mode */}
+          {!isTesting && (
           <div style={{ 
             display: 'flex', 
             justifyContent: 'space-between', 
@@ -4507,6 +4660,7 @@ ${questionsText}`;
               </div>
             )}
           </div>
+          )}
 
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -5173,7 +5327,8 @@ ${questionsText}`;
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-                    {/* TOEIC Part Classification Navigation Bar */}
+                  {/* TOEIC Part Classification Navigation Bar */}
+                  {!isTesting && (
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -5219,35 +5374,10 @@ ${questionsText}`;
                           );
                         })}
                       </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                      Câu <strong style={{ color: '#60a5fa', fontSize: '15px' }}>
-                        {(activeQuiz?.questions || []).findIndex(q => q && q.userAnswer === null) !== -1 
-                          ? (activeQuiz?.questions || []).findIndex(q => q && q.userAnswer === null) + 1 
-                          : 1}
-                      </strong>/{activeQuizStats.total}
                     </div>
+                  )}
 
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      padding: '4px 10px',
-                      borderRadius: '8px',
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      color: '#34d399',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                      fontSize: '12px',
-                      fontWeight: 700
-                    }}>
-                      <CheckCircle size={14} />
-                      {activeQuizStats.correct}/{activeQuizStats.answered}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                  <div style={{ flex: 1, minHeight: 0, overflowY: isTesting ? 'hidden' : 'auto', display: isTesting ? 'flex' : 'block', flexDirection: isTesting ? 'column' : undefined }}>
 
                   {/* Bulk Audio Manager for Edit Mode (Part 1, 2, 3, 4) */}
                   {!isTesting && (
@@ -5307,7 +5437,9 @@ ${questionsText}`;
                       </div>
                     </div>
                   )}
-                  <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '24px', position: 'relative', overflow: 'hidden' }}>
+
+                  {!isTesting && (
+                  <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '24px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
                     <div 
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', opacity: activeQuiz.keyTakeaways ? 1 : 0.8 }}
                       onClick={() => setIsTakeawaysCollapsed(!isTakeawaysCollapsed)}
@@ -5531,18 +5663,8 @@ ${questionsText}`;
                       </div>
                     )}
                   </div>
-
-                  {isTesting && (
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '12px', width: 'max-content' }}>
-                      <button onClick={() => setTestMode('all')} style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer', background: testMode === 'all' ? 'var(--primary)' : 'transparent', color: testMode === 'all' ? 'var(--on-primary)' : 'var(--text-muted)' }}>
-                        Tất cả ({activeQuiz.questions.length})
-                      </button>
-                      <button onClick={() => setTestMode('starred')} style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer', background: testMode === 'starred' ? 'var(--primary)' : 'transparent', color: testMode === 'starred' ? 'var(--on-primary)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Star size={14} fill={testMode === 'starred' ? 'currentColor' : 'none'} />
-                        Đã đánh dấu ({activeQuiz.questions.filter(q => q.isStarred).length})
-                      </button>
-                    </div>
                   )}
+
 
                   {questionsForDisplay.length === 0 && isTesting && testMode === 'starred' && (
                     <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
@@ -6405,7 +6527,60 @@ ${questionsText}`;
                   );
                 });
 
+                const renderBlocks = questionCards.filter(Boolean);
+
+                  if (isTesting) {
+                    const safeBlockIndex = Math.min(activeBlockIndex, Math.max(0, renderBlocks.length - 1));
+                    const activeBlock = renderBlocks[safeBlockIndex];
                     return (
+                      <div style={{ position: 'relative', flex: 1, minHeight: 0, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        <div key={safeBlockIndex} className="reading-block-step-transition" style={{ flex: 1, minHeight: 0, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                          {activeBlock}
+                        </div>
+                        {renderBlocks.length > 1 && (
+                          <div style={{
+                            position: 'fixed',
+                            bottom: '24px',
+                            right: '32px',
+                            zIndex: 9999,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'rgba(15, 23, 42, 0.9)',
+                            backdropFilter: 'blur(16px)',
+                            border: '1px solid rgba(0, 227, 253, 0.4)',
+                            borderRadius: '24px',
+                            padding: '6px 14px',
+                            boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+                          }}>
+                            <button
+                              type="button"
+                              disabled={safeBlockIndex === 0}
+                              onClick={() => {
+                                setActiveBlockIndex(Math.max(0, safeBlockIndex - 1));
+                                setTimeout(() => { document.querySelectorAll('.reading-block-scrollbar').forEach(el => el.scrollTop = 0); }, 10);
+                              }}
+                              style={{ background: safeBlockIndex === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(0,227,253,0.2)', border: 'none', color: safeBlockIndex === 0 ? 'var(--text-muted)' : '#8eefff', borderRadius: '50%', width: '28px', height: '28px', cursor: safeBlockIndex === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}
+                            >◀</button>
+                            <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#fff', padding: '0 6px', whiteSpace: 'nowrap' }}>
+                              Block <strong style={{ color: '#38bdf8' }}>{safeBlockIndex + 1}</strong>/{renderBlocks.length}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={safeBlockIndex >= renderBlocks.length - 1}
+                              onClick={() => {
+                                setActiveBlockIndex(Math.min(renderBlocks.length - 1, safeBlockIndex + 1));
+                                setTimeout(() => { document.querySelectorAll('.reading-block-scrollbar').forEach(el => el.scrollTop = 0); }, 10);
+                              }}
+                              style={{ background: safeBlockIndex >= renderBlocks.length - 1 ? 'rgba(255,255,255,0.05)' : 'rgba(0,227,253,0.2)', border: 'none', color: safeBlockIndex >= renderBlocks.length - 1 ? 'var(--text-muted)' : '#8eefff', borderRadius: '50%', width: '28px', height: '28px', cursor: safeBlockIndex >= renderBlocks.length - 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}
+                            >▶</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
                       <>
                         {!isTesting && (activePartId === 'part6' || activePartId === 'part7') && (
                           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '14px' }}>
@@ -6431,7 +6606,7 @@ ${questionsText}`;
                             </button>
                           </div>
                         )}
-                        {questionCards}
+                        {renderBlocks}
                       </>
                     );
                   })()}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
-import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash2, Sparkles, StickyNote, Upload, Image as ImageIcon, Edit3 } from 'lucide-react';
+import { Headphones, Music, Eye, EyeOff, CheckCircle, XCircle, Copy, Star, Trash2, Sparkles, StickyNote, Upload, Image as ImageIcon, Edit3, Maximize2, Minimize2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import TOEICAudioPlayer from './TOEICAudioPlayer';
 import ResizableSplitPanel from './ResizableSplitPanel';
@@ -45,6 +45,7 @@ function AutoResizeTextarea({ value, onChange, placeholder, style, minRows = 2, 
         lineHeight: '1.5',
         boxSizing: 'border-box',
         fieldSizing: 'content',
+        flexShrink: 0,
         ...style
       }}
       {...props}
@@ -81,6 +82,7 @@ export default function TOEICListeningBlock({
 }) {
   const [localShowNotes, setLocalShowNotes] = useState({});
   const [editingNotesMap, setEditingNotesMap] = useState({});
+  const [isFullHeight, setIsFullHeight] = useState(false);
   const activeShowNotesMap = showNotesMap || localShowNotes;
   const activeSetShowNotesMap = setShowNotesMap || setLocalShowNotes;
 
@@ -88,15 +90,41 @@ export default function TOEICListeningBlock({
   const endNumStr = groupQuestions?.[groupQuestions?.length - 1]?.blankNumber || ((questionsForDisplay || []).findIndex(x => x?.id === groupQuestions?.[groupQuestions?.length - 1]?.id) + 1);
 
   return (
-    <div key={`listening-test-group-${listeningObj.id}`} id={`listening-block-${listeningObj.id}`} className="glass-panel" style={{ padding: '16px', marginBottom: '20px', border: '1px solid rgba(236,72,153,0.35)', borderRadius: '16px' }}>
-      <div style={{ fontSize: '13px', fontWeight: 800, color: '#f472b6', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-        <Headphones size={16} /> TOEIC LISTENING BLOCK (CÂU {startNumStr} - {endNumStr})
+    <div key={`listening-test-group-${listeningObj.id}`} id={`listening-block-${listeningObj.id}`} className="glass-panel" style={{ padding: '16px', marginBottom: isTesting ? 0 : '20px', border: '1px solid rgba(236,72,153,0.35)', borderRadius: '16px', flex: isTesting ? 1 : 'none', minHeight: 0, height: isTesting ? '100%' : 'auto', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ fontSize: '13px', fontWeight: 800, color: '#f472b6', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          <Headphones size={16} /> TOEIC LISTENING BLOCK (CÂU {startNumStr} - {endNumStr})
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsFullHeight(!isFullHeight)}
+          style={{
+            background: isFullHeight ? 'rgba(236,72,153,0.15)' : 'rgba(236,72,153,0.25)',
+            border: '1px solid rgba(236,72,153,0.4)',
+            color: '#f472b6',
+            padding: '4px 9px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '11.5px',
+            fontWeight: 600,
+            transition: 'all 0.2s ease'
+          }}
+          title={isFullHeight ? "Thu gọn thành khung cuộn độc lập" : "Mở rộng full chiều cao trang"}
+        >
+          {isFullHeight ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          {isFullHeight ? 'Chế độ cuộn' : 'Mở rộng'}
+        </button>
       </div>
 
       <ResizableSplitPanel
         defaultLeftPercent={40}
+        isFullHeight={isFullHeight}
+        height={isTesting ? '100%' : undefined}
         leftContent={
-          <div style={{ background: 'rgba(15,23,42,0.4)', border: '1px solid rgba(236,72,153,0.25)', borderRadius: '14px', padding: '14px', height: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="reading-block-scrollbar" style={{ background: 'rgba(15,23,42,0.4)', border: '1px solid rgba(236,72,153,0.25)', borderRadius: '14px', padding: '14px', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '8px' }}>
             <div style={{ fontSize: '13px', fontWeight: 700, color: '#f472b6', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Music size={15} /> Nguồn Âm Thanh & Kịch Bản
             </div>
@@ -369,7 +397,7 @@ export default function TOEICListeningBlock({
           </div>
         }
         rightContent={
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="reading-block-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
             {groupQuestions.map(item => {
               const itemIndex = questionsForDisplay.findIndex(x => x.id === item.id);
               const answerRevealed = isTesting ? !!item.userAnswer : true;

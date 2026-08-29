@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 
-export default function ResizableSplitPanel({ leftContent, rightContent, defaultLeftPercent = 42 }) {
+export default function ResizableSplitPanel({
+  leftContent,
+  rightContent,
+  defaultLeftPercent = 42,
+  height = 'calc(100vh - 180px)',
+  minHeight = '480px',
+  maxHeight = '780px',
+  isFullHeight = false
+}) {
   const [leftWidthPercent, setLeftWidthPercent] = useState(defaultLeftPercent);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef(null);
@@ -55,13 +63,27 @@ export default function ResizableSplitPanel({ leftContent, rightContent, default
       style={{
         display: 'flex',
         width: '100%',
+        flex: height === '100%' ? 1 : 'none',
+        height: isFullHeight ? 'auto' : height,
+        minHeight: isFullHeight || height === '100%' ? 0 : minHeight,
+        maxHeight: isFullHeight || height === '100%' ? 'none' : maxHeight,
         position: 'relative',
         alignItems: 'stretch',
-        touchAction: 'none'
+        touchAction: 'none',
+        transition: 'height 0.25s ease, max-height 0.25s ease'
       }}
     >
       {/* Left Column */}
-      <div style={{ width: `${leftWidthPercent}%`, minWidth: '180px', flexShrink: 0, paddingRight: '8px' }}>
+      <div style={{
+        width: `${leftWidthPercent}%`,
+        minWidth: '180px',
+        height: isFullHeight ? 'auto' : '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        flexShrink: 0,
+        paddingRight: '8px',
+        overflow: 'hidden'
+      }}>
         {leftContent}
       </div>
 
@@ -99,7 +121,15 @@ export default function ResizableSplitPanel({ leftContent, rightContent, default
       </div>
 
       {/* Right Column */}
-      <div style={{ flex: 1, minWidth: '240px', paddingLeft: '8px' }}>
+      <div style={{
+        flex: 1,
+        minWidth: '240px',
+        height: isFullHeight ? 'auto' : '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        paddingLeft: '8px',
+        overflow: 'hidden'
+      }}>
         {rightContent}
       </div>
     </div>
