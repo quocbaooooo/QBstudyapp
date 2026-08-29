@@ -492,6 +492,15 @@ function AppContent() {
           </button>
           
           <button
+            onClick={() => setIsGuideOpen(true)}
+            title={isSidebarCollapsed ? "Hướng dẫn sử dụng" : undefined}
+            className={`w-full flex items-center py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'} text-slate-400 hover:bg-white/10 hover:text-cyan-400`}
+          >
+            <span className="material-symbols-outlined text-[20px] shrink-0">help</span>
+            <span className={`font-['Inter'] font-medium tracking-tight text-left flex-1 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'lg:hidden' : 'block'}`}>Hướng dẫn</span>
+          </button>
+
+          <button
             onClick={() => handleTabChange('settings')}
             title={isSidebarCollapsed ? "Cài đặt" : undefined}
             className={`w-full flex items-center py-2.5 rounded-lg text-sm transition-all duration-300 ease-out active:scale-95 ${isSidebarCollapsed ? 'lg:justify-center lg:px-0 px-3 gap-3' : 'px-3 gap-3'} ${activeTab === 'settings' ? 'bg-white/10 text-cyan-400 border-l-3 border-cyan-400 shadow-[0_0_15px_rgba(0,227,253,0.3)]' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
@@ -531,46 +540,15 @@ function AppContent() {
       </nav>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 h-full">
-        <header className="flex justify-between items-center px-4 sm:px-5 w-full h-14 backdrop-blur-md bg-white/5 border-b border-white/5 z-30 sticky top-0 shrink-0">
-          <div className="flex items-center gap-3">
-            <button
-              className="lg:hidden text-slate-400 hover:text-white p-1"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <span className="material-symbols-outlined">menu</span>
-            </button>
-          </div>
-          <div className="flex items-center gap-3 sm:gap-4">
-            <button
-              onClick={() => setIsGuideOpen(true)}
-              className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-cyan-400 transition-colors"
-              title="Hướng dẫn sử dụng"
-            >
-              <span className="material-symbols-outlined text-[20px]">help</span>
-            </button>
-            <div className="flex items-center gap-1.5 glass-card px-3 py-1 rounded-full">
-              <span className="material-symbols-outlined text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>local_fire_department</span>
-              <span className="text-sm font-bold text-white">{studyStats.streak}</span>
-            </div>
-            <div className="relative w-8 h-8 flex items-center justify-center" title={`Tiến độ hôm nay: ${studyStats.progress}%`}>
-              <svg className="w-full h-full -rotate-90" viewBox="0 0 40 40">
-                <circle className="text-white/10" cx="20" cy="20" fill="transparent" r="16" stroke="currentColor" strokeWidth="3"></circle>
-                <circle className="text-secondary drop-shadow-[0_0_8px_rgba(0,227,253,0.5)]" cx="20" cy="20" fill="transparent" r="16" stroke="currentColor" strokeDasharray="100" strokeDashoffset={100 - studyStats.progress} strokeWidth="3" style={{ transition: 'stroke-dashoffset 0.5s ease' }}></circle>
-              </svg>
-              <span className="absolute text-[10px] font-bold">{studyStats.progress}%</span>
-            </div>
-            <div className="h-8 w-8 rounded-full border-2 border-primary-fixed p-0.5 overflow-hidden">
-              {user.photoURL ? (
-                <img alt="Avatar" className="h-full w-full object-cover rounded-full" src={user.photoURL} referrerPolicy="no-referrer" />
-              ) : (
-                <div className="h-full w-full rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white text-xs font-bold">
-                  {(user.displayName || user.email || '?')[0].toUpperCase()}
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
+      <div className="flex-1 flex flex-col min-w-0 h-full relative">
+        {/* Floating Mobile Hamburger Menu Button */}
+        <button
+          className="lg:hidden fixed top-3 left-3 z-40 bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white p-2 rounded-xl border border-white/10 shadow-lg backdrop-blur-md transition-all active:scale-95 flex items-center justify-center"
+          onClick={() => setSidebarOpen(true)}
+          title="Mở menu"
+        >
+          <span className="material-symbols-outlined text-[22px]">menu</span>
+        </button>
 
         <main className="flex-1 min-h-0 p-3 sm:p-5 flex gap-3 sm:gap-5 overflow-y-auto">
           {activeTab === 'home' && <HomeView pomodoroState={pomodoroState} />}

@@ -466,6 +466,19 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [partQuickText, setPartQuickText] = useState('');
   const [partQuickPreviewData, setPartQuickPreviewData] = useState(null);
 
+  const [isFolderPanelCollapsed, setIsFolderPanelCollapsed] = useState(false);
+  const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    const handleCloseDropdown = (e) => {
+      if (!e.target.closest('.create-quiz-dropdown-container')) {
+        setCreateDropdownOpen(false);
+      }
+    };
+    window.addEventListener('click', handleCloseDropdown);
+    return () => window.removeEventListener('click', handleCloseDropdown);
+  }, []);
+
   const handleJumpToPart = (startNum) => {
     if (!activeQuiz || !activeQuiz.questions) return;
     if (testMode === 'starred') setTestMode('all');
@@ -3826,114 +3839,157 @@ ${questionsText}`;
          onMouseUp={(e) => handleTextSelection(e, null, null)}>
       {showGrid ? (
         /* ========== GRID VIEW ========== */
-        <div className="split-view" style={{ flex: 1, minHeight: 0 }}>
+        <div className="split-view" style={{ flex: 1, minHeight: 0, gap: '16px' }}>
           {/* Folders Sidebar */}
-          <div className="list-pane" style={{
-            background: 'rgba(11, 17, 32, 0.4)',
-            borderRight: '1px solid rgba(var(--glass-rgb), 0.08)',
-            padding: '16px',
-            borderRadius: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            <div className="folder-sidebar-header">
-              <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Folder size={18} style={{ color: '#22d3ee' }} />
-                Thư mục
-              </h3>
-              <button
-                onClick={() => setFolderActionModal({ type: 'create' })}
-                style={{
-                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px', borderRadius: '6px', transition: 'all 0.2s'
-                }}
-                onMouseOver={e => e.currentTarget.style.color = '#22d3ee'}
-                onMouseOut={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                title="Tạo thư mục mới"
-              >
-                <FolderPlus size={16} />
-              </button>
-            </div>
-
-            <div className="folder-list">
-              <div 
-                className={`folder-list-item ${selectedFolderId === 'all' ? 'active' : ''}`}
-                onClick={() => requestExitQuiz(() => setSelectedFolderId('all'))}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Folder size={16} />
-                  Tất cả bộ đề
-                </span>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{quizzes.length}</span>
+          {!isFolderPanelCollapsed && (
+            <div className="list-pane" style={{
+              background: 'rgba(11, 17, 32, 0.45)',
+              borderRight: '1px solid rgba(var(--glass-rgb), 0.08)',
+              padding: '16px',
+              borderRadius: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              width: '240px',
+              flexShrink: 0
+            }}>
+              <div className="folder-sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Folder size={18} style={{ color: '#22d3ee' }} />
+                  Thư mục
+                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <button
+                    onClick={() => setFolderActionModal({ type: 'create' })}
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px', borderRadius: '6px', transition: 'all 0.2s'
+                    }}
+                    onMouseOver={e => e.currentTarget.style.color = '#22d3ee'}
+                    onMouseOut={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                    title="Tạo thư mục mới"
+                  >
+                    <FolderPlus size={16} />
+                  </button>
+                  <button
+                    onClick={() => setIsFolderPanelCollapsed(true)}
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px', borderRadius: '6px', transition: 'all 0.2s'
+                    }}
+                    onMouseOver={e => e.currentTarget.style.color = '#fff'}
+                    onMouseOut={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                    title="Thu gọn danh mục"
+                  >
+                    <ChevronDown size={16} style={{ transform: 'rotate(90deg)' }} />
+                  </button>
+                </div>
               </div>
 
-              <div 
-                className={`folder-list-item ${selectedFolderId === 'uncategorized' ? 'active' : ''}`}
-                onClick={() => requestExitQuiz(() => setSelectedFolderId('uncategorized'))}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Folder size={16} style={{ opacity: 0.7 }} />
-                  Chưa phân loại
-                </span>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{uncategorizedCount}</span>
-              </div>
-
-              {folders.length > 0 && <div style={{ height: '1px', background: 'rgba(var(--glass-rgb), 0.08)', margin: '4px 0' }} />}
-
-              {folders.map(folder => (
+              <div className="folder-list">
                 <div 
-                  key={folder.id}
-                  className={`folder-list-item ${selectedFolderId === folder.id ? 'active' : ''}`}
-                  onClick={() => requestExitQuiz(() => setSelectedFolderId(folder.id))}
+                  className={`folder-list-item ${selectedFolderId === 'all' ? 'active' : ''}`}
+                  onClick={() => requestExitQuiz(() => setSelectedFolderId('all'))}
                 >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={folder.name}>
-                    <Folder size={16} style={{ color: selectedFolderId === folder.id ? '#22d3ee' : '#a78bfa' }} />
-                    {folder.name}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Folder size={16} />
+                    Tất cả bộ đề
                   </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{folderCounts[folder.id] || 0}</span>
-                    <div className="folder-item-actions" onClick={e => e.stopPropagation()}>
-                      <button
-                        className="folder-item-action-btn"
-                        onClick={() => setFolderActionModal({ type: 'rename', id: folder.id, name: folder.name })}
-                        title="Đổi tên"
-                      >
-                        <Edit3 size={11} />
-                      </button>
-                      <button
-                        className="folder-item-action-btn"
-                        onClick={() => handleDeleteFolder(folder.id)}
-                        title="Xóa thư mục"
-                      >
-                        <Trash2 size={11} />
-                      </button>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{quizzes.length}</span>
+                </div>
+
+                <div 
+                  className={`folder-list-item ${selectedFolderId === 'uncategorized' ? 'active' : ''}`}
+                  onClick={() => requestExitQuiz(() => setSelectedFolderId('uncategorized'))}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Folder size={16} style={{ opacity: 0.7 }} />
+                    Chưa phân loại
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{uncategorizedCount}</span>
+                </div>
+
+                {folders.length > 0 && <div style={{ height: '1px', background: 'rgba(var(--glass-rgb), 0.08)', margin: '4px 0' }} />}
+
+                {folders.map(folder => (
+                  <div 
+                    key={folder.id}
+                    className={`folder-list-item ${selectedFolderId === folder.id ? 'active' : ''}`}
+                    onClick={() => requestExitQuiz(() => setSelectedFolderId(folder.id))}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={folder.name}>
+                      <Folder size={16} style={{ color: selectedFolderId === folder.id ? '#22d3ee' : '#a78bfa' }} />
+                      {folder.name}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{folderCounts[folder.id] || 0}</span>
+                      <div className="folder-item-actions" onClick={e => e.stopPropagation()}>
+                        <button
+                          className="folder-item-action-btn"
+                          onClick={() => setFolderActionModal({ type: 'rename', id: folder.id, name: folder.name })}
+                          title="Đổi tên"
+                        >
+                          <Edit3 size={11} />
+                        </button>
+                        <button
+                          className="folder-item-action-btn"
+                          onClick={() => handleDeleteFolder(folder.id)}
+                          title="Xóa thư mục"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Main Quiz Area */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%', overflow: 'hidden' }}>
             {/* Grid Header */}
             <div style={{ 
-              padding: '0 0 20px 0', 
+              padding: '0 0 16px 0', 
               display: 'flex', 
-              flexDirection: 'column',
-              gap: '16px',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '12px',
               flexShrink: 0 
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {isFolderPanelCollapsed && (
+                  <button
+                    type="button"
+                    onClick={() => setIsFolderPanelCollapsed(false)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: '10px',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      background: 'rgba(34,211,238,0.12)',
+                      color: '#22d3ee',
+                      border: '1px solid rgba(34,211,238,0.3)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s'
+                    }}
+                    title="Mở bảng thư mục"
+                  >
+                    <Folder size={14} /> Thư mục
+                  </button>
+                )}
                 <div>
                   <h2 style={{ 
-                    fontSize: '24px', 
+                    fontSize: '22px', 
                     fontWeight: 800, 
                     margin: 0,
                     background: modeFilter === 'toeic' ? 'linear-gradient(135deg, #f472b6, #00e3fd)' : 'linear-gradient(135deg, #c59aff, #00e3fd)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text'
+                    backgroundClip: 'text',
+                    lineHeight: '1.3'
                   }}>
                     {modeFilter === 'toeic'
                       ? '🎧 Luyện Thi TOEIC (Listening & Reading)'
@@ -3941,141 +3997,205 @@ ${questionsText}`;
                          selectedFolderId === 'uncategorized' ? 'Bộ đề chưa phân loại' : 
                          (folders.find(f => f.id === selectedFolderId)?.name || 'Bộ đề trắc nghiệm'))}
                   </h2>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '12.5px', color: 'var(--text-muted)' }}>
                     {modeFilter === 'toeic'
-                      ? `${filteredQuizzes.length} đề thi TOEIC · Chọn một đề thi để luyện tập chia đôi màn hình ETS`
-                      : `${filteredQuizzes.length} bộ đề · Chọn một bộ đề để bắt đầu ôn tập`}
+                      ? `${filteredQuizzes.length} đề thi TOEIC · Luyện tập chia đôi màn hình ETS`
+                      : `${filteredQuizzes.length} bộ đề ôn tập`}
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  {renderSyncBadge()}
-                  {isMerging ? (
-                    <>
-                      <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-orange)' }}>Đã chọn {selectedQuizzesToMerge.length} bộ đề</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {renderSyncBadge()}
+
+                {isMerging ? (
+                  <>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-orange)' }}>Đã chọn {selectedQuizzesToMerge.length} bộ đề</span>
+                    <button
+                      onClick={() => { setIsMerging(false); setSelectedQuizzesToMerge([]); }}
+                      style={{
+                        padding: '8px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600,
+                        border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
+                        background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      onClick={handleMergeQuizzes}
+                      disabled={selectedQuizzesToMerge.length < 2}
+                      style={{
+                        padding: '8px 18px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700,
+                        border: 'none', cursor: selectedQuizzesToMerge.length < 2 ? 'not-allowed' : 'pointer',
+                        background: selectedQuizzesToMerge.length < 2 ? 'rgba(var(--glass-rgb),0.1)' : 'linear-gradient(135deg, #10b981, #34d399)',
+                        color: selectedQuizzesToMerge.length < 2 ? 'var(--text-muted)' : 'white',
+                        transition: 'all 0.2s',
+                        boxShadow: selectedQuizzesToMerge.length < 2 ? 'none' : '0 4px 15px rgba(16,185,129,0.3)'
+                      }}
+                    >
+                      Thực hiện gộp
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setIsMerging(true)}
+                      style={{
+                        padding: '8px 13px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 600,
+                        border: '1px solid rgba(var(--glass-rgb),0.12)', cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.05)', color: 'var(--text-main)',
+                        display: 'inline-flex', alignItems: 'center', gap: '5px',
+                        transition: 'all 0.2s'
+                      }}
+                      title="Gộp nhiều bộ đề thành 1"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>library_add</span>
+                      Gộp đề
+                    </button>
+
+                    {/* Consolidated Create Dropdown Menu */}
+                    <div className="create-quiz-dropdown-container" style={{ position: 'relative' }}>
                       <button
-                        onClick={() => { setIsMerging(false); setSelectedQuizzesToMerge([]); }}
-                        style={{
-                          padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
-                          background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
-                          transition: 'all 0.2s'
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCreateDropdownOpen(!createDropdownOpen);
                         }}
-                      >
-                        Hủy
-                      </button>
-                      <button
-                        onClick={handleMergeQuizzes}
-                        disabled={selectedQuizzesToMerge.length < 2}
                         style={{
-                          padding: '9px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
-                          border: 'none', cursor: selectedQuizzesToMerge.length < 2 ? 'not-allowed' : 'pointer',
-                          background: selectedQuizzesToMerge.length < 2 ? 'rgba(var(--glass-rgb),0.1)' : 'linear-gradient(135deg, #10b981, #34d399)',
-                          color: selectedQuizzesToMerge.length < 2 ? 'var(--text-muted)' : 'white',
-                          transition: 'all 0.2s',
-                          boxShadow: selectedQuizzesToMerge.length < 2 ? 'none' : '0 4px 20px rgba(16,185,129,0.3)'
-                        }}
-                      >
-                        Thực hiện gộp
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => setIsMerging(true)}
-                        style={{
-                          padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
-                          background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
-                          display: 'flex', alignItems: 'center', gap: '6px',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>library_add</span>
-                        Gộp đề
-                      </button>
-                      <button
-                        onClick={handleCreateEmptyQuiz}
-                        style={{
-                          padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
-                          background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
-                          display: 'flex', alignItems: 'center', gap: '6px',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        <PlusIcon /> Tạo đề trống
-                      </button>
-                      <button
-                        onClick={handleCreateTOEICFullQuiz}
-                        style={{
-                          padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
-                          border: '1px solid rgba(236,72,153,0.35)', cursor: 'pointer',
-                          background: 'linear-gradient(135deg, rgba(236,72,153,0.22), rgba(124,77,255,0.22))',
+                          padding: '8px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700,
+                          border: '1px solid rgba(236,72,153,0.4)', cursor: 'pointer',
+                          background: 'linear-gradient(135deg, rgba(236,72,153,0.18), rgba(124,77,255,0.18))',
                           color: '#f472b6',
-                          display: 'flex', alignItems: 'center', gap: '6px',
+                          display: 'inline-flex', alignItems: 'center', gap: '6px',
                           transition: 'all 0.2s',
-                          boxShadow: '0 4px 15px rgba(236,72,153,0.2)'
-                        }}
-                        title="Tự động khởi tạo cấu trúc 200 câu TOEIC chuẩn (Part 1 - Part 7)"
-                      >
-                        <Headphones size={15} /> Khởi tạo đề TOEIC (200 câu)
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsImporting(true);
-                          setImportTargetQuizId(null);
-                          setIsCreatingAiQuiz(false);
-                          setActiveQuizId(null);
-                          if (modeFilter === 'toeic') setImportMode('listening');
-                        }}
-                        style={{
-                          padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
-                          background: modeFilter === 'toeic' ? 'rgba(236,72,153,0.22)' : 'rgba(var(--glass-rgb),0.04)',
-                          color: modeFilter === 'toeic' ? '#f472b6' : 'var(--text-main)',
-                          display: 'flex', alignItems: 'center', gap: '6px',
-                          transition: 'all 0.2s'
+                          boxShadow: '0 2px 12px rgba(236,72,153,0.2)'
                         }}
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>{modeFilter === 'toeic' ? 'headphones' : 'description'}</span>
-                        {modeFilter === 'toeic' ? 'Nhập đề TOEIC' : 'Nhập từ Word'}
+                        <Plus size={15} /> Thêm đề mới <ChevronDown size={14} style={{ transform: createDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                       </button>
-                      <button
-                        onClick={() => jsonFileInputRef.current?.click()}
-                        style={{
-                          padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-                          border: '1px solid rgba(var(--glass-rgb),0.1)', cursor: 'pointer',
-                          background: 'rgba(var(--glass-rgb),0.04)', color: 'var(--text-main)',
-                          display: 'flex', alignItems: 'center', gap: '6px',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>file_upload</span>
-                        Nhập file JSON
-                      </button>
-                      <input 
-                        ref={jsonFileInputRef} 
-                        type="file" 
-                        accept="application/json" 
-                        onChange={handleJsonImport} 
-                        style={{ display: 'none' }} 
-                      />
-                      <button
-                        onClick={() => { setIsCreatingAiQuiz(true); setIsImporting(false); setActiveQuizId(null); }}
-                        style={{
-                          padding: '9px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
-                          border: 'none', cursor: 'pointer',
-                          background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white',
-                          display: 'flex', alignItems: 'center', gap: '6px',
-                          transition: 'all 0.2s',
-                          boxShadow: '0 4px 20px rgba(124,77,255,0.35)'
-                        }}
-                      >
-                        <Zap size={15} fill="white" /> Tạo đề bằng AI
-                      </button>
-                    </>
-                  )}
-                </div>
+
+                      {createDropdownOpen && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          right: 0,
+                          marginTop: '6px',
+                          width: '230px',
+                          background: 'rgba(15, 23, 42, 0.95)',
+                          backdropFilter: 'blur(16px)',
+                          border: '1px solid rgba(236,72,153,0.3)',
+                          borderRadius: '12px',
+                          padding: '6px',
+                          boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                          zIndex: 200,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '2px'
+                        }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleCreateTOEICFullQuiz();
+                              setCreateDropdownOpen(false);
+                            }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px',
+                              borderRadius: '8px', border: 'none', background: 'transparent',
+                              color: '#f472b6', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer',
+                              textAlign: 'left', transition: 'background 0.15s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(236,72,153,0.15)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <Headphones size={15} /> Khởi tạo TOEIC (200 câu)
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleCreateEmptyQuiz();
+                              setCreateDropdownOpen(false);
+                            }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px',
+                              borderRadius: '8px', border: 'none', background: 'transparent',
+                              color: '#e2e8f0', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
+                              textAlign: 'left', transition: 'background 0.15s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <Plus size={15} /> Tạo đề trống mới
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsImporting(true);
+                              setImportTargetQuizId(null);
+                              setIsCreatingAiQuiz(false);
+                              setActiveQuizId(null);
+                              if (modeFilter === 'toeic') setImportMode('listening');
+                              setCreateDropdownOpen(false);
+                            }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px',
+                              borderRadius: '8px', border: 'none', background: 'transparent',
+                              color: '#e2e8f0', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
+                              textAlign: 'left', transition: 'background 0.15s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <FileText size={15} color="#8eefff" /> Nhập từ Word / TOEIC
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              jsonFileInputRef.current?.click();
+                              setCreateDropdownOpen(false);
+                            }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px',
+                              borderRadius: '8px', border: 'none', background: 'transparent',
+                              color: '#e2e8f0', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
+                              textAlign: 'left', transition: 'background 0.15s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#34d399' }}>file_upload</span> Nhập file JSON
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <input 
+                      ref={jsonFileInputRef} 
+                      type="file" 
+                      accept="application/json" 
+                      onChange={handleJsonImport} 
+                      style={{ display: 'none' }} 
+                    />
+
+                    {/* Primary Highlight Action Button */}
+                    <button
+                      onClick={() => { setIsCreatingAiQuiz(true); setIsImporting(false); setActiveQuizId(null); }}
+                      style={{
+                        padding: '8px 16px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700,
+                        border: 'none', cursor: 'pointer',
+                        background: 'linear-gradient(135deg, #7c4dff, #536dfe)', color: 'white',
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 4px 16px rgba(124,77,255,0.35)'
+                      }}
+                    >
+                      <Zap size={15} fill="white" /> Tạo đề bằng AI
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
