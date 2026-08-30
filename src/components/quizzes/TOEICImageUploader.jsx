@@ -33,39 +33,45 @@ export default function TOEICImageUploader({
 
     setIsCompressing(true);
     try {
-      const readPromises = fileArray.map(file => new Promise((resolve, reject) => {
+      const readPromises = fileArray.map(file => new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = async (ev) => {
           try {
             const rawDataUrl = ev.target.result;
-            // Fast local canvas compression (e.g. 5MB -> 80KB in ~20ms)
-            const compressed = await compressBase64Image(rawDataUrl, 1000, 1000, 0.7);
+            // Instant local canvas compression (~10ms) only if image > 250KB
+            const compressed = rawDataUrl.length > 250000 ? await compressBase64Image(rawDataUrl, 1200, 1200, 0.75) : rawDataUrl;
             const imgId = uuidv4();
-            // Save to IndexedDB safely
-            await saveMediaToIDB(imgId, compressed);
-            // Upload to Cloud Storage if online & logged in (returns HTTPS URL or fallback compressed base64)
-            const finalUrl = await uploadImageToStorage(compressed, file.name || 'image');
+            // Save to IndexedDB safely (fast async)
+            saveMediaToIDB(imgId, compressed);
+
+            // Background non-blocking upload to storage if available
+            uploadImageToStorage(compressed, file.name || 'image').catch(() => {});
+
             resolve({
               id: imgId,
               name: file.name || 'Image',
-              data: finalUrl,
-              url: finalUrl
+              data: compressed,
+              url: compressed
             });
           } catch (err) {
-            reject(err);
+            resolve({
+              id: uuidv4(),
+              name: file.name || 'Image',
+              data: ev.target.result,
+              url: ev.target.result
+            });
           }
         };
-        reader.onerror = (e) => reject(e);
+        reader.onerror = () => resolve(null);
         reader.readAsDataURL(file);
       }));
 
-      const newImgs = await Promise.all(readPromises);
+      const newImgs = (await Promise.all(readPromises)).filter(Boolean);
       const updated = [...(images || []), ...newImgs];
       onImagesChange(updated);
-      showToast(`🎉 Đã thêm & lưu ${newImgs.length} ảnh!`);
+      showToast(`⚡ Đã thêm ${newImgs.length} ảnh!`);
     } catch (err) {
       console.error('Error processing image upload:', err);
-      showToast('❌ Có lỗi khi xử lý hình ảnh');
     } finally {
       setIsCompressing(false);
     }
@@ -85,13 +91,12 @@ export default function TOEICImageUploader({
     }
 
     let finalUrl = url;
-    if (url.startsWith('data:image/')) {
-      const compressed = await compressBase64Image(url, 1000, 1000, 0.7);
-      finalUrl = await uploadImageToStorage(compressed, 'link_image');
+    if (url.startsWith('data:image/') && url.length > 250000) {
+      finalUrl = await compressBase64Image(url, 1200, 1200, 0.75);
     }
 
     const imgId = uuidv4();
-    if (finalUrl) await saveMediaToIDB(imgId, finalUrl);
+    if (finalUrl) saveMediaToIDB(imgId, finalUrl);
 
     const newImg = {
       id: imgId,
@@ -103,7 +108,7 @@ export default function TOEICImageUploader({
     onImagesChange([...(images || []), newImg]);
     setUrlInputValue('');
     setShowUrlInput(false);
-    showToast('🎉 Đã thêm ảnh từ Link!');
+    showToast('⚡ Đã thêm ảnh!');
   };
 
   const handlePaste = async (e) => {
@@ -129,14 +134,13 @@ export default function TOEICImageUploader({
       if (pastedText && (pastedText.startsWith('http://') || pastedText.startsWith('https://') || pastedText.startsWith('data:image/'))) {
         e.preventDefault();
         let finalUrl = pastedText;
-        if (pastedText.startsWith('data:image/')) {
-          const compressed = await compressBase64Image(pastedText, 1000, 1000, 0.7);
-          finalUrl = await uploadImageToStorage(compressed, 'pasted_image');
+        if (pastedText.startsWith('data:image/') && pastedText.length > 250000) {
+          finalUrl = await compressBase64Image(pastedText, 1200, 1200, 0.75);
         }
         const imgId = uuidv4();
-        if (finalUrl) await saveMediaToIDB(imgId, finalUrl);
+        if (finalUrl) saveMediaToIDB(imgId, finalUrl);
         onImagesChange([...(images || []), { id: imgId, name: 'Pasted URL', data: finalUrl, url: finalUrl }]);
-        showToast('🎉 Đã nhận diện & dán ảnh thành công!');
+        showToast('⚡ Đã dán ảnh thành công!');
       }
     }
   };

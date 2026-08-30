@@ -10,14 +10,13 @@ import { compressBase64Image } from './imageCompressor';
  */
 export async function uploadImageToStorage(dataUrl, filename = 'image') {
   if (!dataUrl || typeof dataUrl !== 'string') return dataUrl;
-
-  // Always compress the image first to ensure ultra-fast upload & minimal size
-  const compressedDataUrl = await compressBase64Image(dataUrl);
+  if (dataUrl.startsWith('http://') || dataUrl.startsWith('https://') || dataUrl === '[STORED_IN_INDEXEDDB]') {
+    return dataUrl;
+  }
 
   const user = auth.currentUser;
-  // If user is not logged in or storage is not initialized, return compressed data URL
   if (!user || !storage) {
-    return compressedDataUrl;
+    return dataUrl;
   }
 
   try {
@@ -25,12 +24,14 @@ export async function uploadImageToStorage(dataUrl, filename = 'image') {
     const storagePath = `users/${user.uid}/quiz_images/${cleanFilename}`;
     const storageRef = ref(storage, storagePath);
 
-    // Upload base64 data URL to Firebase Storage
-    await uploadString(storageRef, compressedDataUrl, 'data_url');
-    const downloadUrl = await getDownloadURL(storageRef);
+    // Timeout after 2.5 seconds if network or CORS hangs so UI never waits
+    const uploadPromise = uploadString(storageRef, dataUrl, 'data_url').then(() => getDownloadURL(storageRef));
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Storage timeout')), 2500));
+
+    const downloadUrl = await Promise.race([uploadPromise, timeoutPromise]);
     return downloadUrl;
   } catch (err) {
-    console.warn('Firebase Storage upload warning (falling back to compressed base64):', err);
-    return compressedDataUrl;
+    console.warn('Firebase Storage upload skipped (using local storage):', err?.message || err);
+    return dataUrl;
   }
 }
