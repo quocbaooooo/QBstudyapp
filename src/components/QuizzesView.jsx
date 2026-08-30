@@ -22,6 +22,7 @@ import ResizableSplitPanel from './quizzes/ResizableSplitPanel';
 import TOEICListeningBlock from './quizzes/TOEICListeningBlock';
 import TOEICReadingBlock from './quizzes/TOEICReadingBlock';
 import { compressBase64Image } from '../utils/imageCompressor';
+import { uploadImageToStorage } from '../utils/cloudStorage';
 import { saveMediaToIDB } from '../utils/audioStorage';
 
 const DEMO_QUIZ = {
@@ -3600,11 +3601,12 @@ ${optionsText}`;
             const compressed = await compressBase64Image(rawDataUrl, 1000, 1000, 0.7);
             const imgId = uuidv4();
             await saveMediaToIDB(imgId, compressed);
+            const finalUrl = await uploadImageToStorage(compressed, file.name || 'image');
             resolve({
               id: imgId,
               name: file.name || 'Image',
-              data: compressed,
-              url: compressed
+              data: finalUrl,
+              url: finalUrl
             });
           } catch (err) {
             resolve({

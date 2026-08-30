@@ -3,6 +3,7 @@ import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Plus, Check, Clip
 import { v4 as uuidv4 } from 'uuid';
 import { compressBase64Image } from '../../utils/imageCompressor';
 import { saveMediaToIDB } from '../../utils/audioStorage';
+import { uploadImageToStorage } from '../../utils/cloudStorage';
 import SmartImage from './SmartImage';
 
 export default function TOEICImageUploader({
@@ -42,11 +43,13 @@ export default function TOEICImageUploader({
             const imgId = uuidv4();
             // Save to IndexedDB safely
             await saveMediaToIDB(imgId, compressed);
+            // Upload to Cloud Storage if online & logged in (returns HTTPS URL or fallback compressed base64)
+            const finalUrl = await uploadImageToStorage(compressed, file.name || 'image');
             resolve({
               id: imgId,
               name: file.name || 'Image',
-              data: compressed,
-              url: compressed
+              data: finalUrl,
+              url: finalUrl
             });
           } catch (err) {
             reject(err);
@@ -83,7 +86,8 @@ export default function TOEICImageUploader({
 
     let finalUrl = url;
     if (url.startsWith('data:image/')) {
-      finalUrl = await compressBase64Image(url, 1000, 1000, 0.7);
+      const compressed = await compressBase64Image(url, 1000, 1000, 0.7);
+      finalUrl = await uploadImageToStorage(compressed, 'link_image');
     }
 
     const imgId = uuidv4();
@@ -126,7 +130,8 @@ export default function TOEICImageUploader({
         e.preventDefault();
         let finalUrl = pastedText;
         if (pastedText.startsWith('data:image/')) {
-          finalUrl = await compressBase64Image(pastedText, 1000, 1000, 0.7);
+          const compressed = await compressBase64Image(pastedText, 1000, 1000, 0.7);
+          finalUrl = await uploadImageToStorage(compressed, 'pasted_image');
         }
         const imgId = uuidv4();
         if (finalUrl) await saveMediaToIDB(imgId, finalUrl);
