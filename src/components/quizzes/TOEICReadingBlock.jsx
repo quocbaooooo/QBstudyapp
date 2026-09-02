@@ -598,29 +598,27 @@ export default function TOEICReadingBlock({
                   <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#00e3fd', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>🌐</span> <span>🇻🇳</span> BẢN DỊCH TIẾNG VIỆT (TRANSLATION):
                   </div>
-                  {!isTesting && (
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingTranslation(!isEditingTranslation)}
-                      style={{
-                        background: isEditingTranslation ? 'rgba(0,227,253,0.3)' : 'rgba(0,227,253,0.12)',
-                        border: '1px solid rgba(0,227,253,0.35)',
-                        color: '#8eefff',
-                        borderRadius: '6px',
-                        padding: '3px 8px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                      title="Bấm để chỉnh sửa bản dịch tiếng Việt"
-                    >
-                      {isEditingTranslation ? <CheckCircle size={12} /> : <Edit3 size={12} />}
-                      {isEditingTranslation ? 'Xong' : 'Sửa Bản Dịch'}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingTranslation(!isEditingTranslation)}
+                    style={{
+                      background: isEditingTranslation ? 'rgba(0,227,253,0.3)' : 'rgba(0,227,253,0.12)',
+                      border: '1px solid rgba(0,227,253,0.35)',
+                      color: '#8eefff',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Bấm để chỉnh sửa bản dịch tiếng Việt"
+                  >
+                    {isEditingTranslation ? <CheckCircle size={12} /> : <Edit3 size={12} />}
+                    {isEditingTranslation ? 'Xong' : 'Sửa Bản Dịch'}
+                  </button>
                 </div>
 
                 {!isTesting || isEditingTranslation ? (

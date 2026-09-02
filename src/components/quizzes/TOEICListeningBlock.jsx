@@ -82,6 +82,8 @@ export default function TOEICListeningBlock({
 }) {
   const [localShowNotes, setLocalShowNotes] = useState({});
   const [editingNotesMap, setEditingNotesMap] = useState({});
+  const [editingTranscriptMap, setEditingTranscriptMap] = useState({});
+  const [editingTranslationMap, setEditingTranslationMap] = useState({});
   const [isFullHeight, setIsFullHeight] = useState(false);
   const activeShowNotesMap = showNotesMap || localShowNotes;
   const activeSetShowNotesMap = setShowNotesMap || setLocalShowNotes;
@@ -151,37 +153,33 @@ export default function TOEICListeningBlock({
             )}
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
-              {listeningObj.transcript && (
-                <button
-                  type="button"
-                  onClick={() => setShowTranscriptMap(prev => ({ ...prev, [listeningObj.id]: !prev[listeningObj.id] }))}
-                  style={{
-                    padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                    background: showTranscriptMap[listeningObj.id] ? 'rgba(236,72,153,0.3)' : 'rgba(255,255,255,0.06)',
-                    color: showTranscriptMap[listeningObj.id] ? '#f472b6' : 'var(--text-muted)',
-                    border: '1px solid rgba(236,72,153,0.3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px'
-                  }}
-                >
-                  {showTranscriptMap[listeningObj.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                  Xem transcript
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowTranscriptMap(prev => ({ ...prev, [listeningObj.id]: !prev[listeningObj.id] }))}
+                style={{
+                  padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                  background: showTranscriptMap[listeningObj.id] ? 'rgba(236,72,153,0.3)' : 'rgba(255,255,255,0.06)',
+                  color: showTranscriptMap[listeningObj.id] ? '#f472b6' : 'var(--text-muted)',
+                  border: '1px solid rgba(236,72,153,0.3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                {showTranscriptMap[listeningObj.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                Xem transcript
+              </button>
 
-              {(listeningObj.transcriptTranslation || listeningObj.transcript) && (
-                <button
-                  type="button"
-                  onClick={() => setShowTranslationMap(prev => ({ ...prev, [listeningObj.id]: !prev[listeningObj.id] }))}
-                  style={{
-                    padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                    background: showTranslationMap[listeningObj.id] ? 'rgba(0,227,253,0.25)' : 'rgba(255,255,255,0.06)',
-                    color: showTranslationMap[listeningObj.id] ? '#8eefff' : 'var(--text-muted)',
-                    border: '1px solid rgba(0,227,253,0.3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px'
-                  }}
-                >
-                  {showTranslationMap[listeningObj.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                  Xem bản dịch
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowTranslationMap(prev => ({ ...prev, [listeningObj.id]: !prev[listeningObj.id] }))}
+                style={{
+                  padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                  background: showTranslationMap[listeningObj.id] ? 'rgba(0,227,253,0.25)' : 'rgba(255,255,255,0.06)',
+                  color: showTranslationMap[listeningObj.id] ? '#8eefff' : 'var(--text-muted)',
+                  border: '1px solid rgba(0,227,253,0.3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                {showTranslationMap[listeningObj.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                Xem bản dịch
+              </button>
 
               <button
                 type="button"
@@ -198,17 +196,121 @@ export default function TOEICListeningBlock({
               </button>
             </div>
 
-            {showTranscriptMap[listeningObj.id] && listeningObj.transcript && (
-              <div style={{ marginTop: '6px', padding: '12px', borderRadius: '10px', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(236,72,153,0.3)', fontSize: '13px', lineHeight: '1.65', whiteSpace: 'pre-wrap', color: '#fff' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#f472b6', marginBottom: '6px', textTransform: 'uppercase' }}>Transcript tiếng Anh:</div>
-                {listeningObj.transcript}
+            {showTranscriptMap[listeningObj.id] && (
+              <div style={{ marginTop: '6px', padding: '12px', borderRadius: '10px', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(236,72,153,0.3)', fontSize: '13px', lineHeight: '1.65', color: '#fff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#f472b6', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    📝 TRANSCRIPT TIẾNG ANH:
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingTranscriptMap(prev => ({ ...prev, [listeningObj.id]: !prev[listeningObj.id] }))}
+                    style={{
+                      background: editingTranscriptMap[listeningObj.id] ? 'rgba(236,72,153,0.3)' : 'rgba(236,72,153,0.12)',
+                      border: '1px solid rgba(236,72,153,0.35)',
+                      color: '#f472b6',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Bấm để chỉnh sửa transcript tiếng Anh"
+                  >
+                    {editingTranscriptMap[listeningObj.id] ? <CheckCircle size={12} /> : <Edit3 size={12} />}
+                    {editingTranscriptMap[listeningObj.id] ? 'Xong' : 'Sửa Transcript'}
+                  </button>
+                </div>
+
+                {editingTranscriptMap[listeningObj.id] ? (
+                  <AutoResizeTextarea
+                    value={listeningObj.transcript || ''}
+                    onChange={e => handleUpdateListeningPassageProp(listeningObj.id, 'transcript', e.target.value)}
+                    placeholder="Nhập kịch bản transcript tiếng Anh bài nghe ở đây..."
+                    style={{
+                      width: '100%',
+                      border: '1px solid rgba(236,72,153,0.35)',
+                      color: '#fff',
+                      background: 'rgba(0,0,0,0.35)',
+                      borderRadius: '8px',
+                      padding: '8px',
+                      fontSize: '13px',
+                      lineHeight: '1.6'
+                    }}
+                  />
+                ) : (
+                  <div style={{ whiteSpace: 'pre-wrap' }}>
+                    {listeningObj.transcript ? (
+                      listeningObj.transcript
+                    ) : (
+                      <span style={{ color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', fontSize: '12px' }}>
+                        Chưa có kịch bản transcript cho bài nghe này. (Bấm "Sửa Transcript" để thêm)
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             {showTranslationMap[listeningObj.id] && (
-              <div style={{ marginTop: '6px', padding: '12px', borderRadius: '10px', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(0,227,253,0.3)', fontSize: '13px', lineHeight: '1.65', whiteSpace: 'pre-wrap', color: '#8eefff' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#00e3fd', marginBottom: '6px', textTransform: 'uppercase' }}>Bản dịch tiếng Việt:</div>
-                {listeningObj.transcriptTranslation || (listeningObj.transcript ? 'Chưa có bản dịch sẵn' : '')}
+              <div style={{ marginTop: '6px', padding: '12px', borderRadius: '10px', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(0,227,253,0.3)', fontSize: '13px', lineHeight: '1.65', color: '#8eefff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#00e3fd', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    🌐 🇻🇳 BẢN DỊCH TIẾNG VIỆT:
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingTranslationMap(prev => ({ ...prev, [listeningObj.id]: !prev[listeningObj.id] }))}
+                    style={{
+                      background: editingTranslationMap[listeningObj.id] ? 'rgba(0,227,253,0.3)' : 'rgba(0,227,253,0.12)',
+                      border: '1px solid rgba(0,227,253,0.35)',
+                      color: '#8eefff',
+                      borderRadius: '6px',
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Bấm để chỉnh sửa bản dịch tiếng Việt"
+                  >
+                    {editingTranslationMap[listeningObj.id] ? <CheckCircle size={12} /> : <Edit3 size={12} />}
+                    {editingTranslationMap[listeningObj.id] ? 'Xong' : 'Sửa Bản Dịch'}
+                  </button>
+                </div>
+
+                {editingTranslationMap[listeningObj.id] ? (
+                  <AutoResizeTextarea
+                    value={listeningObj.transcriptTranslation || ''}
+                    onChange={e => handleUpdateListeningPassageProp(listeningObj.id, 'transcriptTranslation', e.target.value)}
+                    placeholder="Nhập bản dịch tiếng Việt ở đây..."
+                    style={{
+                      width: '100%',
+                      border: '1px solid rgba(0,227,253,0.35)',
+                      color: '#8eefff',
+                      background: 'rgba(0,0,0,0.35)',
+                      borderRadius: '8px',
+                      padding: '8px',
+                      fontSize: '13px',
+                      lineHeight: '1.6'
+                    }}
+                  />
+                ) : (
+                  <div style={{ whiteSpace: 'pre-wrap' }}>
+                    {listeningObj.transcriptTranslation ? (
+                      listeningObj.transcriptTranslation
+                    ) : (
+                      <span style={{ color: 'rgba(142,239,255,0.5)', fontStyle: 'italic', fontSize: '12px' }}>
+                        Chưa có bản dịch tiếng Việt cho bài nghe này. (Bấm "Sửa Bản Dịch" để thêm)
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
