@@ -478,6 +478,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   // Question Grid Palette Modal State
   const [showQuestionGridModal, setShowQuestionGridModal] = useState(false);
   const [gridFilter, setGridFilter] = useState('all'); // 'all' | 'answered' | 'unanswered' | 'starred'
+  const [showCheatSheetModal, setShowCheatSheetModal] = useState(false);
 
   useEffect(() => {
     let interval = null;
@@ -1337,6 +1338,23 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     setIsTakeawaysCollapsed(false);
     setTakeawayAddedSuccess(true);
     setTimeout(() => setTakeawayAddedSuccess(false), 2200);
+  };
+
+  const handleHeaderCheatSheetClick = () => {
+    const currentSel = window.getSelection()?.toString()?.trim();
+    const textFromPopup = translationPopup?.text?.trim();
+    const rawSel = textFromPopup || currentSel;
+
+    if (rawSel) {
+      const textToAdd = (translationPopup?.text && translatedText)
+        ? `${translationPopup.text}: ${translatedText}`
+        : rawSel;
+
+      handleAddToTakeaways(textToAdd);
+      setShowCheatSheetModal(true);
+    } else {
+      setShowCheatSheetModal(true);
+    }
   };
 
   const activeQuiz = quizzes.find(q => q.id === activeQuizId);
@@ -5375,6 +5393,31 @@ ${questionsText}`;
                         <FileText size={15} />
                       </button>
 
+                      {/* Cheat Sheet Modal & Selection Quick Add Toggle */}
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={handleHeaderCheatSheetClick}
+                        style={{
+                          background: takeawayAddedSuccess ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.18)',
+                          border: takeawayAddedSuccess ? '1px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(245, 158, 11, 0.45)',
+                          color: takeawayAddedSuccess ? '#34d399' : '#fbbf24',
+                          padding: '6px 11px',
+                          borderRadius: '8px',
+                          fontSize: '12.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.2s ease'
+                        }}
+                        title="Bôi đen đoạn chữ và bấm nút này để tự động thêm vào Cheat Sheet hoặc bấm để xem bảng ghi chú"
+                      >
+                        {takeawayAddedSuccess ? <CheckCircle size={15} /> : <Lightbulb size={15} />}
+                        <span>{takeawayAddedSuccess ? 'Đã thêm!' : 'Cheat Sheet'}</span>
+                      </button>
+
                       {/* Edit / Test Mode Toggle */}
                       <button
                         type="button"
@@ -7594,6 +7637,212 @@ ${questionsText}`;
               >
                 🔄 Đặt lại
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CHEAT SHEET MODAL */}
+      {showCheatSheetModal && activeQuiz && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(6, 14, 32, 0.85)', backdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%', maxWidth: '850px', maxHeight: '90vh',
+            display: 'flex', flexDirection: 'column',
+            border: '1px solid rgba(245, 158, 11, 0.4)', borderRadius: '20px',
+            padding: '24px', background: '#0b1329', boxShadow: '0 20px 50px rgba(0,0,0,0.6)'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid rgba(255,152,0,0.2)', paddingBottom: '14px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Lightbulb color="#fbbf24" size={20} /> 💡 KIẾN THỨC CỐT LÕI (CHEAT SHEET)
+                </h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                  Tổng hợp mẹo, ngữ pháp & từ vựng ghi chú cho bộ đề: <strong>{activeQuiz.title}</strong>
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleCopyAllTakeaways}
+                  style={{
+                    fontSize: '12px', padding: '6px 12px', borderRadius: '8px',
+                    background: copiedAllNotes ? 'rgba(16,185,129,0.2)' : 'rgba(255,152,0,0.15)',
+                    color: copiedAllNotes ? '#34d399' : '#fbbf24',
+                    border: copiedAllNotes ? '1px solid rgba(16,185,129,0.4)' : '1px solid rgba(255,152,0,0.3)',
+                    display: 'flex', gap: '5px', alignItems: 'center', cursor: 'pointer', fontWeight: 700
+                  }}
+                  title="Sao chép toàn bộ ghi chú Cheat Sheet"
+                >
+                  {copiedAllNotes ? <><CheckCircle size={14} /> Đã sao chép!</> : <><Copy size={14} /> Sao chép tất cả</>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCheatSheetModal(false)}
+                  style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Input box to add new quick note */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'flex-start' }}>
+              <textarea
+                value={quickNoteInput}
+                onChange={(e) => setQuickNoteInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && quickNoteInput.trim()) {
+                    e.preventDefault();
+                    handleAddToTakeaways(quickNoteInput);
+                    setQuickNoteInput('');
+                  }
+                }}
+                placeholder="Thêm ghi chú nhanh vào Cheat Sheet (Nhấn Enter để xuống dòng, Ctrl+Enter để thêm)..."
+                rows={1}
+                style={{
+                  flex: 1, background: 'rgba(0,0,0,0.4)', color: '#fff',
+                  border: '1px solid rgba(255,152,0,0.3)', borderRadius: '10px',
+                  padding: '10px 14px', fontSize: '13px', outline: 'none', resize: 'vertical',
+                  fontFamily: 'inherit', minHeight: '42px', fieldSizing: 'content'
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (quickNoteInput.trim()) {
+                    handleAddToTakeaways(quickNoteInput);
+                    setQuickNoteInput('');
+                  }
+                }}
+                style={{
+                  padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
+                  background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000',
+                  border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px',
+                  boxShadow: '0 2px 10px rgba(245,158,11,0.3)', height: '42px', flexShrink: 0
+                }}
+              >
+                <Plus size={15} /> Thêm
+              </button>
+            </div>
+
+            {/* Content list / grid */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '6px' }}>
+              {(() => {
+                const blocks = parseTakeawaysToBlocks(activeQuiz.keyTakeaways || '');
+                if (blocks.length === 0) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '36px 16px', color: '#94a3b8', fontSize: '14px', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', border: '1px dashed rgba(255,152,0,0.3)' }}>
+                      💡 Chưa có block ghi chú Cheat Sheet nào.<br />
+                      Hãy gõ vào ô phía trên hoặc bôi đen từ vựng trong bài để thêm vào Cheat Sheet!
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
+                    {blocks.map((block, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(255,152,0,0.08), rgba(251,191,36,0.03))',
+                          border: editingBlockIdx === idx ? '1px solid #fbbf24' : '1px solid rgba(255,152,0,0.25)',
+                          borderRadius: '12px',
+                          padding: '12px 14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          boxShadow: '0 4px 14px rgba(0,0,0,0.2)',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        {editingBlockIdx === idx ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#fbbf24', textTransform: 'uppercase' }}>✏️ Sửa nội dung Block:</div>
+                            <textarea
+                              value={editingBlockText}
+                              onChange={(e) => setEditingBlockText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                  e.preventDefault();
+                                  handleUpdateTakeawayBlock(idx, editingBlockText);
+                                } else if (e.key === 'Escape') {
+                                  setEditingBlockIdx(null);
+                                }
+                              }}
+                              rows={3}
+                              style={{
+                                width: '100%', background: 'rgba(0,0,0,0.4)', color: '#fff',
+                                border: '1px solid #fbbf24', borderRadius: '8px', padding: '8px',
+                                fontSize: '13px', outline: 'none', resize: 'vertical'
+                              }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                              <button type="button" onClick={() => setEditingBlockIdx(null)} style={{ padding: '4px 10px', fontSize: '12px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Hủy</button>
+                              <button type="button" onClick={() => handleUpdateTakeawayBlock(idx, editingBlockText)} style={{ padding: '4px 10px', fontSize: '12px', background: '#fbbf24', color: '#000', fontWeight: 700, border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Lưu</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                              <span style={{ color: '#fbbf24', fontSize: '14px', marginTop: '2px', flexShrink: 0 }}>💡</span>
+                              <div
+                                style={{ flex: 1, fontSize: '13.5px', lineHeight: '1.55', color: '#e2e8f0', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
+                                dangerouslySetInnerHTML={{ __html: block.rawHtml }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleSpeak(block.text)}
+                                style={{ background: 'none', border: 'none', color: '#00e3fd', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                title="Phát âm"
+                              >
+                                <Volume2 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingBlockIdx(idx);
+                                  setEditingBlockText(block.text);
+                                }}
+                                style={{ background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                title="Sửa block này"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(block.text);
+                                  setCopiedBlockIdx(idx);
+                                  setTimeout(() => setCopiedBlockIdx(null), 1500);
+                                }}
+                                style={{ background: 'none', border: 'none', color: copiedBlockIdx === idx ? '#34d399' : '#94a3b8', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                title="Sao chép"
+                              >
+                                {copiedBlockIdx === idx ? <CheckCircle size={13} /> : <Copy size={13} />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTakeawayBlock(idx)}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '3px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                                title="Xóa block này"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
