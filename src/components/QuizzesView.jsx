@@ -73,6 +73,7 @@ const DEMO_QUIZ = {
 };
 
 export default function QuizzesView({ modeFilter = 'all' }) {
+  const isToeicMode = modeFilter === 'toeic';
   const { user } = useAuth();
   const [quizzes, setQuizzes, quizSyncState, saveQuizzesToCloud, hasUnsavedQuizChanges] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
   const [folders, setFolders] = useFirestore('quiz_folders', 'study_quiz_folders', []);
@@ -462,7 +463,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [isShuffled, setIsShuffled] = useState(false);
   const [shuffledIds, setShuffledIds] = useState(null);
   const [shuffledOptions, setShuffledOptions] = useState(null);
-  const [activePartId, setActivePartId] = useState('part1');
+  const [activePartId, setActivePartId] = useState(isToeicMode ? 'part1' : 'all');
   const [activeBlockIndex, setActiveBlockIndex] = useState(0);
   const [showPartQuickInput, setShowPartQuickInput] = useState(true);
   const [partQuickText, setPartQuickText] = useState('');
@@ -566,7 +567,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     else if (startNum >= 32) partId = 'part3';
     else if (startNum >= 7) partId = 'part2';
     
-    setActivePartId(partId);
+    setActivePartId(isToeicMode ? partId : 'all');
 
     setTimeout(() => {
       let el = document.querySelector(`[data-blank-number="${startNum}"]`);
@@ -627,7 +628,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       rawQuestions = rawQuestions.filter(q => q.isStarred);
     }
 
-    const questionsForDisplay = (activePartId === 'all' || !activePartId)
+    const questionsForDisplay = (!isToeicMode || activePartId === 'all' || !activePartId)
       ? rawQuestions
       : rawQuestions.filter(q => {
           const num = Number(q.blankNumber);
@@ -4288,6 +4289,7 @@ ${questionsText}`;
                           flexDirection: 'column',
                           gap: '2px'
                         }}>
+                          {isToeicMode && (
                           <button
                             type="button"
                             onClick={() => {
@@ -4305,6 +4307,7 @@ ${questionsText}`;
                           >
                             <Headphones size={15} /> Khởi tạo TOEIC (200 câu)
                           </button>
+                          )}
 
                           <button
                             type="button"
@@ -5237,12 +5240,12 @@ ${questionsText}`;
 
                 const currentPartInfo = toeicParts.find(p => p.id === activePartId) || toeicParts[0];
 
-                let rawQuestions = activeQuiz?.questions || [];
+                let rawQuestions = questionsToRender;
                 if (isTesting && testMode === 'starred') {
                   rawQuestions = rawQuestions.filter(q => q.isStarred);
                 }
 
-                const questionsForDisplay = (activePartId === 'all' || !activePartId)
+                const questionsForDisplay = (!isToeicMode || activePartId === 'all' || !activePartId)
                   ? rawQuestions
                   : rawQuestions.filter(q => {
                       const num = Number(q.blankNumber);
@@ -5336,7 +5339,7 @@ ${questionsText}`;
                     </div>
 
                     {/* Center Parts Filter Pills */}
-                    <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', scrollbarWidth: 'none', alignItems: 'center', flex: 1, justifyContent: 'center' }}>
+                    {isToeicMode && <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', scrollbarWidth: 'none', alignItems: 'center', flex: 1, justifyContent: 'center' }}>
                       {toeicParts.map(p => {
                         const isActive = activePartId === p.id;
                         return (
@@ -5363,7 +5366,7 @@ ${questionsText}`;
                           </button>
                         );
                       })}
-                    </div>
+                    </div>}
 
                     {/* Right: Progress, Grid Palette & Mode Toggle */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
@@ -5388,7 +5391,7 @@ ${questionsText}`;
                           alignItems: 'center',
                           gap: '5px'
                         }}
-                        title="Mở lưới danh sách 200 câu hỏi để nhảy câu nhanh"
+                        title="Mở danh sách câu hỏi để chuyển nhanh"
                       >
                         <FileText size={15} />
                       </button>
@@ -5510,9 +5513,9 @@ ${questionsText}`;
                           className="btn"
                           style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#fbbf24', borderColor: 'rgba(251,191,36,0.35)', background: 'rgba(251,191,36,0.12)', fontWeight: 700 }}
                           onClick={() => setShowBulkAnswerKeyModal(true)}
-                          title="Nhập nhanh bảng đáp án A/B/C/D cho toàn bộ 200 câu hỏi"
+                          title="Nhập nhanh bảng đáp án A/B/C/D cho toàn bộ câu hỏi"
                         >
-                          <Key size={14} /> 🔑 Nhập đáp án 200 câu
+                          <Key size={14} /> 🔑 Nhập đáp án {activeQuiz.questions.length} câu
                         </button>
 
                         <button
@@ -5564,10 +5567,10 @@ ${questionsText}`;
                     </div>
                   )}
 
-                  <div style={{ flex: 1, minHeight: 0, overflowY: isTesting ? 'hidden' : 'auto', display: isTesting ? 'flex' : 'block', flexDirection: isTesting ? 'column' : undefined }}>
+                  <div style={{ flex: 1, minHeight: 0, overflowY: isTesting && isToeicMode ? 'hidden' : 'auto', display: isTesting && isToeicMode ? 'flex' : 'block', flexDirection: isTesting && isToeicMode ? 'column' : undefined }}>
 
                   {/* Bulk Audio Manager for Edit Mode (Part 1, 2, 3, 4) */}
-                  {!isTesting && (
+                  {isToeicMode && !isTesting && (
                     <div style={{
                       background: 'rgba(236,72,153,0.06)',
                       border: '1px solid rgba(236,72,153,0.25)',
@@ -6113,7 +6116,7 @@ ${questionsText}`;
                   )}
 
                   {/* Quick Part Text Input Box */}
-                  {!isTesting && (
+                  {isToeicMode && !isTesting && (
                     <div className="glass-panel" style={{
                       padding: '16px',
                       marginBottom: '20px',
@@ -6716,7 +6719,7 @@ ${questionsText}`;
 
                 const renderBlocks = questionCards.filter(Boolean);
 
-                  if (isTesting) {
+                  if (isTesting && isToeicMode) {
                     const safeBlockIndex = Math.min(activeBlockIndex, Math.max(0, renderBlocks.length - 1));
                     const activeBlock = renderBlocks[safeBlockIndex];
                     return (
@@ -6769,7 +6772,7 @@ ${questionsText}`;
 
                   return (
                       <>
-                        {!isTesting && (activePartId === 'part6' || activePartId === 'part7') && (
+                        {isToeicMode && !isTesting && (activePartId === 'part6' || activePartId === 'part7') && (
                           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '14px' }}>
                             <button
                               type="button"
@@ -7301,7 +7304,7 @@ ${questionsText}`;
           <div className="custom-modal-content" style={{ maxWidth: '720px', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
             <div className="custom-modal-header">
               <h3 className="custom-modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24' }}>
-                <Key size={20} /> 🔑 Nhập Nhanh Bảng Đáp Án (Cho 200 câu hỏi TOEIC)
+                <Key size={20} /> 🔑 Nhập Nhanh Bảng Đáp Án ({activeQuiz?.questions.length || 0} câu hỏi)
               </h3>
               <button className="custom-modal-close-btn" onClick={() => setShowBulkAnswerKeyModal(false)}>
                 <X size={18} />
@@ -7511,7 +7514,7 @@ ${questionsText}`;
                       else if (num >= 7) partId = 'part2';
                       else partId = 'part1';
 
-                      setActivePartId(partId);
+                      setActivePartId(isToeicMode ? partId : 'all');
                       setShowQuestionGridModal(false);
                       setTimeout(() => scrollToQuestionTarget(q.id, qNum), 150);
                     }}
