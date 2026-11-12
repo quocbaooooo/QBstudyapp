@@ -23,7 +23,8 @@ import TOEICListeningBlock from './quizzes/TOEICListeningBlock';
 import TOEICReadingBlock from './quizzes/TOEICReadingBlock';
 import { compressBase64Image } from '../utils/imageCompressor';
 import { uploadImageToStorage } from '../utils/cloudStorage';
-import { saveMediaToIDB } from '../utils/audioStorage';
+import { saveMediaToIDB, getMediaFromIDB } from '../utils/audioStorage';
+import { createShareSnapshot, importShareSnapshot, encodeSharedQuiz, decodeSharedQuiz, buildShareUrl } from '../utils/quizSharing';
 
 const DEMO_QUIZ = {
   id: uuidv4(),
@@ -92,13 +93,13 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const filteredQuizzes = useMemo(() => {
     let list = quizzes;
     if (modeFilter === 'toeic') {
-      list = quizzes.filter(q => (q.listeningPassages && q.listeningPassages.length > 0)
+      list = quizzes.filter(q => q.mode === 'toeic' || (q.mode !== 'general' && ((q.listeningPassages && q.listeningPassages.length > 0)
         || (q.readingPassages && q.readingPassages.length > 0)
-        || /toeic|listening|reading|part/i.test(q.title || ''));
+        || /toeic|listening|reading|part/i.test(q.title || ''))));
     } else if (modeFilter === 'general') {
-      list = quizzes.filter(q => !(q.listeningPassages && q.listeningPassages.length > 0)
+      list = quizzes.filter(q => q.mode === 'general' || (q.mode !== 'toeic' && (!(q.listeningPassages && q.listeningPassages.length > 0)
         && !(q.readingPassages && q.readingPassages.length > 0)
-        && !/toeic|listening|reading/i.test(q.title || ''));
+        && !/toeic|listening|reading/i.test(q.title || ''))));
     }
 
     if (selectedFolderId === 'all') return list;
@@ -110,6 +111,77 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [importSharedQuizModal, setImportSharedQuizModal] = useState(null); // { quiz: Object }
   const [isFetchingSharedQuiz, setIsFetchingSharedQuiz] = useState(false);
   const jsonFileInputRef = useRef(null);
+  const [shareModal, setShareModal] = useState(null);
+  const shareRequest = useRef(false);
+  const [sharedQuizError, setSharedQuizError] = useState('');
+  const [shareLoadAttempt, setShareLoadAttempt] = useState(0);
+
+  const openShareModal = (quiz) => {
+    setActiveQuizCardMenu(null);
+    setShareModal({ quiz, url: '', error: '', note: '', copied: false, busy: false });
+  };
+
+  const handleCreateShareLink = async () => {
+    if (!shareModal || shareRequest.current) return;
+    shareRequest.current = true;
+    setShareModal(prev => ({ ...prev, busy: true, error: '', note: '' }));
+    try {
+      const snapshot = createShareSnapshot(shareModal.quiz, isToeicMode ? 'toeic' : 'general');
+      // Resolve device-local media before publishing; never send broken local references.
+      const hydrate = async (value, ownerId) => {
+        if (Array.isArray(value)) return Promise.all(value.map(item => hydrate(item, ownerId)));
+        if (value && typeof value === 'object') {
+          const entries = await Promise.all(Object.entries(value).map(async ([key, item]) => [key, await hydrate(item, value.id || ownerId)]));
+          return Object.fromEntries(entries);
+        }
+        if (typeof value === 'string' && value.startsWith('[STORED_')) {
+          const media = await getMediaFromIDB(ownerId);
+          if (typeof media !== 'string') throw new Error('Không tìm thấy ảnh hoặc âm thanh trên thiết bị. Hãy tải lại tệp đính kèm trước khi chia sẻ.');
+          return media;
+        }
+        if (typeof value === 'string' && value.startsWith('blob:')) throw new Error('Tệp đính kèm chưa sẵn sàng để chia sẻ. Hãy tải lại tệp trước khi tạo link.');
+        return value;
+      };
+      const payload = await encodeSharedQuiz(await hydrate(snapshot));
+      const baseUrl = import.meta.env.VITE_PUBLIC_APP_URL || window.location.origin + window.location.pathname;
+      const directUrl = payload.length <= 60000 ? buildShareUrl(baseUrl, { payload, mode: snapshot.mode }) : '';
+      let url;
+      let note = '';
+      if (payload.length > 900000) throw new Error('Bộ đề có tệp đính kèm quá lớn để tạo link. Hãy dùng Xuất JSON để chia sẻ đầy đủ.');
+      try {
+        if (!user) throw new Error('Bạn cần đăng nhập để tạo link ngắn.');
+        let timeout;
+        let reference;
+        try {
+          reference = await Promise.race([
+            addDoc(collection(db, 'shared_quizzes'), {
+              format: 'quiz_share_v1', payload, title: snapshot.title,
+              questionCount: snapshot.questions.length, mode: snapshot.mode,
+              ownerId: user.uid, sharedBy: user.displayName || 'Người dùng QBStudy', createdAt: Date.now(),
+            }),
+            new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Kết nối chia sẻ quá thời gian chờ.')), 12000); }),
+          ]);
+        } finally { clearTimeout(timeout); }
+        url = buildShareUrl(baseUrl, { id: reference.id, mode: snapshot.mode });
+      } catch (error) {
+        if (payload.length > 60000) throw new Error(`Không tạo được link ngắn (${error.code || error.message}). Bộ đề quá lớn cho link trực tiếp; hãy thử lại hoặc Xuất JSON.`);
+        url = buildShareUrl(baseUrl, { payload, mode: snapshot.mode });
+        note = 'Chưa kết nối được dịch vụ link ngắn. Link trực tiếp bên dưới chứa bộ đề và vẫn dùng được; hãy sao chép đầy đủ link.';
+      }
+      setShareModal(prev => ({ ...prev, url, directUrl, note, busy: false }));
+    } catch (error) {
+      setShareModal(prev => ({ ...prev, busy: false, error: error.message || 'Không tạo được link chia sẻ. Hãy thử lại.' }));
+    } finally { shareRequest.current = false; }
+  };
+
+  const copyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareModal.url);
+      setShareModal(prev => ({ ...prev, copied: true, error: '' }));
+    } catch {
+      setShareModal(prev => ({ ...prev, error: 'Trình duyệt chưa cho phép sao chép. Bạn có thể chọn và sao chép link trong ô bên dưới.' }));
+    }
+  };
 
   /**
    * Optimized Export Quiz to JSON file (.json)
@@ -269,112 +341,81 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     if (e?.target) e.target.value = '';
   };
 
-  // Check for shared quiz ID in URL query parameters on mount
   useEffect(() => {
+    const onSharedLinkChange = () => setShareLoadAttempt(attempt => attempt + 1);
+    window.addEventListener('hashchange', onSharedLinkChange);
+    window.addEventListener('popstate', onSharedLinkChange);
+    return () => {
+      window.removeEventListener('hashchange', onSharedLinkChange);
+      window.removeEventListener('popstate', onSharedLinkChange);
+    };
+  }, []);
+
+  // Support both short cloud links and self-contained links when cloud sharing is unavailable.
+  useEffect(() => {
+    let cancelled = false;
+    let timeout;
     const fetchSharedQuiz = async () => {
       const params = new URLSearchParams(window.location.search);
       const shareId = params.get('share');
-      if (!shareId) return;
-
+      const payload = new URLSearchParams(window.location.hash.slice(1)).get('quiz');
+      if (!shareId && !payload) return;
       setIsFetchingSharedQuiz(true);
+      setSharedQuizError('');
       try {
-        const docRef = doc(db, 'shared_quizzes', shareId);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
+        let quiz;
+        let sharedBy = 'Người dùng QBStudy';
+        if (payload) quiz = await decodeSharedQuiz(payload);
+        else {
+          if (!/^[a-zA-Z0-9_-]{1,128}$/.test(shareId)) throw new Error('Link chia sẻ không hợp lệ.');
+          const docSnap = await Promise.race([
+            getDoc(doc(db, 'shared_quizzes', shareId)),
+            new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Không tải được bộ đề. Kiểm tra kết nối và thử lại.')), 12000); }),
+          ]);
+          if (!docSnap.exists()) throw new Error('Liên kết chia sẻ không tồn tại hoặc đã bị xóa.');
           const sharedData = docSnap.data();
-          setImportSharedQuizModal({
-            ...sharedData,
-            id: shareId // Keep original share document ID for reference
-          });
-        } else {
-          alert('Liên kết chia sẻ không tồn tại hoặc đã bị xóa.');
-          // Remove parameter from URL
-          const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-          window.history.pushState({ path: newUrl }, '', newUrl);
+          quiz = sharedData.payload ? await decodeSharedQuiz(sharedData.payload) : createShareSnapshot(sharedData, sharedData.mode);
+          sharedBy = sharedData.sharedBy || sharedBy;
         }
-      } catch (err) {
-        console.error('Error fetching shared quiz:', err);
-        alert('Có lỗi xảy ra khi tải bộ trắc nghiệm chia sẻ: ' + err.message);
+        if (!cancelled) setImportSharedQuizModal({ ...quiz, sharedBy });
+      } catch (error) {
+        if (!cancelled) setSharedQuizError(error.code === 'permission-denied'
+          ? 'Dịch vụ chưa cho phép đọc bộ đề này. Hãy nhờ người gửi tạo link trực tiếp hoặc gửi file JSON.'
+          : error.message || 'Không tải được bộ đề chia sẻ.');
       } finally {
-        setIsFetchingSharedQuiz(false);
+        clearTimeout(timeout);
+        if (!cancelled) setIsFetchingSharedQuiz(false);
       }
     };
-
     fetchSharedQuiz();
-  }, []);
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, [shareLoadAttempt]);
 
   const cleanShareUrl = () => {
-    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-    window.history.pushState({ path: newUrl }, '', newUrl);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('share');
+    url.searchParams.delete('mode');
+    if (new URLSearchParams(url.hash.slice(1)).has('quiz')) url.hash = '';
+    window.history.replaceState(null, '', url.toString());
+    setSharedQuizError('');
   };
 
-  const handlePracticeSharedQuiz = () => {
+  const acceptSharedQuiz = (practice) => {
     if (!importSharedQuizModal) return;
-    
-    // We create a temporary quiz object
-    const tempQuiz = {
-      id: `shared_temp_${importSharedQuizModal.id}`,
-      title: `${importSharedQuizModal.title} (Bản xem trước)`,
-      questions: importSharedQuizModal.questions.map(q => ({
-        ...q,
-        id: q.id || uuidv4(),
-        userAnswer: null
-      })),
-      readingPassages: importSharedQuizModal.readingPassages || [],
-      updatedAt: Date.now(),
-      isTemporary: true
-    };
-
-    setQuizzes(prev => [tempQuiz, ...prev]);
-    setActiveQuizId(tempQuiz.id);
-    setIsTesting(true);
-    setImportSharedQuizModal(null);
-    cleanShareUrl();
-  };
-
-  const handleConfirmSharedQuizImport = () => {
-    if (!importSharedQuizModal) return;
-
-    // Deep clone and generate new UUIDs
-    const oldPassages = importSharedQuizModal.readingPassages || [];
-    const passageIdMap = {};
-    const newPassages = oldPassages.map(p => {
-      const newId = uuidv4();
-      passageIdMap[p.id] = newId;
-      return { ...p, id: newId };
-    });
-
-    const newQuestions = importSharedQuizModal.questions.map(q => {
-      const newId = uuidv4();
-      let readingGroupId = q.readingGroupId || null;
-      if (readingGroupId && passageIdMap[readingGroupId]) {
-        readingGroupId = passageIdMap[readingGroupId];
-      }
-      return {
-        ...q,
-        id: newId,
-        readingGroupId,
-        userAnswer: null
-      };
-    });
-
-    const newQuiz = {
-      id: uuidv4(),
-      title: importSharedQuizModal.title,
-      questions: newQuestions,
-      readingPassages: newPassages,
-      updatedAt: Date.now()
-    };
-
+    const newQuiz = importShareSnapshot(importSharedQuizModal, uuidv4);
     setQuizzes(prev => [newQuiz, ...prev]);
     setActiveQuizId(newQuiz.id);
-    setIsTesting(false);
+    setIsTesting(practice);
+    setTestMode('all');
+    setActivePartId(isToeicMode ? 'part1' : 'all');
+    setActiveBlockIndex(0);
+    setIsImporting(false);
+    setIsCreatingAiQuiz(false);
     setImportSharedQuizModal(null);
     cleanShareUrl();
-    alert(`Đã nhập thành công bộ đề: "${newQuiz.title}"!`);
   };
-
+  const handlePracticeSharedQuiz = () => acceptSharedQuiz(true);
+  const handleConfirmSharedQuizImport = () => acceptSharedQuiz(false);
   const handleCancelSharedQuizImport = () => {
     setImportSharedQuizModal(null);
     cleanShareUrl();
@@ -4577,6 +4618,7 @@ ${questionsText}`;
                             
                             {activeQuizCardMenu === quiz.id && (
                               <div className="quiz-card-menu-dropdown">
+                                <button type="button" className="quiz-card-menu-item" onClick={() => openShareModal(quiz)}><Share2 size={14} /> Tạo link chia sẻ</button>
                                 <button
                                   className="quiz-card-menu-item"
                                   onClick={() => {
@@ -4635,6 +4677,7 @@ ${questionsText}`;
                           </div>
                         </div>
                         <div className="quiz-card-footer">
+                          {!isMerging && <button type="button" className="btn" title="Tạo link chia sẻ bộ đề" style={{ padding: '5px 8px', fontSize: '12px' }} onClick={e => { e.stopPropagation(); openShareModal(quiz); }}><Share2 size={14} /> Chia sẻ</button>}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text-muted)' }}>
                             <Clock size={11} />
                             {getRelativeTime(quiz.updatedAt)}
@@ -5507,6 +5550,8 @@ ${questionsText}`;
                       >
                         <FileText size={15} />
                       </button>
+
+                      <button type="button" className="btn" title="Tạo link chia sẻ bộ đề" style={{ padding: '6px 10px', fontSize: '12px' }} onClick={() => openShareModal(activeQuiz)}><Share2 size={14} /> Chia sẻ</button>
 
                       {/* Cheat Sheet Modal & Selection Quick Add Toggle */}
                       <button
@@ -7182,6 +7227,44 @@ ${questionsText}`;
 
 
 
+      {shareModal && (
+        <div className="custom-modal-overlay" style={{ zIndex: 1000 }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="share-quiz-title" className="custom-modal-content" style={{ maxWidth: '560px', width: '92%' }}>
+            <div className="custom-modal-header">
+              <h3 id="share-quiz-title" className="custom-modal-title"><Share2 size={18} /> Chia sẻ bộ trắc nghiệm</h3>
+              <button type="button" className="custom-modal-close-btn" aria-label="Đóng chia sẻ" disabled={shareModal.busy} onClick={() => setShareModal(null)}><X size={18} /></button>
+            </div>
+            <div className="custom-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <strong>{shareModal.quiz.title} · {shareModal.quiz.questions.length} câu hỏi</strong>
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6 }}>Người có link có thể đăng nhập để lưu và luyện tập bản sao của bộ đề, gồm câu hỏi, đáp án, giải thích và tệp đính kèm. Tiến độ làm bài, đánh dấu và ghi chú riêng của bạn không được chia sẻ.</p>
+              {['localhost', '127.0.0.1', '[::1]'].includes(new URL(import.meta.env.VITE_PUBLIC_APP_URL || window.location.origin).hostname) && (
+                <p style={{ margin: 0, color: '#fbbf24', fontSize: '13px' }}>App đang chạy trên máy này. Để người khác mở link trên thiết bị của họ, cần dùng địa chỉ app đã đưa lên mạng.</p>
+              )}
+              {shareModal.note && <p role="status" style={{ margin: 0, color: '#fbbf24', fontSize: '13px' }}>{shareModal.note}</p>}
+              {shareModal.error && <p role="alert" style={{ margin: 0, color: '#f87171', fontSize: '13px' }}>{shareModal.error}</p>}
+              {shareModal.url && <>
+                <label htmlFor="quiz-share-url">Link chia sẻ</label>
+                <input id="quiz-share-url" readOnly value={shareModal.url} onFocus={e => e.target.select()} style={{ width: '100%' }} />
+                <button type="button" className="btn btn-primary" onClick={copyShareLink}>{shareModal.copied ? <CheckCircle size={16} /> : <Copy size={16} />}{shareModal.copied ? 'Đã sao chép' : 'Sao chép link'}</button>
+                {shareModal.directUrl && shareModal.url !== shareModal.directUrl && <button type="button" className="btn" onClick={() => setShareModal(prev => ({ ...prev, url: prev.directUrl, copied: false, note: 'Link trực tiếp chứa bộ đề; hãy sao chép đầy đủ link.' }))}>Dùng link trực tiếp không cần dịch vụ link ngắn</button>}
+                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Link chứa bản chụp bộ đề lúc tạo. Chỉnh sửa về sau không thay đổi nội dung đã chia sẻ.</span>
+              </>}
+            </div>
+            {!shareModal.url && <div className="custom-modal-footer"><button type="button" className="btn btn-primary" disabled={shareModal.busy} onClick={handleCreateShareLink}>{shareModal.busy ? 'Đang tạo link...' : 'Tạo link chia sẻ'}</button></div>}
+          </div>
+        </div>
+      )}
+
+      {sharedQuizError && (
+        <div className="custom-modal-overlay" style={{ zIndex: 1000 }}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="share-error-title" className="custom-modal-content" style={{ maxWidth: '500px' }}>
+            <div className="custom-modal-header"><h3 id="share-error-title">Chưa mở được bộ đề</h3></div>
+            <div className="custom-modal-body"><p>{sharedQuizError}</p></div>
+            <div className="custom-modal-footer"><button type="button" className="btn" onClick={cleanShareUrl}>Đóng</button><button type="button" className="btn btn-primary" onClick={() => setShareLoadAttempt(value => value + 1)}>Thử lại</button></div>
+          </div>
+        </div>
+      )}
+
       {/* Import Shared Quiz Modal */}
       {importSharedQuizModal && (
         <div className="custom-modal-overlay" style={{ zIndex: 100 }}>
@@ -7221,7 +7304,7 @@ ${questionsText}`;
               </div>
               
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', margin: 0, lineHeight: '1.5' }}>
-                Bạn có thể làm bài trực tiếp ở chế độ luyện tập ngay lập tức, hoặc lưu vĩnh viễn vào bộ đề của mình để ôn luyện sau này.
+                Một bản sao riêng sẽ được lưu vào thư viện của bạn. Bạn có thể luyện ngay hoặc chỉnh sửa sau mà không ảnh hưởng đến bộ đề gốc.
               </p>
             </div>
             
@@ -7244,7 +7327,7 @@ ${questionsText}`;
                   onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
                   onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                 >
-                  Luyện tập ngay
+                  Lưu và luyện tập
                 </button>
                 <button
                   onClick={handleConfirmSharedQuizImport}

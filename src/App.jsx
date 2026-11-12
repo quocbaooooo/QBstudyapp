@@ -241,8 +241,8 @@ function AppContent() {
   // Automatically switch to quizzes tab if ?share=... query parameter is present
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('share')) {
-      setActiveTab('quizzes');
+    if (params.get('share') || new URLSearchParams(window.location.hash.slice(1)).has('quiz')) {
+      setActiveTab(params.get('mode') === 'toeic' ? 'toeic' : 'quizzes');
     }
   }, []);
 
