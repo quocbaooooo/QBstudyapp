@@ -75,6 +75,8 @@ const DEMO_QUIZ = {
 export default function QuizzesView({ modeFilter = 'all' }) {
   const isToeicMode = modeFilter === 'toeic';
   const [explanationEdit, setExplanationEdit] = useState(null);
+  const [practiceSessions, setPracticeSessions] = useLocalStorage('study_practice_sessions_v1', {});
+  const pendingPracticeResume = useRef(null);
   const { user } = useAuth();
   const [quizzes, setQuizzes, quizSyncState, saveQuizzesToCloud, hasUnsavedQuizChanges] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
   const [folders, setFolders] = useFirestore('quiz_folders', 'study_quiz_folders', []);
@@ -1360,6 +1362,110 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   };
 
   const activeQuiz = quizzes.find(q => q.id === activeQuizId);
+
+  const practiceSessionKey = `${user?.uid || 'guest'}:${modeFilter}`;
+  const savedPractice = practiceSessions[practiceSessionKey];
+  const savedPracticeQuiz = quizzes.find(quiz => quiz.id === savedPractice?.quizId);
+  const savedPracticeQuestion = savedPracticeQuiz?.questions.find(q => q.id === savedPractice?.questionId);
+
+  const rememberPractice = useCallback((questionId, questions = activeQuiz?.questions) => {
+    if (!isTesting || !activeQuiz || pendingPracticeResume.current) return;
+    const question = activeQuiz.questions.find(q => q.id === questionId);
+    if (!question) return;
+    const session = {
+      quizId: activeQuiz.id, questionId, partId: activePartId, blockIndex: activeBlockIndex,
+      testMode, timerSeconds: testTimerSecondsLeft, savedAt: Date.now(),
+      answers: Object.fromEntries(questions.map(q => [q.id, q.userAnswer ?? null])),
+    };
+    setPracticeSessions(prev => {
+      const next = { ...prev, [practiceSessionKey]: session };
+      // Persist immediately so leaving this screen or closing the tab keeps the position.
+      try { localStorage.setItem('study_practice_sessions_v1', JSON.stringify(next)); } catch { /* Storage may be unavailable. */ }
+      return next;
+    });
+  }, [isTesting, activeQuiz, activePartId, activeBlockIndex, testMode, testTimerSecondsLeft, practiceSessionKey, setPracticeSessions]);
+
+  useEffect(() => {
+    if (!isTesting || !activeQuiz) return;
+    const capturePosition = () => {
+      const cards = [...document.querySelectorAll('[id^="question-card-"], [id^="listening-block-"], [id^="reading-block-"]')];
+      const visible = cards.filter(el => {
+        const rect = el.getBoundingClientRect();
+        return rect.bottom > 110 && rect.top < window.innerHeight;
+      }).sort((a, b) => Math.abs(a.getBoundingClientRect().top - 120) - Math.abs(b.getBoundingClientRect().top - 120));
+      const target = visible[0];
+      if (!target) return;
+      const question = activeQuiz.questions.find(q => target.id === `question-card-${q.id}`
+        || (q.listeningGroupId && target.id === `listening-block-${q.listeningGroupId}`)
+        || (q.readingGroupId && target.id === `reading-block-${q.readingGroupId}`));
+      if (question) rememberPractice(question.id);
+    };
+    let scrollTimer;
+    const onScroll = () => {
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(capturePosition, 180);
+    };
+    const initialTimer = setTimeout(capturePosition, 250);
+    document.addEventListener('scroll', onScroll, true);
+    window.addEventListener('pagehide', capturePosition);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(initialTimer);
+      document.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('pagehide', capturePosition);
+    };
+  }, [isTesting, activeQuiz, rememberPractice]);
+
+  const resumePractice = () => {
+    if (!savedPracticeQuiz || !savedPracticeQuestion) return;
+    pendingPracticeResume.current = savedPractice.questionId;
+    setQuizzes(prev => prev.map(quiz => quiz.id === savedPractice.quizId ? {
+      ...quiz, questions: quiz.questions.map(q => Object.hasOwn(savedPractice.answers || {}, q.id)
+        ? { ...q, userAnswer: savedPractice.answers[q.id] } : q),
+    } : quiz));
+    setActiveQuizId(savedPractice.quizId);
+    setIsCreatingAiQuiz(false);
+    setIsImporting(false);
+    setTestMode(savedPractice.testMode || 'all');
+    setActivePartId(isToeicMode ? savedPractice.partId : 'all');
+    setActiveBlockIndex(savedPractice.blockIndex || 0);
+    if (Number.isFinite(savedPractice.timerSeconds)) setTestTimerSecondsLeft(savedPractice.timerSeconds);
+    setIsTestTimerRunning(false);
+    setIsTesting(true);
+  };
+
+  useEffect(() => {
+    if (!isTesting || !activeQuiz || !pendingPracticeResume.current) return;
+    const questionId = pendingPracticeResume.current;
+    const timer = setTimeout(() => {
+      const question = activeQuiz.questions.find(q => q.id === questionId);
+      const target = document.getElementById(`question-card-${questionId}`)
+        || document.getElementById(`listening-block-${question?.listeningGroupId}`)
+        || document.getElementById(`reading-block-${question?.readingGroupId}`);
+      target?.scrollIntoView({ block: 'start', behavior: 'instant' });
+      pendingPracticeResume.current = null;
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [activeQuiz, isTesting]);
+
+  const renderPracticeReminder = () => {
+    if (!savedPracticeQuiz || !savedPracticeQuestion || (isTesting && activeQuizId)
+      || (activeQuizId && activeQuizId !== savedPractice.quizId)) return null;
+    const questionNumber = savedPracticeQuestion.blankNumber || savedPracticeQuiz.questions.indexOf(savedPracticeQuestion) + 1;
+    const answered = Object.values(savedPractice.answers || {}).filter(answer => answer != null && answer !== '').length;
+    return (
+      <div role="status" className="glass-panel" style={{ padding: '14px 18px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', border: '1px solid rgba(34,211,238,0.35)', flexShrink: 0 }}>
+        <div>
+          <strong style={{ color: '#22d3ee' }}>Bạn đang luyện dở: {savedPracticeQuiz.title}</strong>
+          <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
+            Đang ở câu {questionNumber} · Đã trả lời {answered}/{savedPracticeQuiz.questions.length} câu
+            {isToeicMode && savedPractice.partId !== 'all' ? ` · ${savedPractice.partId.replace('part', 'Part ')}` : ''}
+          </div>
+        </div>
+        <button type="button" className="btn btn-primary" onClick={resumePractice}><Play size={15} /> Tiếp tục luyện tập</button>
+      </div>
+    );
+  };
 
   const activeQuizStats = useMemo(() => {
     if (!activeQuiz || !activeQuiz.questions) return { total: 0, answered: 0, correct: 0 };
@@ -3833,6 +3939,7 @@ ${optionsText}`;
     const newQuestions = activeQuiz.questions.map(q => 
       q.id === qId ? { ...q, userAnswer: newUserAnswer } : q
     );
+    rememberPractice(qId, newQuestions);
     setQuizzes(quizzes.map(q => q.id === activeQuizId ? { ...q, questions: newQuestions } : q));
   };
 
@@ -4397,6 +4504,8 @@ ${questionsText}`;
                 )}
               </div>
             </div>
+
+            {renderPracticeReminder()}
 
             {/* Grid Body */}
             <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '20px' }}>
@@ -5255,6 +5364,8 @@ ${questionsText}`;
 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+                  {renderPracticeReminder()}
 
                   {/* UNIFIED TOEIC HEADER BAR (MATCHING SCREENSHOT) */}
                   <div style={{
