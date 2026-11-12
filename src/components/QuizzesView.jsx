@@ -74,6 +74,7 @@ const DEMO_QUIZ = {
 
 export default function QuizzesView({ modeFilter = 'all' }) {
   const isToeicMode = modeFilter === 'toeic';
+  const [explanationEdit, setExplanationEdit] = useState(null);
   const { user } = useAuth();
   const [quizzes, setQuizzes, quizSyncState, saveQuizzesToCloud, hasUnsavedQuizChanges] = useFirestore('quizzes', 'study_quizzes', [DEMO_QUIZ]);
   const [folders, setFolders] = useFirestore('quiz_folders', 'study_quiz_folders', []);
@@ -6697,17 +6698,47 @@ ${questionsText}`;
                                   return null;
                                 })()}
 
-                                {q.explanation && (
-                                  <div
-                                    data-question-id={q.id}
-                                    data-field="explanation"
-                                    onMouseUp={(e) => handleTextSelection(e, q.id, 'explanation')}
-                                    style={{ color: 'var(--text-muted)', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}
-                                  >
-                                    <strong style={{ color: 'var(--accent-orange)', display: 'block', marginBottom: '8px' }}>📝 Giải thích:</strong>
-                                    <TiptapEditor content={q.explanation} readOnly={true} variant="mini" onChange={() => {}} />
-                                  </div>
-                                )}
+                                {(q.explanation || explanationEdit?.questionId === q.id) && (() => {
+                                  const isEditingExplanation = explanationEdit?.questionId === q.id
+                                    && explanationEdit?.quizId === activeQuizId;
+                                  return (
+                                    <div
+                                      data-question-id={q.id}
+                                      data-field="explanation"
+                                      onMouseUp={(e) => {
+                                        if (!isEditingExplanation && !e.target.closest('button')) handleTextSelection(e, q.id, 'explanation');
+                                      }}
+                                      style={{ color: 'var(--text-muted)', lineHeight: '1.7', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)', fontSize: '13.5px' }}
+                                    >
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                        <strong style={{ color: 'var(--accent-orange)' }}>📝 Giải thích:</strong>
+                                        {isEditingExplanation ? (
+                                          <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button type="button" className="btn" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => setExplanationEdit(null)}>Hủy</button>
+                                            <button type="button" className="btn btn-primary" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => {
+                                              handleUpdateQuestionProp(q.id, 'explanation', explanationEdit.content);
+                                              setExplanationEdit(null);
+                                            }}><Save size={14} /> Lưu giải thích</button>
+                                          </div>
+                                        ) : (
+                                          <button type="button" className="btn" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => setExplanationEdit({ quizId: activeQuizId, questionId: q.id, content: q.explanation || '' })}>
+                                            <Edit3 size={14} /> Sửa giải thích
+                                          </button>
+                                        )}
+                                      </div>
+                                      <TiptapEditor
+                                        key={`${q.id}-${isEditingExplanation ? 'edit' : 'read'}`}
+                                        content={isEditingExplanation ? explanationEdit.content : q.explanation}
+                                        readOnly={!isEditingExplanation}
+                                        variant="mini"
+                                        onChange={html => {
+                                          if (isEditingExplanation) setExplanationEdit(prev => prev ? { ...prev, content: html } : prev);
+                                        }}
+                                      />
+                                    </div>
+                                  );
+                                })()}
+
                               </div>
                             )}
                           </div>
