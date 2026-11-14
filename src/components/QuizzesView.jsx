@@ -144,9 +144,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
       };
       const payload = await encodeSharedQuiz(await hydrate(snapshot));
       const baseUrl = import.meta.env.VITE_PUBLIC_APP_URL || window.location.origin + window.location.pathname;
-      const directUrl = payload.length <= 60000 ? buildShareUrl(baseUrl, { payload, mode: snapshot.mode }) : '';
       let url;
-      let note = '';
       if (payload.length > 900000) throw new Error('Bộ đề có tệp đính kèm quá lớn để tạo link. Hãy dùng Xuất JSON để chia sẻ đầy đủ.');
       try {
         if (!user) throw new Error('Bạn cần đăng nhập để tạo link ngắn.');
@@ -164,11 +162,10 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         } finally { clearTimeout(timeout); }
         url = buildShareUrl(baseUrl, { id: reference.id, mode: snapshot.mode });
       } catch (error) {
-        if (payload.length > 60000) throw new Error(`Không tạo được link ngắn (${error.code || error.message}). Bộ đề quá lớn cho link trực tiếp; hãy thử lại hoặc Xuất JSON.`);
-        url = buildShareUrl(baseUrl, { payload, mode: snapshot.mode });
-        note = 'Chưa kết nối được dịch vụ link ngắn. Link trực tiếp bên dưới chứa bộ đề và vẫn dùng được; hãy sao chép đầy đủ link.';
+        if (error.code === 'permission-denied') throw new Error('Chưa được phép tạo link chia sẻ trên Cloud. Cần bật quyền cho bộ đề chia sẻ trong Firebase.');
+        throw new Error('Chưa tạo được link chia sẻ ngắn. Kiểm tra kết nối và thử lại.');
       }
-      setShareModal(prev => ({ ...prev, url, directUrl, note, busy: false }));
+      setShareModal(prev => ({ ...prev, url, busy: false }));
     } catch (error) {
       setShareModal(prev => ({ ...prev, busy: false, error: error.message || 'Không tạo được link chia sẻ. Hãy thử lại.' }));
     } finally { shareRequest.current = false; }
@@ -380,7 +377,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
         if (!cancelled) setImportSharedQuizModal({ ...quiz, sharedBy });
       } catch (error) {
         if (!cancelled) setSharedQuizError(error.code === 'permission-denied'
-          ? 'Dịch vụ chưa cho phép đọc bộ đề này. Hãy nhờ người gửi tạo link trực tiếp hoặc gửi file JSON.'
+          ? 'Chưa được phép mở bộ đề này. Hãy kiểm tra tài khoản đăng nhập hoặc nhờ người gửi tạo lại link chia sẻ.'
           : error.message || 'Không tải được bộ đề chia sẻ.');
       } finally {
         clearTimeout(timeout);
@@ -7246,7 +7243,6 @@ ${questionsText}`;
                 <label htmlFor="quiz-share-url">Link chia sẻ</label>
                 <input id="quiz-share-url" readOnly value={shareModal.url} onFocus={e => e.target.select()} style={{ width: '100%' }} />
                 <button type="button" className="btn btn-primary" onClick={copyShareLink}>{shareModal.copied ? <CheckCircle size={16} /> : <Copy size={16} />}{shareModal.copied ? 'Đã sao chép' : 'Sao chép link'}</button>
-                {shareModal.directUrl && shareModal.url !== shareModal.directUrl && <button type="button" className="btn" onClick={() => setShareModal(prev => ({ ...prev, url: prev.directUrl, copied: false, note: 'Link trực tiếp chứa bộ đề; hãy sao chép đầy đủ link.' }))}>Dùng link trực tiếp không cần dịch vụ link ngắn</button>}
                 <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Link chứa bản chụp bộ đề lúc tạo. Chỉnh sửa về sau không thay đổi nội dung đã chia sẻ.</span>
               </>}
             </div>

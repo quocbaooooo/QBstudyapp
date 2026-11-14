@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Only snapshots explicitly shared by their owners are accessible by link.
+    match /shared_quizzes/{shareId} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'format', 'payload', 'title', 'questionCount', 'mode',
+          'ownerId', 'sharedBy', 'createdAt'
+        ])
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.format == 'quiz_share_v1'
+        && request.resource.data.payload is string
+        && request.resource.data.payload.size() <= 900000
+        && request.resource.data.title is string
+        && request.resource.data.sharedBy is string
+        && request.resource.data.createdAt is int
+        && request.resource.data.mode in ['general', 'toeic']
+        && request.resource.data.questionCount is int
+        && request.resource.data.questionCount > 0
+        && request.resource.data.questionCount <= 5000;
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+    }
+  }
+}

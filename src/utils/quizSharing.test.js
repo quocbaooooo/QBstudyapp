@@ -46,9 +46,10 @@ test('links route modes and remove unrelated or previous URL state', () => {
   assert.equal(short.searchParams.get('mode'), 'toeic');
   assert.equal(short.searchParams.has('secret'), false);
   assert.equal(short.hash, '');
-  const direct = new URL(buildShareUrl(short, { payload: 'abc_DEF-123' }));
-  assert.equal(direct.searchParams.has('share'), false);
-  assert.equal(direct.hash, '#quiz=abc_DEF-123');
+  const general = new URL(buildShareUrl(short, { id: 'abc123' }));
+  assert.equal(general.search, '?share=abc123');
+  assert.equal(general.hash, '');
+  assert.throws(() => buildShareUrl(short, { payload: 'abc_DEF-123' }));
   assert.throws(() => buildShareUrl('javascript:alert(1)', { id: 'abc' }));
 });
 
@@ -57,4 +58,15 @@ test('malformed and empty shared content is rejected', async () => {
   assert.throws(() => createShareSnapshot({ title: 'Bad', questions: [{ question: 'Q', options: [] }] }));
   await assert.rejects(decodeSharedQuiz('not valid!'));
   await assert.rejects(decodeSharedQuiz('aaaa'));
+});
+
+
+test('share links contain only a short ID regardless of quiz size', async () => {
+  const large = createShareSnapshot({ ...quiz, questions: Array.from({ length: 124 }, (_, i) => ({ ...quiz.questions[0], id: `q${i}`, question: `Câu ${i}: ${'Nội dung dài '.repeat(100)}` })) });
+  const payload = await encodeSharedQuiz(large);
+  const link = buildShareUrl('https://study.example', { id: 'qR7bxF3k9hM2pV6nZ1cA', payload });
+  assert.ok(link.length < 60);
+  assert.equal(new URL(link).hash, '');
+  assert.ok(!link.includes(payload));
+  assert.equal(link, buildShareUrl('https://study.example', { id: 'qR7bxF3k9hM2pV6nZ1cA' }));
 });

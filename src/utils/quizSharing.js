@@ -82,14 +82,13 @@ export async function decodeSharedQuiz(payload) {
   return createShareSnapshot(validateSharedQuiz(quiz), quiz.mode);
 }
 
-export function buildShareUrl(baseUrl, { id, payload, mode = 'general' }) {
+export function buildShareUrl(baseUrl, { id, mode = 'general' }) {
   const url = new URL(baseUrl);
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Địa chỉ ứng dụng phải bắt đầu bằng https:// hoặc http://.');
   url.search = '';
   url.hash = '';
-  if (id) url.searchParams.set('share', id);
-  else if (payload) url.hash = `quiz=${payload}`;
-  else throw new Error('Thiếu dữ liệu chia sẻ.');
-  url.searchParams.set('mode', mode);
+  if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new Error('Thiếu mã bộ đề chia sẻ hợp lệ.');
+  url.searchParams.set('share', id);
+  if (mode === 'toeic') url.searchParams.set('mode', mode);
   return url.toString();
 }

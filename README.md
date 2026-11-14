@@ -186,34 +186,12 @@ Dự án được phát triển nhằm mục đích nâng cao hiệu quả tự 
 
 Bấm **Chia sẻ** trên thẻ bộ đề hoặc trong màn hình làm bài, chọn **Tạo link chia sẻ**, rồi **Sao chép link**. Người nhận đăng nhập vào app để lưu bản sao hoặc lưu và luyện tập ngay. Bản sao giữ câu hỏi, đáp án, giải thích, bài đọc và bài nghe; không mang theo đáp án người làm, đánh dấu, thư mục hoặc ghi chú cá nhân. Nội dung link là bản chụp tại thời điểm tạo.
 
-Link ngắn lưu bản chụp đã nén trong collection Firestore `shared_quizzes`. Nếu dịch vụ không khả dụng, app tạo link trực tiếp có dữ liệu nén trong phần `#quiz=...` (tối đa 60.000 ký tự dữ liệu nén). Link trực tiếp không cần đọc dữ liệu chia sẻ trên Firestore; phải sao chép đầy đủ. Có thể chuyển từ link ngắn sang link trực tiếp trong hộp chia sẻ. Bộ đề vượt dung lượng cho phép sẽ báo lỗi, không âm thầm bỏ tệp đính kèm.
+Link chia sẻ lưu bản chụp đã nén trong collection Firestore `shared_quizzes`; URL chỉ chứa mã tài liệu, ví dụ `https://dia-chi-app/?share=AbCd1234`. Mục Trắc nghiệm không cần tham số `mode`. Nếu Cloud gặp lỗi hoặc thiếu quyền, app báo lỗi và cho thử lại, không nhúng toàn bộ đề vào URL. Các link dữ liệu `#quiz=...` đã gửi trước đây vẫn được hỗ trợ khi mở.
 
 Khi đưa app lên mạng, đặt `VITE_PUBLIC_APP_URL=https://dia-chi-app-cua-ban` trong môi trường build nếu cần cố định địa chỉ chia sẻ. Không đặt thành localhost khi gửi cho thiết bị khác. Nếu không cấu hình, app dùng địa chỉ đang mở. Vite cần khởi động/build lại sau khi đổi biến môi trường.
 
-Để dùng link ngắn, ghép quy tắc sau vào bên trong `match /databases/{database}/documents` của bộ Firestore Rules hiện có (giữ nguyên quy tắc dữ liệu riêng của người dùng):
+Quy tắc thực tế lưu tại `firestore.rules` và đã được áp dụng cho dự án `neurostudy-app` ngày 14/11/2026. Collection `shared_quizzes` chỉ cho người đã đăng nhập đọc từng bản chụp bằng mã link, không cho liệt kê toàn bộ. Người tạo chỉ được lưu bản chụp với `ownerId` của chính mình; không cho sửa nội dung đã chia sẻ. Quy tắc dữ liệu riêng dưới `users/{userId}` vẫn yêu cầu đúng chủ tài khoản.
 
-```text
-match /shared_quizzes/{shareId} {
-  allow get: if true;
-  allow list: if false;
-  allow create: if request.auth != null
-    && request.resource.data.ownerId == request.auth.uid
-    && request.resource.data.keys().hasOnly([
-      'format', 'payload', 'title', 'questionCount', 'mode',
-      'ownerId', 'sharedBy', 'createdAt'
-    ])
-    && request.resource.data.format == 'quiz_share_v1'
-    && request.resource.data.payload is string
-    && request.resource.data.payload.size() <= 900000
-    && request.resource.data.title is string
-    && request.resource.data.questionCount is int
-    && request.resource.data.questionCount > 0
-    && request.resource.data.questionCount <= 5000;
-  allow update: if false;
-  allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
-}
-```
-
-Đây là cấu hình triển khai tham khảo; mã nguồn không tự thay đổi quyền Firebase đang chạy. Người có link được đọc bản chụp chia sẻ; dữ liệu riêng trong `users` không dùng quy tắc này. Link trực tiếp vẫn dùng được nếu chưa triển khai quy tắc link ngắn.
+Khi triển khai sang dự án Firebase khác, dùng quy tắc trong `firestore.rules` và kiểm tra các quyền riêng hiện có trước khi áp dụng. Ứng dụng không tự thay đổi quyền Firebase khi người dùng bấm tạo link.
 
 Kiểm tra luồng đóng gói/nhận bản sao: `node --test src/utils/quizSharing.test.js`.
