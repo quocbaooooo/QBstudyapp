@@ -497,6 +497,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
   const [previewListeningPassages, setPreviewListeningPassages] = useState(null); // array of listening block objects
   const [importTargetQuizId, setImportTargetQuizId] = useState(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [hideQuizHints, setHideQuizHints] = useLocalStorage('study_hide_quiz_hints', true);
   const [testMode, setTestMode] = useState('all'); // 'all' or 'starred'
   const [selectedReadingQuestionId, setSelectedReadingQuestionId] = useState(null);
   const [copiedAllNotes, setCopiedAllNotes] = useState(false);
@@ -1630,7 +1631,7 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     let visiblePart = slashIdx !== -1 ? text.substring(0, slashIdx).trimEnd() : text;
     const hiddenPart = slashIdx !== -1 ? text.substring(slashIdx + 1).trimStart() : '';
 
-    if (!showHidden) {
+    if (hideQuizHints && !showHidden) {
       // Remove (translation text) patterns — but keep content that was there originally
       return visiblePart.replace(/\s*\([^)]*\)/g, '');
     }
@@ -5455,6 +5456,22 @@ ${questionsText}`;
                         </span>
                       </div>
                     </div>
+
+                    {isTesting && (
+                      <button
+                        type="button"
+                        className={`btn ${hideQuizHints ? 'btn-primary' : ''}`}
+                        role="switch"
+                        aria-checked={hideQuizHints}
+                        aria-label="Ẩn nội dung trong ngoặc và sau dấu gạch chéo"
+                        onClick={() => setHideQuizHints(previous => !previous)}
+                        title="Ẩn nội dung trong (...) và sau dấu / trước khi trả lời. Khi trả lời xong, nội dung sẽ hiện lại."
+                        style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
+                      >
+                        {hideQuizHints ? <EyeOff size={15} /> : <Eye size={15} />}
+                        Ẩn (...) và sau /: {hideQuizHints ? 'Bật' : 'Tắt'}
+                      </button>
+                    )}
 
                     {/* Center: Custom Timer Pill */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
