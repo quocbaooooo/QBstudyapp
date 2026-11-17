@@ -1193,11 +1193,25 @@ export default function QuizzesView({ modeFilter = 'all' }) {
     return arr;
   };
 
+  const handleToggleShuffle = () => {
+    if (isShuffled) {
+      setIsShuffled(false);
+      setShuffledIds(null);
+      setShuffledOptions(null);
+    } else {
+      const questions = activeQuiz?.questions || [];
+      setShuffledIds(shuffleArray(questions.map(q => q.id)));
+      setShuffledOptions(Object.fromEntries(questions.map(q => [q.id, shuffleArray(Object.keys(q.options || {}))])));
+      setIsShuffled(true);
+    }
+    setActiveBlockIndex(0);
+  };
+
   useEffect(() => {
     setIsShuffled(false);
     setShuffledIds(null);
     setShuffledOptions(null);
-  }, [activeQuizId, isTesting, testMode]);
+  }, [activeQuizId, testMode]);
 
   // Scroll to newly added question
   useEffect(() => {
@@ -5473,6 +5487,18 @@ ${questionsText}`;
                       </button>
                     )}
 
+                    <button
+                      type="button"
+                      className={`btn ${isShuffled ? 'btn-primary' : ''}`}
+                      onClick={handleToggleShuffle}
+                      aria-pressed={isShuffled}
+                      title="Xáo trộn thứ tự câu hỏi và đáp án khi luyện tập"
+                      style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>shuffle</span>
+                      {isShuffled ? 'Bỏ trộn' : 'Xáo trộn'}
+                    </button>
+
                     {/* Center: Custom Timer Pill */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                       <button
@@ -5709,31 +5735,6 @@ ${questionsText}`;
                           <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download_for_offline</span> Xuất JSON
                         </button>
 
-                        <button
-                          type="button"
-                          className={`btn ${isShuffled ? 'btn-primary' : ''}`}
-                          onClick={() => {
-                            if (isShuffled) {
-                              setIsShuffled(false);
-                              setShuffledIds(null);
-                              setShuffledOptions(null);
-                            } else {
-                              setIsShuffled(true);
-                              const targetQuestions = activeQuiz.questions;
-                              const qids = targetQuestions.map(q => q.id);
-                              setShuffledIds(shuffleArray(qids));
-                              const sOpts = {};
-                              targetQuestions.forEach(q => {
-                                sOpts[q.id] = shuffleArray(Object.keys(q.options));
-                              });
-                              setShuffledOptions(sOpts);
-                            }
-                          }}
-                          style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
-                        >
-                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>shuffle</span>
-                          {isShuffled ? 'Bỏ trộn' : 'Xáo trộn'}
-                        </button>
                       </div>
                     </div>
                   )}
