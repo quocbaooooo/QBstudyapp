@@ -6869,7 +6869,7 @@ ${questionsText}`;
                                   return null;
                                 })()}
 
-                                {(q.explanation || explanationEdit?.questionId === q.id) && (() => {
+                                {(() => {
                                   const isEditingExplanation = explanationEdit?.questionId === q.id
                                     && explanationEdit?.quizId === activeQuizId;
                                   return (
@@ -6893,19 +6893,21 @@ ${questionsText}`;
                                           </div>
                                         ) : (
                                           <button type="button" className="btn" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => setExplanationEdit({ quizId: activeQuizId, questionId: q.id, content: q.explanation || '' })}>
-                                            <Edit3 size={14} /> Sửa giải thích
+                                            <Edit3 size={14} /> {q.explanation ? 'Sửa ghi chú' : 'Thêm ghi chú'}
                                           </button>
                                         )}
                                       </div>
-                                      <TiptapEditor
+                                      {!isEditingExplanation && !q.explanation ? (
+                                        <div style={{ fontStyle: 'italic' }}>Chưa có ghi chú. Bấm “Thêm ghi chú” để bổ sung.</div>
+                                      ) : <TiptapEditor
                                         key={`${q.id}-${isEditingExplanation ? 'edit' : 'read'}`}
-                                        content={isEditingExplanation ? explanationEdit.content : q.explanation}
+                                        content={isEditingExplanation ? explanationEdit.content : (q.explanation || '')}
                                         readOnly={!isEditingExplanation}
                                         variant="mini"
                                         onChange={html => {
                                           if (isEditingExplanation) setExplanationEdit(prev => prev ? { ...prev, content: html } : prev);
                                         }}
-                                      />
+                                      />}
                                     </div>
                                   );
                                 })()}
